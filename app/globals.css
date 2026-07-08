@@ -1,0 +1,177 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Dark mode driven by a `.dark` class on <html> (next-themes, class strategy). */
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ *
+ * Design tokens — the single source of truth is design-system.md.
+ * Components must consume these via Tailwind utilities, never raw hex.
+ * ------------------------------------------------------------------ */
+:root {
+  /* base surfaces + text (light) */
+  --background: #fafafa;
+  --surface: #ffffff;
+  --surface-muted: #f4f4f5;
+  --border: #e4e4e7;
+  --text: #18181b;
+  --text-muted: #71717a;
+
+  /* accent — cobalt (light) */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: #eff3ff;
+  --accent-foreground: #ffffff;
+
+  /* shadcn-compatible aliases (mapped onto the palette above) */
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-muted);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --input: var(--border);
+  --ring: var(--accent);
+  --destructive: #f43f5e;
+  --destructive-foreground: #ffffff;
+
+  /* status chips */
+  --status-open: #f59e0b;
+  --status-in-progress: #3b82f6;
+  --status-resolved: #10b981;
+  --status-closed: #71717a;
+  --status-reopened: #3b82f6;
+
+  /* priority chips */
+  --priority-low: #71717a;
+  --priority-medium: #64748b;
+  --priority-high: #f97316;
+  --priority-urgent: #f43f5e;
+
+  /* radii */
+  --radius-card: 10px;
+  --radius-input: 8px;
+  --radius-chip: 999px;
+
+  /* elevation (one for cards, one for popovers) */
+  --shadow-elevation: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+  --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.14);
+}
+
+.dark {
+  --background: #0b0b0f;
+  --surface: #141419;
+  --surface-muted: #1c1c22;
+  --border: #27272e;
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: #16233f;
+  --accent-foreground: #ffffff;
+
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-muted);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --input: var(--border);
+  --ring: var(--accent);
+  --destructive: #f43f5e;
+  --destructive-foreground: #ffffff;
+
+  --shadow-elevation: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 0 rgb(0 0 0 / 0.4);
+  --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.5);
+}
+
+/* Expose tokens to Tailwind's utility engine (v4 CSS-first theme). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-status-open: var(--status-open);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-resolved: var(--status-resolved);
+  --color-status-closed: var(--status-closed);
+  --color-status-reopened: var(--status-reopened);
+
+  --color-priority-low: var(--priority-low);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-high: var(--priority-high);
+  --color-priority-urgent: var(--priority-urgent);
+
+  --radius-card: var(--radius-card);
+  --radius-input: var(--radius-input);
+  --radius-chip: var(--radius-chip);
+
+  --shadow-elevation: var(--shadow-elevation);
+  --shadow-popover: var(--shadow-popover);
+
+  /* Fonts are wired via next/font CSS variables in app/layout.tsx.
+     Cabinet Grotesk (Fontshare) is a follow-up; it falls back to Hanken for now. */
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-cabinet, var(--font-hanken)), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* Motion restraint: honour reduced-motion everywhere (design-system.md §Motion). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
