@@ -21,9 +21,11 @@
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-soft: #eff3ff;
-  --accent-foreground: #ffffff;
 
-  /* shadcn-compatible aliases (mapped onto the palette above) */
+  /* shadcn-compatible aliases (mapped onto the palette above).
+     NOTE: shadcn's semantic `accent` is a *subtle hover* surface, not the
+     brand cobalt — cobalt lives in `primary`. Keeping these distinct avoids
+     bright-cobalt dropdown/select hover states. */
   --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
@@ -35,6 +37,8 @@
   --secondary-foreground: var(--text);
   --muted: var(--surface-muted);
   --muted-foreground: var(--text-muted);
+  --ui-accent: var(--surface-muted);
+  --ui-accent-foreground: var(--text);
   --input: var(--border);
   --ring: var(--accent);
   --destructive: #f43f5e;
@@ -54,6 +58,7 @@
   --priority-urgent: #f43f5e;
 
   /* radii */
+  --radius: 0.625rem; /* 10px base */
   --radius-card: 10px;
   --radius-input: 8px;
   --radius-chip: 999px;
@@ -74,7 +79,6 @@
   --accent: #3b82f6;
   --accent-hover: #2563eb;
   --accent-soft: #16233f;
-  --accent-foreground: #ffffff;
 
   --foreground: var(--text);
   --card: var(--surface);
@@ -87,6 +91,8 @@
   --secondary-foreground: var(--text);
   --muted: var(--surface-muted);
   --muted-foreground: var(--text-muted);
+  --ui-accent: var(--surface-muted);
+  --ui-accent-foreground: var(--text);
   --input: var(--border);
   --ring: var(--accent);
   --destructive: #f43f5e;
@@ -106,10 +112,7 @@
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
 
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
-  --color-accent-foreground: var(--accent-foreground);
 
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -121,6 +124,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
@@ -137,6 +142,11 @@
   --color-priority-high: var(--priority-high);
   --color-priority-urgent: var(--priority-urgent);
 
+  /* radius scale (shadcn components use rounded-sm/md/lg/xl) */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --radius-card: var(--radius-card);
   --radius-input: var(--radius-input);
   --radius-chip: var(--radius-chip);
@@ -144,11 +154,12 @@
   --shadow-elevation: var(--shadow-elevation);
   --shadow-popover: var(--shadow-popover);
 
-  /* Fonts are wired via next/font CSS variables in app/layout.tsx.
-     Cabinet Grotesk (Fontshare) is a follow-up; it falls back to Hanken for now. */
+  /* Fonts — next/font sets --font-cabinet / --font-hanken / --font-plex on <html>.
+     The prompt-facing names are --font-display / --font-body / --font-mono. */
+  --font-display: var(--font-cabinet), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, SFMono-Regular, monospace;
   --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-cabinet, var(--font-hanken)), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
@@ -158,7 +169,7 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: var(--font-sans);
+    font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }

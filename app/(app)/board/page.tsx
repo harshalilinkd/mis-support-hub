@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/session";
 import { PageHeader } from "@/components/shell/page-header";
 
 export const metadata: Metadata = { title: "Board" };
@@ -9,8 +9,8 @@ export const metadata: Metadata = { title: "Board" };
 const COLUMNS = ["Open", "In Progress", "Resolved", "Closed"] as const;
 
 export default async function BoardPage() {
-  const session = await auth();
-  if (session?.user?.role === "USER") redirect("/my");
+  const user = await getCurrentUser();
+  if (!user || user.role === "USER") redirect("/my");
 
   return (
     <div>

@@ -151,7 +151,8 @@ export const tickets = pgTable("tickets", {
     .defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
-    .defaultNow(),
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
 
 export const ticketComments = pgTable("ticket_comments", {

@@ -1,11 +1,21 @@
 import NextAuth from "next-auth";
+import { NextResponse } from "next/server";
 
 import { authConfig } from "@/lib/auth.config";
+import { DEV_STUB_ENABLED } from "@/lib/dev-session";
 
 // Edge middleware uses the DB-free config. It reads the JWT session cookie
 // (signed by the full instance in lib/auth.ts) and redirects unauthenticated
 // requests to /login via the `authorized` callback + pages.signIn.
-export const { auth: middleware } = NextAuth(authConfig);
+const { auth } = NextAuth(authConfig);
+
+// In dev with DEV_AUTH_STUB=true, bypass auth entirely so the shell renders
+// without Google OAuth. This branch can never run in production (see dev-session).
+export default DEV_STUB_ENABLED
+  ? function middleware() {
+      return NextResponse.next();
+    }
+  : auth;
 
 export const config = {
   matcher: [
