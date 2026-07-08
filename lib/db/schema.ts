@@ -1,6 +1,6 @@
-import { sql } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   pgEnum,
   pgSequence,
@@ -56,7 +56,7 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number];
  * Global sequential ticket number — MIS-1001, MIS-1002, ...
  * Numbers come from this sequence, never from a row count (CLAUDE.md §9).
  * ------------------------------------------------------------------ */
-export const ticketNumberSeq = pgSequence("mis_ticket_seq", {
+export const ticketSeq = pgSequence("ticket_seq", {
   startWith: 1001,
   increment: 1,
 });
@@ -130,10 +130,10 @@ export const verificationTokens = pgTable(
  * ------------------------------------------------------------------ */
 export const tickets = pgTable("tickets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  number: text("number")
-    .notNull()
-    .unique()
-    .default(sql`'MIS-' || nextval('mis_ticket_seq')`),
+  // Generated in the insert path via nextval('ticket_seq') — see lib/db/queries.ts
+  // (createTicket). No column default: numbers must come from the sequence,
+  // never a row count (CLAUDE.md §9).
+  number: text("number").notNull().unique(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   department: departmentEnum("department").notNull(),
@@ -153,7 +153,11 @@ export const tickets = pgTable("tickets", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (t) => [
+  index("tickets_status_idx").on(t.status),
+  index("tickets_assigned_to_idx").on(t.assignedTo),
+  index("tickets_created_by_idx").on(t.createdBy),
+]);
 
 export const ticketComments = pgTable("ticket_comments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -167,7 +171,7 @@ export const ticketComments = pgTable("ticket_comments", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => [index("ticket_comments_ticket_id_idx").on(t.ticketId)]);
 
 export const ticketAttachments = pgTable("ticket_attachments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -204,7 +208,7 @@ export const ticketActivity = pgTable("ticket_activity", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => [index("ticket_activity_ticket_id_idx").on(t.ticketId)]);
 
 /* ------------------------------------------------------------------ *
  * Inferred row types
