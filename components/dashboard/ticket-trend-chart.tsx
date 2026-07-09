@@ -8,11 +8,17 @@ const W = 640;
 const H = 180;
 const PAD = { l: 6, r: 6, t: 14, b: 22 };
 
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** Deterministic "Jun 10" from a "YYYY-MM-DD" key. No locale/timezone/Date, so
+ *  the SSR and client renders are byte-identical (avoids a hydration mismatch —
+ *  toLocaleDateString used the server vs browser locale, e.g. "10 Jun" vs "Jun 10"). */
 function fmtDay(dateStr: string): string {
-  return new Date(`${dateStr}T12:00:00Z`).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const [, month, day] = dateStr.split("-");
+  return `${MONTHS[Number(month) - 1]} ${Number(day)}`;
 }
 
 /**

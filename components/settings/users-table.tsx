@@ -6,9 +6,9 @@ import { toast } from "sonner";
 
 import { setUserActive, updateUserRole } from "@/lib/actions/users";
 import type { Department, Role } from "@/lib/db/schema";
-import { formatRelative } from "@/lib/format";
 import { ROLE_LABELS, ROLES } from "@/lib/roles";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
+import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,7 +162,7 @@ export function UsersTable({
                 </TableCell>
 
                 <TableCell className="hidden sm:table-cell text-xs text-text-muted">
-                  {formatRelative(u.createdAt)}
+                  <RelativeTime date={u.createdAt} />
                 </TableCell>
 
                 <TableCell className="pr-4 text-right">
