@@ -204,6 +204,30 @@ export async function logActivity(args: {
   });
 }
 
+export async function addAttachment(args: {
+  ticketId: string;
+  commentId?: string | null;
+  url: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: string;
+}) {
+  const [row] = await db
+    .insert(ticketAttachments)
+    .values({
+      ticketId: args.ticketId,
+      commentId: args.commentId ?? null,
+      url: args.url,
+      filename: args.filename,
+      contentType: args.contentType,
+      sizeBytes: args.sizeBytes,
+      uploadedBy: args.uploadedBy,
+    })
+    .returning();
+  return row;
+}
+
 /* ------------------------------------------------------------------ *
  * Ticket reads
  * ------------------------------------------------------------------ */

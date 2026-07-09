@@ -108,6 +108,16 @@ export async function assignTicket(
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
 
+  // No-op guard (mirrors updateStatus/setPriority): don't write a spurious
+  // ASSIGNED activity row or re-fire the notification when nothing changes.
+  if ((ticket.assignedTo ?? null) === (parsed.data.assigneeId ?? null)) {
+    return fail(
+      parsed.data.assigneeId
+        ? "Ticket is already assigned to that person."
+        : "Ticket is already unassigned."
+    );
+  }
+
   let toName: string | null = null;
   if (parsed.data.assigneeId) {
     const assignee = await q.getUserById(parsed.data.assigneeId);
