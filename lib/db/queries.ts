@@ -264,6 +264,10 @@ const ticketListSelect = {
   createdByName: creatorUser.name,
   assignedToId: tickets.assignedTo,
   assignedToName: assigneeUser.name,
+  commentCount:
+    sql<number>`(select count(*) from ${ticketComments} where ${ticketComments.ticketId} = ${tickets.id})`.mapWith(
+      Number
+    ),
 };
 
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
@@ -397,6 +401,11 @@ export async function getTicketByNumber(
 
   return { ...ticket, comments, attachments, activity };
 }
+
+/** The shape returned by getTicketByNumber (non-null). */
+export type TicketDetail = NonNullable<
+  Awaited<ReturnType<typeof getTicketByNumber>>
+>;
 
 export interface DashboardStats {
   open: number;

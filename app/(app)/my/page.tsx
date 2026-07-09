@@ -1,19 +1,35 @@
 import type { Metadata } from "next";
 
+import { requireUser } from "@/lib/authz";
+import { listMyTickets } from "@/lib/db/queries";
+import { toIso } from "@/lib/format";
 import { PageHeader } from "@/components/shell/page-header";
+import { MyTicketsView } from "@/components/tickets/my-tickets-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
 
-export default function MyTicketsPage() {
+export default async function MyTicketsPage() {
+  const user = await requireUser();
+  const rows = await listMyTickets(user.id);
+
+  const tickets = rows.map((r) => ({
+    number: r.number,
+    title: r.title,
+    department: r.department,
+    status: r.status,
+    priority: r.priority,
+    updatedAt: toIso(r.updatedAt),
+    assignedToName: r.assignedToName,
+    commentCount: r.commentCount,
+  }));
+
   return (
     <div>
       <PageHeader
         title="My Tickets"
-        description="Tickets you've raised. The filterable list arrives in a later phase."
+        description="Tickets you've raised, most recent first."
       />
-      <div className="rounded-[var(--radius-card)] border border-dashed border-border p-10 text-center text-sm text-text-muted">
-        No tickets yet — raise one from “Raise Ticket”.
-      </div>
+      <MyTicketsView tickets={tickets} />
     </div>
   );
 }

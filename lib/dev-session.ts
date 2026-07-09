@@ -16,12 +16,15 @@ import type { Role } from "@/lib/db/schema";
 export const DEV_STUB_ENABLED =
   process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_STUB === "true";
 
-// Optional override to exercise role-gated UI in dev without real accounts:
-// DEV_STUB_ROLE=USER | MIS_STAFF | MIS_ADMIN (defaults to MIS_ADMIN).
+// Optional overrides to exercise role-gated / owner-scoped UI in dev without
+// real accounts: DEV_STUB_ROLE=USER|MIS_STAFF|MIS_ADMIN (default MIS_ADMIN),
+// and DEV_STUB_ID=<a real users.id> to impersonate a seeded user.
 const stubRole = (process.env.DEV_STUB_ROLE as Role | undefined) || "MIS_ADMIN";
+const stubId =
+  process.env.DEV_STUB_ID || "00000000-0000-0000-0000-000000000000";
 
 export const DEV_STUB_USER = {
-  id: "00000000-0000-0000-0000-000000000000",
+  id: stubId,
   role: stubRole,
   name: "Dev User",
   email: "dev@localhost",

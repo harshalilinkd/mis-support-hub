@@ -35,7 +35,7 @@ function revalidateTicketRoutes(number?: string) {
 /** Raise a ticket — any authenticated user (§6). */
 export async function createTicket(
   input: unknown
-): Promise<ActionResult<{ number: string }>> {
+): Promise<ActionResult<{ id: string; number: string }>> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
 
@@ -44,7 +44,8 @@ export async function createTicket(
 
   const ticket = await q.createTicket({ ...parsed.data, createdBy: user.id });
   revalidateTicketRoutes(ticket.number);
-  return ok({ number: ticket.number });
+  // id is returned so the caller can link freshly-uploaded attachments (attachTo).
+  return ok({ id: ticket.id, number: ticket.number });
 }
 
 /** Change status — MIS only, enforcing the §5 state machine. */

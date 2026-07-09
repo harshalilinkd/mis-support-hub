@@ -1,0 +1,30 @@
+/** Normalize a Date or ISO string to an ISO string (safe across drizzle modes). */
+export function toIso(value: Date | string): string {
+  return typeof value === "string" ? value : new Date(value).toISOString();
+}
+
+/** "just now", "2h ago", "3 days ago" (CLAUDE.md §9 — relative time in lists). */
+export function formatRelative(value: Date | string): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const diffMs = date.getTime() - Date.now();
+  const sign = diffMs < 0 ? -1 : 1;
+  const sec = Math.round(Math.abs(diffMs) / 1000);
+  const min = Math.round(sec / 60);
+  const hr = Math.round(min / 60);
+  const day = Math.round(hr / 24);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+  if (sec < 45) return "just now";
+  if (min < 60) return rtf.format(sign * min, "minute");
+  if (hr < 24) return rtf.format(sign * hr, "hour");
+  if (day < 30) return rtf.format(sign * day, "day");
+  const month = Math.round(day / 30);
+  if (month < 12) return rtf.format(sign * month, "month");
+  return rtf.format(sign * Math.round(month / 12), "year");
+}
+
+/** Absolute, locale-formatted date-time (for tooltips). */
+export function formatDateTime(value: Date | string): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
