@@ -45,7 +45,7 @@ function FieldError({ message }: { message?: string }) {
 
 function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium">
+    <label htmlFor={htmlFor} className="mb-1 block text-sm font-medium">
       {children}
     </label>
   );
@@ -111,8 +111,13 @@ export function NewTicketForm({ requester }: { requester: string }) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-5 rounded-[var(--radius-card)] border border-border bg-surface p-6 shadow-[var(--shadow-elevation)]"
+      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]"
     >
+      <div className="flex flex-wrap items-center gap-x-1.5 border-b border-border pb-3 text-xs text-text-muted">
+        <span>Raising as</span>
+        <span className="font-medium text-foreground">{requester}</span>
+      </div>
+
       <div>
         <Label htmlFor="title">Summary</Label>
         <Input
@@ -124,7 +129,7 @@ export function NewTicketForm({ requester }: { requester: string }) {
         <FieldError message={errors.title?.message} />
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label>Department</Label>
           <Controller
@@ -183,11 +188,6 @@ export function NewTicketForm({ requester }: { requester: string }) {
       </div>
 
       <div>
-        <Label htmlFor="requester">Requester</Label>
-        <Input id="requester" value={requester} readOnly disabled className="opacity-80" />
-      </div>
-
-      <div>
         <Label htmlFor="sheetLink">Sheet link (optional)</Label>
         <Input
           id="sheetLink"
@@ -197,8 +197,7 @@ export function NewTicketForm({ requester }: { requester: string }) {
           {...register("sheetLink")}
         />
         <p className="mt-1 text-xs text-text-muted">
-          Most issues reference a specific Google Sheet, AppSheet, or Apps Script —
-          paste the link so MIS can jump straight to it.
+          Link a Google Sheet, AppSheet, or Apps Script so MIS can jump to it.
         </p>
         <FieldError message={errors.sheetLink?.message} />
       </div>
@@ -207,7 +206,7 @@ export function NewTicketForm({ requester }: { requester: string }) {
         <Label htmlFor="description">Describe the problem</Label>
         <Textarea
           id="description"
-          rows={5}
+          rows={4}
           placeholder="What's happening, what you expected, and any steps to reproduce."
           disabled={pending}
           {...register("description")}
@@ -216,15 +215,19 @@ export function NewTicketForm({ requester }: { requester: string }) {
       </div>
 
       <div>
-        <Label>Attachments</Label>
+        <Label>
+          Attachments{" "}
+          <span className="font-normal text-text-muted">(optional)</span>
+        </Label>
         <FileDropzone
           onChange={setAttachments}
           onBusyChange={setUploading}
           disabled={pending}
+          compact
         />
       </div>
 
-      <div className="-mx-6 flex justify-end gap-2 border-t border-border px-6 pt-5">
+      <div className="-mx-5 flex justify-end gap-2 border-t border-border px-5 pt-4">
         <Button
           type="button"
           variant="ghost"

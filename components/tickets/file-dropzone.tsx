@@ -35,11 +35,13 @@ export function FileDropzone({
   onBusyChange,
   disabled = false,
   maxFiles = 8,
+  compact = false,
 }: {
   onChange: (metas: AttachmentMeta[]) => void;
   onBusyChange?: (busy: boolean) => void;
   disabled?: boolean;
   maxFiles?: number;
+  compact?: boolean;
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -162,7 +164,8 @@ export function FileDropzone({
           }
         }}
         className={cn(
-          "flex flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed px-4 py-8 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex flex-col items-center justify-center gap-1.5 rounded-[var(--radius-card)] border border-dashed px-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          compact ? "py-5" : "py-8",
           disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
           dragOver
             ? "border-primary bg-accent-soft"
