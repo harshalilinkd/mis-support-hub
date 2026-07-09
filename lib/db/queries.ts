@@ -78,6 +78,27 @@ export async function ensureUserRow(u: {
     .onConflictDoNothing();
 }
 
+/** Admin-created account: email + password, with an explicit role/department. */
+export async function insertUserWithRole(args: {
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: Role;
+  department: Department | null;
+}) {
+  const [row] = await db
+    .insert(users)
+    .values({
+      name: args.name,
+      email: args.email.toLowerCase(),
+      passwordHash: args.passwordHash,
+      role: args.role,
+      department: args.department,
+    })
+    .returning();
+  return row;
+}
+
 /** Active MIS staff/admin — candidates a ticket can be assigned to. */
 export async function listAssignableUsers() {
   return db

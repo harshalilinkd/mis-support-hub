@@ -1,16 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import {
+  getUserByEmail,
+  insertUserWithRole,
   setUserActiveStatus,
   setUserProfile,
   setUserRole,
 } from "@/lib/db/queries";
+import { isEmailDomainAllowed } from "@/lib/email-domains";
 import { getCurrentUser } from "@/lib/session";
 import { DEPARTMENTS } from "@/lib/validators/ticket";
-import { setActiveSchema, updateRoleSchema } from "@/lib/validators/user";
+import {
+  createUserSchema,
+  setActiveSchema,
+  updateRoleSchema,
+} from "@/lib/validators/user";
 import { fail, ok, type ActionResult } from "./result";
 
 const schema = z.object({
@@ -59,6 +67,49 @@ export async function updateUserRole(
   }
 
   await setUserRole(parsed.data.userId, parsed.data.role);
+  revalidatePath("/settings/users");
+  return ok(undefined);
+}
+
+/**
+ * Create a new user (email + password) with a chosen role/department. Enforces
+ * the company-domain allowlist (CLAUDE.md §7) and rejects duplicate emails.
+ */
+export async function adminCreateUser(input: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  department: string | null;
+}): Promise<ActionResult> {
+  const admin = await getCurrentUser();
+  if (!admin || admin.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can add users.");
+  }
+
+  const parsed = createUserSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(parsed.error.issues[0]?.message ?? "Check the form and try again.");
+  }
+  const { name, email, password, role, department } = parsed.data;
+
+  if (!isEmailDomainAllowed(email)) {
+    return fail("Use an approved company email domain.");
+  }
+
+  const existing = await getUserByEmail(email);
+  if (existing) {
+    return fail("A user with this email already exists.");
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  try {
+    await insertUserWithRole({ name, email, passwordHash, role, department });
+  } catch {
+    // Unique-constraint race (two admins at once) or a transient DB error.
+    return fail("Could not create the user. Please try again.");
+  }
+
   revalidatePath("/settings/users");
   return ok(undefined);
 }

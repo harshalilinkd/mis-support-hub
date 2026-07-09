@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { DEPARTMENTS } from "./ticket";
+
 /**
  * Mirrors the `role` enum in lib/db/schema.ts, kept independent so this
  * validator can be imported anywhere without pulling in the DB driver
@@ -18,3 +20,16 @@ export const setActiveSchema = z.object({
   isActive: z.boolean(),
 });
 export type SetActiveInput = z.infer<typeof setActiveSchema>;
+
+/** Admin "add user": an email + password account with a chosen role/department. */
+export const createUserSchema = z.object({
+  name: z.string().trim().min(1, "Enter a name").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  password: z
+    .string()
+    .min(8, "Use at least 8 characters")
+    .max(200, "Keep it under 200 characters"),
+  role: z.enum(ROLE_VALUES),
+  department: z.enum(DEPARTMENTS).nullable(),
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;

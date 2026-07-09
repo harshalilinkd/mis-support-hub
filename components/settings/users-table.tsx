@@ -83,6 +83,17 @@ export function UsersTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {users.length === 0 ? (
+            <TableRow className="hover:bg-transparent">
+              <TableCell
+                colSpan={8}
+                className="py-10 text-center text-sm text-text-muted"
+              >
+                No users yet — use the Add user button to create the first
+                account.
+              </TableCell>
+            </TableRow>
+          ) : null}
           {users.map((u) => {
             const isSelf = u.id === currentUserId;
             const rowBusy = busyId === u.id && isPending;

@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/authz";
 import { listAllUsers } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
 import { PageHeader } from "@/components/shell/page-header";
+import { AddUserDialog } from "@/components/settings/add-user-dialog";
 import { UsersTable, type AdminUserView } from "@/components/settings/users-table";
 
 export const metadata: Metadata = { title: "Users" };
@@ -23,7 +24,9 @@ export default async function UsersSettingsPage() {
       <PageHeader
         title="Users"
         description="Manage who can access the hub, their role, and their access."
-      />
+      >
+        <AddUserDialog />
+      </PageHeader>
       <UsersTable users={users} currentUserId={admin.id} />
     </div>
   );
