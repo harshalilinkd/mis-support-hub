@@ -32,10 +32,12 @@ type Item = {
  */
 export function FileDropzone({
   onChange,
+  onBusyChange,
   disabled = false,
   maxFiles = 8,
 }: {
   onChange: (metas: AttachmentMeta[]) => void;
+  onBusyChange?: (busy: boolean) => void;
   disabled?: boolean;
   maxFiles?: number;
 }) {
@@ -60,6 +62,14 @@ export function FileDropzone({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doneKey]);
+
+  // Report in-flight uploads so parents can block submit until they finish.
+  const busy = items.some((i) => i.status === "uploading");
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
 
   const update = (id: string, patch: Partial<Item>) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));

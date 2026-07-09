@@ -54,6 +54,7 @@ function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: str
 export function NewTicketForm({ requester }: { requester: string }) {
   const router = useRouter();
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const {
@@ -72,6 +73,10 @@ export function NewTicketForm({ requester }: { requester: string }) {
   });
 
   const onSubmit = (values: CreateTicketInput) => {
+    if (uploading) {
+      toast.error("Please wait for uploads to finish.");
+      return;
+    }
     startTransition(async () => {
       const res = await createTicket(values);
       if (!res.ok) {
@@ -79,10 +84,26 @@ export function NewTicketForm({ requester }: { requester: string }) {
         return;
       }
       const { id, number } = res.data;
+
+      // Link uploaded blobs; count failures without letting a thrown/failed
+      // attach abort the success path (the ticket already exists).
+      let failed = 0;
       if (attachments.length > 0) {
-        await Promise.all(attachments.map((m) => attachTo(id, null, m)));
+        const results = await Promise.allSettled(
+          attachments.map((m) => attachTo(id, null, m))
+        );
+        failed = results.filter(
+          (r) => r.status === "rejected" || !r.value.ok
+        ).length;
       }
-      toast.success(`Ticket ${number} created`);
+
+      if (failed > 0) {
+        toast.warning(
+          `Ticket ${number} created, but ${failed} attachment(s) couldn't be attached — reattach them on the ticket.`
+        );
+      } else {
+        toast.success(`Ticket ${number} created`);
+      }
       router.push(`/tickets/${number}`);
     });
   };
@@ -193,7 +214,11 @@ export function NewTicketForm({ requester }: { requester: string }) {
 
       <div>
         <Label>Attachments</Label>
-        <FileDropzone onChange={setAttachments} disabled={pending} />
+        <FileDropzone
+          onChange={setAttachments}
+          onBusyChange={setUploading}
+          disabled={pending}
+        />
       </div>
 
       <div className="flex justify-end gap-2">
@@ -205,8 +230,8 @@ export function NewTicketForm({ requester }: { requester: string }) {
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Raise ticket"}
+        <Button type="submit" disabled={pending || uploading}>
+          {pending ? "Creating…" : uploading ? "Uploading…" : "Raise ticket"}
         </Button>
       </div>
     </form>

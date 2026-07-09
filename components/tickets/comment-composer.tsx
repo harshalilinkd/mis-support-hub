@@ -17,6 +17,7 @@ export function CommentComposer({ ticketId }: { ticketId: string }) {
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [showDrop, setShowDrop] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function submit() {
@@ -25,21 +26,37 @@ export function CommentComposer({ ticketId }: { ticketId: string }) {
       toast.error("Write a comment first.");
       return;
     }
+    if (uploading) {
+      toast.error("Please wait for uploads to finish.");
+      return;
+    }
     startTransition(async () => {
       const res = await addComment(ticketId, text);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
+      // Link uploaded blobs; a thrown/failed attach must not lose the success
+      // state (the comment already exists) — surface a partial-failure warning.
+      let failed = 0;
       if (attachments.length > 0) {
-        await Promise.all(
+        const results = await Promise.allSettled(
           attachments.map((m) => attachTo(ticketId, res.data.id, m))
         );
+        failed = results.filter(
+          (r) => r.status === "rejected" || !r.value.ok
+        ).length;
       }
       setBody("");
       setAttachments([]);
       setShowDrop(false);
-      toast.success("Comment added");
+      if (failed > 0) {
+        toast.warning(
+          `Comment added, but ${failed} attachment(s) couldn't be attached.`
+        );
+      } else {
+        toast.success("Comment added");
+      }
       router.refresh();
     });
   }
@@ -53,7 +70,13 @@ export function CommentComposer({ ticketId }: { ticketId: string }) {
         rows={3}
         disabled={pending}
       />
-      {showDrop ? <FileDropzone onChange={setAttachments} disabled={pending} /> : null}
+      {showDrop ? (
+        <FileDropzone
+          onChange={setAttachments}
+          onBusyChange={setUploading}
+          disabled={pending}
+        />
+      ) : null}
       <div className="flex items-center justify-between">
         <Button
           type="button"
@@ -65,7 +88,11 @@ export function CommentComposer({ ticketId }: { ticketId: string }) {
           <Paperclip className="size-4" />
           {showDrop ? "Hide files" : "Attach files"}
         </Button>
-        <Button type="button" onClick={submit} disabled={pending || !body.trim()}>
+        <Button
+          type="button"
+          onClick={submit}
+          disabled={pending || uploading || !body.trim()}
+        >
           {pending ? "Posting…" : "Comment"}
         </Button>
       </div>
