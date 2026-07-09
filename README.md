@@ -53,6 +53,33 @@ See [`.env.example`](./.env.example). Required for a full run:
 | `RESEND_API_KEY` / `EMAIL_FROM` | Email. Unset = emails skipped (non-fatal) |
 | `NEXT_PUBLIC_APP_URL` | Public base URL |
 
+## Notifications
+
+Events fan out through a channel-agnostic dispatcher in
+[`lib/notifications`](./lib/notifications): every resolution/assignment/comment
+writes an **in-app** notification (the topbar bell) and, where applicable, sends
+**email** via Resend. All sends are best-effort — a failure is logged and never
+rolls back the DB mutation.
+
+**Email (Resend) setup**
+
+1. Create a Resend account and **add + verify your sending domain** (Resend →
+   Domains → add DNS records: SPF/DKIM). For local testing you can use Resend's
+   `onboarding@resend.dev` sender without a domain.
+2. Create an API key and set env vars:
+   - `RESEND_API_KEY` — the API key.
+   - `EMAIL_FROM` — e.g. `MIS Support <support@yourdomain.com>` (must be on the
+     verified domain in production).
+   - `NEXT_PUBLIC_APP_URL` — used to build the "View ticket" links in emails.
+3. If `RESEND_API_KEY` is unset, emails are skipped (in-app notifications still
+   work).
+
+**WhatsApp** is a stubbed provider ([`lib/notifications/whatsapp.ts`](./lib/notifications/whatsapp.ts))
+that logs intent only. It implements the same `NotificationProvider` interface, so
+wiring the real **WhatsApp Business (Cloud) API** is a drop-in replacement — see
+the `TODO(P-later)` in that file (needs `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID`
+env vars and a phone field on `users`).
+
 ## Scripts
 
 | Script | Does |

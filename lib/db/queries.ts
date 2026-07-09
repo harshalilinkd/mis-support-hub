@@ -15,9 +15,11 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "./index";
 import {
   type Department,
+  type NotificationType,
   type Priority,
   type Role,
   type Status,
+  notifications,
   ticketActivity,
   ticketAttachments,
   ticketComments,
@@ -490,3 +492,50 @@ export async function dashboardStats(): Promise<DashboardStats> {
     }
   );
 }
+
+/* ------------------------------------------------------------------ *
+ * In-app notifications (P8)
+ * ------------------------------------------------------------------ */
+export async function createNotification(args: {
+  userId: string;
+  type: NotificationType;
+  ticketId?: string | null;
+  ticketNumber?: string | null;
+  title: string;
+  body?: string | null;
+}) {
+  await db.insert(notifications).values({
+    userId: args.userId,
+    type: args.type,
+    ticketId: args.ticketId ?? null,
+    ticketNumber: args.ticketNumber ?? null,
+    title: args.title,
+    body: args.body ?? null,
+  });
+}
+
+export async function listNotifications(userId: string, limit = 20) {
+  return db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+}
+
+export async function unreadNotificationCount(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  return row?.count ?? 0;
+}
+
+export async function markAllNotificationsRead(userId: string) {
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+}
+
+export type NotificationRow = Awaited<ReturnType<typeof listNotifications>>[number];

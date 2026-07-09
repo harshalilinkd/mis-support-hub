@@ -73,14 +73,16 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
     apply(params);
   }
 
-  // Debounced search → URL.
+  // Debounced search → URL. Read the LIVE url at fire time (not the captured
+  // snapshot) so a facet change or Clear during the debounce isn't reverted.
   useEffect(() => {
     const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(window.location.search);
       const q = search.trim();
+      if (q === (params.get("q") ?? "")) return;
       if (q) params.set("q", q);
       else params.delete("q");
-      if (params.toString() !== searchParams.toString()) apply(params);
+      apply(params);
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

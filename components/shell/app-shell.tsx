@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { NotificationBell, type BellNotification } from "./notification-bell";
 import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
@@ -58,9 +59,13 @@ function initials(name?: string | null, email?: string | null) {
 
 export function AppShell({
   user,
+  notifications,
+  unreadCount,
   children,
 }: {
   user: SessionUser;
+  notifications: BellNotification[];
+  unreadCount: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -161,6 +166,10 @@ export function AppShell({
           </div>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <NotificationBell
+              notifications={notifications}
+              unreadCount={unreadCount}
+            />
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

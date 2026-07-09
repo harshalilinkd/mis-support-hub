@@ -8,7 +8,11 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function shell(title: string, bodyHtml: string, cta?: { href: string; label: string }): string {
+function shell(
+  title: string,
+  bodyHtml: string,
+  cta?: { href: string; label: string }
+): string {
   const button = cta
     ? `<p style="margin:24px 0"><a href="${escapeHtml(cta.href)}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block">${escapeHtml(cta.label)}</a></p>`
     : "";
@@ -36,11 +40,11 @@ export function renderTemplate(input: NotifyInput): {
   switch (input.template) {
     case "TICKET_RESOLVED":
       return {
-        subject: `Issue ${number} resolved — please verify`,
+        subject: `Issue ${number} was resolved — please verify`,
         html: shell(
-          `Issue ${number} resolved`,
-          `<p style="margin:0;line-height:1.6">Your ticket <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was resolved by ${escapeHtml(input.data.resolvedBy ?? "the MIS team")}.</p>
-           <p style="margin:12px 0 0;line-height:1.6">Please verify the fix. If it isn't resolved, you can reopen it.</p>`,
+          `Issue ${number} was resolved`,
+          `<p style="margin:0;line-height:1.6">Issue <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was resolved by ${escapeHtml(input.data.resolvedBy ?? "the MIS team")}.</p>
+           <p style="margin:12px 0 0;line-height:1.6">Please verify the fix${link ? ` — ${escapeHtml(link)}` : ""}. If it isn't resolved, you can reopen it.</p>`,
           cta
         ),
       };
@@ -53,7 +57,7 @@ export function renderTemplate(input: NotifyInput): {
           cta
         ),
       };
-    case "TICKET_COMMENTED":
+    case "NEW_COMMENT":
       return {
         subject: `New comment on ${number}`,
         html: shell(

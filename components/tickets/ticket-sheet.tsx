@@ -23,21 +23,33 @@ export function TicketSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const [detail, setDetail] = useState<TicketDetailData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
-  const load = useCallback(async (n: string) => {
-    setLoading(true);
+  // Reload the currently-open ticket (used after a mutation inside the Sheet).
+  const reload = useCallback(async (n: string) => {
     const res = await loadTicketDetail(n);
     setDetail(res.ok ? res.data : null);
-    setLoading(false);
+    setStatus(res.ok ? "ready" : "error");
   }, []);
 
+  // Load on open / when the number changes, ignoring stale/out-of-order results.
   useEffect(() => {
-    if (number) {
-      setDetail(null);
-      void load(number);
-    }
-  }, [number, load]);
+    if (!number) return;
+    let active = true;
+    setDetail(null);
+    setStatus("loading");
+    void loadTicketDetail(number).then((res) => {
+      if (!active) return;
+      setDetail(res.ok ? res.data : null);
+      setStatus(res.ok ? "ready" : "error");
+    });
+    return () => {
+      active = false;
+    };
+  }, [number]);
+
+  // Only render the detail once the loaded data matches the current number.
+  const showDetail = status === "ready" && detail && detail.number === number;
 
   return (
     <Sheet open={!!number} onOpenChange={onOpenChange}>
@@ -46,21 +58,26 @@ export function TicketSheet({
         className="w-full gap-0 overflow-y-auto p-6 sm:max-w-xl"
       >
         <SheetTitle className="sr-only">{number ?? "Ticket"}</SheetTitle>
-        {loading || !detail ? (
+        {showDetail ? (
+          <TicketDetail
+            ticket={detail}
+            currentUser={currentUser}
+            onMutate={() => {
+              if (number) void reload(number);
+            }}
+          />
+        ) : status === "error" ? (
+          <div className="grid h-full place-items-center p-6 text-center text-sm text-text-muted">
+            Couldn&apos;t load this ticket. It may have been removed or you may not
+            have access.
+          </div>
+        ) : (
           <div className="space-y-4 pt-6">
             <Skeleton className="h-5 w-40" />
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-28 w-full" />
             <Skeleton className="h-20 w-full" />
           </div>
-        ) : (
-          <TicketDetail
-            ticket={detail}
-            currentUser={currentUser}
-            onMutate={() => {
-              if (number) void load(number);
-            }}
-          />
         )}
       </SheetContent>
     </Sheet>

@@ -57,7 +57,7 @@ export function StatusControl({
           <ChevronDown className="size-3 text-text-muted" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" onClick={stop}>
         {targets.map((s) => (
           <DropdownMenuItem key={s} onSelect={() => change(s)}>
             Move to {humanizeEnum(s)}
@@ -101,7 +101,7 @@ export function PriorityControl({
           <ChevronDown className="size-3 text-text-muted" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" onClick={stop}>
         {PRIORITIES.map((p) => (
           <DropdownMenuItem key={p} onSelect={() => change(p)}>
             {humanizeEnum(p)}
@@ -158,7 +158,11 @@ export function AssigneeControl({
           <ChevronDown className="size-3 text-text-muted" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+      <DropdownMenuContent
+        align="start"
+        className="max-h-64 overflow-y-auto"
+        onClick={stop}
+      >
         <DropdownMenuItem onSelect={() => change(null)}>
           Unassigned
         </DropdownMenuItem>

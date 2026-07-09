@@ -52,6 +52,14 @@ export const ACTIVITY_TYPES = [
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
+/** In-app notification kinds (P8). */
+export const NOTIFICATION_TYPES = [
+  "TICKET_RESOLVED",
+  "TICKET_ASSIGNED",
+  "NEW_COMMENT",
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
 /* ------------------------------------------------------------------ *
  * Global sequential ticket number — MIS-1001, MIS-1002, ...
  * Numbers come from this sequence, never from a row count (CLAUDE.md §9).
@@ -210,6 +218,29 @@ export const ticketActivity = pgTable("ticket_activity", {
     .defaultNow(),
 }, (t) => [index("ticket_activity_ticket_id_idx").on(t.ticketId)]);
 
+/** In-app notifications — one row per recipient per event (P8). */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").$type<NotificationType>().notNull(),
+    ticketId: uuid("ticket_id").references(() => tickets.id, {
+      onDelete: "cascade",
+    }),
+    ticketNumber: text("ticket_number"),
+    title: text("title").notNull(),
+    body: text("body"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("notifications_user_id_idx").on(t.userId)]
+);
+
 /* ------------------------------------------------------------------ *
  * Inferred row types
  * ------------------------------------------------------------------ */
@@ -223,3 +254,5 @@ export type TicketAttachment = typeof ticketAttachments.$inferSelect;
 export type NewTicketAttachment = typeof ticketAttachments.$inferInsert;
 export type TicketActivityRow = typeof ticketActivity.$inferSelect;
 export type NewTicketActivityRow = typeof ticketActivity.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
