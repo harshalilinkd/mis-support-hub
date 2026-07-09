@@ -49,6 +49,7 @@ export const ACTIVITY_TYPES = [
   "PRIORITY_CHANGED",
   "COMMENTED",
   "REOPENED",
+  "EDITED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

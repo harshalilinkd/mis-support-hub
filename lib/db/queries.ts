@@ -219,6 +219,37 @@ export async function addTicketComment(args: {
   return rows[0];
 }
 
+export async function updateTicketFields(args: {
+  ticketId: string;
+  actorId: string;
+  title: string;
+  description: string;
+  department: Department;
+  sheetLink: string | null;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({
+        title: args.title,
+        description: args.description,
+        department: args.department,
+        sheetLink: args.sheetLink,
+      })
+      .where(eq(tickets.id, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "EDITED",
+    }),
+  ]);
+}
+
+/** Delete a ticket — comments, attachments, activity, and notifications cascade. */
+export async function deleteTicketById(id: string) {
+  await db.delete(tickets).where(eq(tickets.id, id));
+}
+
 export async function logActivity(args: {
   ticketId: string;
   actorId: string;

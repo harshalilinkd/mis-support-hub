@@ -75,6 +75,38 @@ export const reopenTicketSchema = z.object({
 });
 export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
 
+export const deleteTicketSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+
+/** Editable fields for a ticket (reporter/admin). Priority stays MIS-only (§6). */
+export const editTicketSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(4, "Give it a short summary (min 4 characters)")
+    .max(160, "Keep the summary under 160 characters"),
+  description: z
+    .string()
+    .trim()
+    .min(10, "Describe the issue (min 10 characters)")
+    .max(5000),
+  department: z.enum(DEPARTMENTS),
+  sheetLink: z
+    .string()
+    .trim()
+    .url("Must be a valid URL")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v ? v : undefined)),
+});
+export type EditTicketInput = z.infer<typeof editTicketSchema>;
+
+export const updateTicketSchema = editTicketSchema.extend({
+  ticketId: z.string().uuid(),
+});
+export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
+
 /** Filters for list views (parsed from query params in the UI phases). */
 export const ticketFiltersSchema = z.object({
   status: z.enum(STATUSES).optional(),

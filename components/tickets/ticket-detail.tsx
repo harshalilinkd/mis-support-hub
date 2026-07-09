@@ -11,6 +11,7 @@ import { AttachmentGrid } from "./attachment-grid";
 import { PriorityChip, StatusChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
 import { ResolutionActions } from "./resolution-actions";
+import { TicketActions } from "./ticket-actions";
 
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -35,6 +36,8 @@ export function TicketDetail({
   const isAdmin = currentUser.role === "MIS_ADMIN";
   const showResolution =
     ticket.status === "RESOLVED" && (isReporter || isAdmin);
+  const canEdit = (isReporter || isAdmin) && ticket.status !== "CLOSED";
+  const canDelete = isAdmin || (isReporter && ticket.status === "OPEN");
 
   const attachments = ticket.attachments.map((a) => ({
     id: a.id,
@@ -48,12 +51,29 @@ export function TicketDetail({
     <div className="mx-auto max-w-3xl space-y-6 duration-200 animate-in fade-in slide-in-from-bottom-2">
       {/* Header */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-text-muted">
-            {ticket.number}
-          </span>
-          <StatusChip status={ticket.status} />
-          <PriorityChip priority={ticket.priority} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm text-text-muted">
+              {ticket.number}
+            </span>
+            <StatusChip status={ticket.status} />
+            <PriorityChip priority={ticket.priority} />
+          </div>
+          {canEdit || canDelete ? (
+            <TicketActions
+              ticketId={ticket.id}
+              number={ticket.number}
+              defaults={{
+                title: ticket.title,
+                description: ticket.description,
+                department: ticket.department,
+                sheetLink: ticket.sheetLink ?? "",
+              }}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onMutate={onMutate}
+            />
+          ) : null}
         </div>
         <h1 className="font-display text-2xl font-semibold tracking-tight">
           {ticket.title}

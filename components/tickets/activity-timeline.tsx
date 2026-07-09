@@ -27,6 +27,8 @@ function describe(a: ActivityRow): string {
       return `${actor} changed priority: ${humanize(a.fromValue)} → ${humanize(a.toValue)}`;
     case "REOPENED":
       return `${actor} reopened the ticket`;
+    case "EDITED":
+      return `${actor} edited the ticket`;
     default:
       return `${actor} updated the ticket`;
   }

@@ -16,9 +16,11 @@ import { canTransition } from "@/lib/ticket-state";
 import {
   assignTicketSchema,
   createTicketSchema,
+  deleteTicketSchema,
   reopenTicketSchema,
   updatePrioritySchema,
   updateStatusSchema,
+  updateTicketSchema,
 } from "@/lib/validators/ticket";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -209,6 +211,69 @@ export async function reopenTicket(ticketId: string): Promise<ActionResult> {
     from: ticket.status,
   });
 
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/** Edit a ticket's own fields — reporter or MIS_ADMIN, while not CLOSED. */
+export async function updateTicket(input: unknown): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+
+  const parsed = updateTicketSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+
+  const isReporter = ticket.createdBy === user.id;
+  const isAdmin = user.role === "MIS_ADMIN";
+  if (!isReporter && !isAdmin) {
+    return fail("You can only edit your own tickets.");
+  }
+  if (ticket.status === "CLOSED") {
+    return fail("A closed ticket can't be edited.");
+  }
+
+  await q.updateTicketFields({
+    ticketId: ticket.id,
+    actorId: user.id,
+    title: parsed.data.title,
+    description: parsed.data.description,
+    department: parsed.data.department,
+    sheetLink: parsed.data.sheetLink ?? null,
+  });
+
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Delete a ticket. The reporter may withdraw their own ticket while it's still
+ * OPEN (before MIS starts work); MIS_ADMIN may delete at any time.
+ */
+export async function deleteTicket(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+
+  const parsed = deleteTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+
+  const isReporter = ticket.createdBy === user.id;
+  const isAdmin = user.role === "MIS_ADMIN";
+  const canDelete = isAdmin || (isReporter && ticket.status === "OPEN");
+  if (!canDelete) {
+    return fail(
+      isReporter
+        ? "You can only delete a ticket while it's still open."
+        : "Only the reporter or an MIS admin can delete this ticket."
+    );
+  }
+
+  await q.deleteTicketById(ticket.id);
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);
 }
