@@ -28,8 +28,8 @@ export function CommentComposer({
 
   function submit() {
     const text = body.trim();
-    if (!text) {
-      toast.error("Write a comment first.");
+    if (!text && attachments.length === 0) {
+      toast.error("Write a comment or attach a file.");
       return;
     }
     if (uploading) {
@@ -37,17 +37,25 @@ export function CommentComposer({
       return;
     }
     startTransition(async () => {
-      const res = await addComment(ticketId, text);
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
+      // With text: post a comment and hang the files off it. Attachment-only:
+      // attach the files to the ticket itself (commentId null) so they show in
+      // the Attachments section — no empty comment is created.
+      let commentId: string | null = null;
+      if (text) {
+        const res = await addComment(ticketId, text);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        commentId = res.data.id;
       }
-      // Link uploaded blobs; a thrown/failed attach must not lose the success
-      // state (the comment already exists) — surface a partial-failure warning.
+
+      // Link uploaded files; a failed attach must not lose the success state
+      // (the comment already exists) — surface a partial-failure warning.
       let failed = 0;
       if (attachments.length > 0) {
         const results = await Promise.allSettled(
-          attachments.map((m) => attachTo(ticketId, res.data.id, m))
+          attachments.map((m) => attachTo(ticketId, commentId, m))
         );
         failed = results.filter(
           (r) => r.status === "rejected" || !r.value.ok
@@ -58,10 +66,12 @@ export function CommentComposer({
       setShowDrop(false);
       if (failed > 0) {
         toast.warning(
-          `Comment added, but ${failed} attachment(s) couldn't be attached.`
+          text
+            ? `Comment added, but ${failed} attachment(s) couldn't be attached.`
+            : `${failed} attachment(s) couldn't be attached.`
         );
       } else {
-        toast.success("Comment added");
+        toast.success(text ? "Comment added" : "Attachment added");
       }
       router.refresh();
       onDone?.();
@@ -98,9 +108,9 @@ export function CommentComposer({
         <Button
           type="button"
           onClick={submit}
-          disabled={pending || uploading || !body.trim()}
+          disabled={pending || uploading || (!body.trim() && attachments.length === 0)}
         >
-          {pending ? "Posting…" : "Comment"}
+          {pending ? "Saving…" : body.trim() ? "Comment" : "Attach"}
         </Button>
       </div>
     </div>

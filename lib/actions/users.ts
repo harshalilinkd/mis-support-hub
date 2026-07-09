@@ -7,15 +7,19 @@ import { z } from "zod";
 import {
   getUserByEmail,
   insertUserWithRole,
+  reassignReferencesAndDeleteUser,
   setUserActiveStatus,
   setUserProfile,
   setUserRole,
+  updateUserProfile,
 } from "@/lib/db/queries";
 import { isEmailDomainAllowed } from "@/lib/email-domains";
 import { getCurrentUser } from "@/lib/session";
 import { DEPARTMENTS } from "@/lib/validators/ticket";
 import {
   createUserSchema,
+  deleteUserSchema,
+  editUserSchema,
   setActiveSchema,
   updateRoleSchema,
 } from "@/lib/validators/user";
@@ -132,6 +136,75 @@ export async function setUserActive(
   }
 
   await setUserActiveStatus(parsed.data.userId, parsed.data.isActive);
+  revalidatePath("/settings/users");
+  return ok(undefined);
+}
+
+/**
+ * Edit a user's profile (name, email, department). Enforces the company-domain
+ * allowlist (CLAUDE.md §7) and rejects an email already used by someone else.
+ */
+export async function adminUpdateUser(input: {
+  userId: string;
+  name: string;
+  email: string;
+  department: string | null;
+}): Promise<ActionResult> {
+  const admin = await getCurrentUser();
+  if (!admin || admin.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can edit users.");
+  }
+
+  const parsed = editUserSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(parsed.error.issues[0]?.message ?? "Check the form and try again.");
+  }
+  const { userId, name, email, department } = parsed.data;
+
+  if (!isEmailDomainAllowed(email)) {
+    return fail("Use an approved company email domain.");
+  }
+
+  const existing = await getUserByEmail(email);
+  if (existing && existing.id !== userId) {
+    return fail("Another user already has this email.");
+  }
+
+  try {
+    await updateUserProfile({ id: userId, name, email, department });
+  } catch {
+    return fail("Could not update the user. Please try again.");
+  }
+
+  revalidatePath("/settings/users");
+  return ok(undefined);
+}
+
+/**
+ * Hard-delete a user. Blocked only for your own account. Any ticket history the
+ * user is part of (tickets, comments, activity, attachments) is reattributed to
+ * a "Deleted user" placeholder so the audit trail survives (CLAUDE.md §4);
+ * accounts/sessions/notifications cascade automatically.
+ */
+export async function adminDeleteUser(userId: string): Promise<ActionResult> {
+  const admin = await getCurrentUser();
+  if (!admin || admin.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can delete users.");
+  }
+
+  const parsed = deleteUserSchema.safeParse({ userId });
+  if (!parsed.success) return fail("Invalid request.");
+
+  if (parsed.data.userId === admin.id) {
+    return fail("You can't delete your own account.");
+  }
+
+  try {
+    await reassignReferencesAndDeleteUser(parsed.data.userId);
+  } catch {
+    return fail("Could not delete this user. Please try again.");
+  }
+
   revalidatePath("/settings/users");
   return ok(undefined);
 }

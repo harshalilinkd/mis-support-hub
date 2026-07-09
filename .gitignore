@@ -36,3 +36,6 @@ yarn-error.log*
 
 # drizzle
 /drizzle
+
+# local dev attachment uploads (production uses Vercel Blob)
+/public/uploads/

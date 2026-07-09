@@ -6,6 +6,7 @@ import {
   ilike,
   inArray,
   isNull,
+  ne,
   or,
   sql,
   type SQL,
@@ -30,6 +31,16 @@ import {
 /* ------------------------------------------------------------------ *
  * Users
  * ------------------------------------------------------------------ */
+
+/**
+ * Sentinel account that inherits a deleted user's ticket history so their
+ * tickets, comments, and audit rows survive the delete (CLAUDE.md §4). It can
+ * never sign in (inactive, no password / OAuth) and is hidden from the users
+ * list. The `.invalid` TLD is reserved by RFC 2606 so it can't collide with a
+ * real company address.
+ */
+export const DELETED_USER_EMAIL = "deleted-user@placeholder.invalid";
+
 export async function getUserById(id: string) {
   const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return row ?? null;
@@ -156,6 +167,8 @@ export async function listAllUsers() {
         ),
     })
     .from(users)
+    // Hide the "Deleted user" placeholder from the admin list — it's plumbing.
+    .where(ne(users.email, DELETED_USER_EMAIL))
     .orderBy(asc(users.name), asc(users.email));
 }
 
@@ -169,6 +182,87 @@ export async function setUserRole(id: string, role: Role) {
 /** Activate/deactivate a user (blocks sign-in). Caller must enforce MIS_ADMIN. */
 export async function setUserActiveStatus(id: string, isActive: boolean) {
   await db.update(users).set({ isActive }).where(eq(users.id, id));
+}
+
+/** Update a user's editable profile fields (admin). Caller must enforce MIS_ADMIN. */
+export async function updateUserProfile(args: {
+  id: string;
+  name: string;
+  email: string;
+  department: Department | null;
+}) {
+  await db
+    .update(users)
+    .set({
+      name: args.name,
+      email: args.email.toLowerCase(),
+      department: args.department,
+    })
+    .where(eq(users.id, args.id));
+}
+
+/** Get (or lazily create) the "Deleted user" placeholder row; returns its id. */
+async function getOrCreateDeletedPlaceholderId(): Promise<string> {
+  await db
+    .insert(users)
+    .values({
+      name: "Deleted user",
+      email: DELETED_USER_EMAIL,
+      role: "USER",
+      isActive: false,
+    })
+    .onConflictDoNothing({ target: users.email });
+
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, DELETED_USER_EMAIL))
+    .limit(1);
+  if (!row) throw new Error("Failed to provision the deleted-user placeholder.");
+  return row.id;
+}
+
+/**
+ * Reassign a user's ticket history to the "Deleted user" placeholder, then delete
+ * the account — in one atomic batch (neon-http has no interactive transactions,
+ * CLAUDE.md §9). Tickets/comments/activity/attachments are preserved but
+ * reattributed; open assignments are cleared. accounts/sessions/notifications
+ * cascade. Caller must enforce MIS_ADMIN and block self-deletion.
+ */
+export async function reassignReferencesAndDeleteUser(userId: string) {
+  const placeholderId = await getOrCreateDeletedPlaceholderId();
+  // Guard against ever destroying the placeholder itself.
+  if (placeholderId === userId) {
+    throw new Error("Refusing to delete the deleted-user placeholder.");
+  }
+
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ createdBy: placeholderId })
+      .where(eq(tickets.createdBy, userId)),
+    db
+      .update(tickets)
+      .set({ assignedTo: null })
+      .where(eq(tickets.assignedTo, userId)),
+    db
+      .update(tickets)
+      .set({ resolvedBy: placeholderId })
+      .where(eq(tickets.resolvedBy, userId)),
+    db
+      .update(ticketComments)
+      .set({ authorId: placeholderId })
+      .where(eq(ticketComments.authorId, userId)),
+    db
+      .update(ticketActivity)
+      .set({ actorId: placeholderId })
+      .where(eq(ticketActivity.actorId, userId)),
+    db
+      .update(ticketAttachments)
+      .set({ uploadedBy: placeholderId })
+      .where(eq(ticketAttachments.uploadedBy, userId)),
+    db.delete(users).where(eq(users.id, userId)),
+  ]);
 }
 
 /* ------------------------------------------------------------------ *
@@ -282,6 +376,56 @@ export async function setTicketAssignee(args: {
       toValue: args.toName,
     }),
   ]);
+}
+
+/**
+ * Claim a ticket: assign it to the actor and — when it's OPEN/REOPENED — start
+ * work (→ IN_PROGRESS), in one batch. Writes an ASSIGNED activity row only when
+ * ownership actually changes (writeAssigned), recording the prior owner
+ * (fromAssigneeName) so an admin take-over keeps a complete audit trail; writes
+ * STATUS_CHANGED only when work starts. The caller enforces staff/claimability.
+ */
+export async function claimTicketRow(args: {
+  ticketId: string;
+  actorId: string;
+  actorName: string | null;
+  fromAssigneeName: string | null;
+  fromStatus: Status;
+  writeAssigned: boolean;
+  startWork: boolean;
+}) {
+  const update = db
+    .update(tickets)
+    .set(
+      args.startWork
+        ? { assignedTo: args.actorId, status: "IN_PROGRESS" }
+        : { assignedTo: args.actorId }
+    )
+    .where(eq(tickets.id, args.ticketId));
+  const assignedEvent = db.insert(ticketActivity).values({
+    ticketId: args.ticketId,
+    actorId: args.actorId,
+    type: "ASSIGNED",
+    fromValue: args.fromAssigneeName,
+    toValue: args.actorName,
+  });
+  const statusEvent = db.insert(ticketActivity).values({
+    ticketId: args.ticketId,
+    actorId: args.actorId,
+    type: "STATUS_CHANGED",
+    fromValue: args.fromStatus,
+    toValue: "IN_PROGRESS",
+  });
+
+  if (args.writeAssigned && args.startWork) {
+    await db.batch([update, assignedEvent, statusEvent]);
+  } else if (args.writeAssigned) {
+    await db.batch([update, assignedEvent]);
+  } else if (args.startWork) {
+    await db.batch([update, statusEvent]);
+  } else {
+    await db.batch([update]);
+  }
 }
 
 export async function setTicketPriority(args: {
@@ -404,6 +548,8 @@ export async function addAttachment(args: {
  * ------------------------------------------------------------------ */
 export interface TicketFilters {
   status?: Status;
+  /** Match any of these statuses (used by the All Tickets tabs: Active/Resolved). */
+  statuses?: Status[];
   priority?: Priority;
   department?: Department;
   assigneeId?: string | "unassigned";
@@ -450,6 +596,9 @@ const ticketListSelect = {
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
   const conds: SQL[] = [];
   if (filters.status) conds.push(eq(tickets.status, filters.status));
+  if (filters.statuses?.length) {
+    conds.push(inArray(tickets.status, filters.statuses));
+  }
   if (filters.priority) conds.push(eq(tickets.priority, filters.priority));
   if (filters.department) conds.push(eq(tickets.department, filters.department));
   if (filters.assigneeId === "unassigned") {
@@ -483,6 +632,25 @@ export async function listMyTickets(userId: string, filters: TicketFilters = {})
     .orderBy(desc(tickets.createdAt));
 }
 
+/**
+ * MIS "work queue" (§6): tickets currently assigned to me that aren't closed —
+ * i.e. the ones I'm actively working on. Most-recently-updated first.
+ */
+export async function listAssignedToMe(userId: string) {
+  return db
+    .select(ticketListSelect)
+    .from(tickets)
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
+    .where(
+      and(
+        eq(tickets.assignedTo, userId),
+        sql`${tickets.status}::text <> 'CLOSED'`
+      )
+    )
+    .orderBy(desc(tickets.updatedAt));
+}
+
 /** Count of the user's active (non-closed, non-resolved) tickets — for the nav badge. */
 export async function countMyActiveTickets(userId: string): Promise<number> {
   const [row] = await db
@@ -491,6 +659,20 @@ export async function countMyActiveTickets(userId: string): Promise<number> {
     .where(
       and(
         eq(tickets.createdBy, userId),
+        sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
+      )
+    );
+  return row?.count ?? 0;
+}
+
+/** Count of active tickets assigned to me — the MIS "My Tickets" nav badge. */
+export async function countAssignedActive(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.assignedTo, userId),
         sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
       )
     );

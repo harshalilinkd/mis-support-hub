@@ -7,11 +7,11 @@ import { KanbanSquare, LayoutList } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VIEWS = [
-  { href: "/dashboard", label: "Table", icon: LayoutList },
+  { href: "/tickets", label: "Table", icon: LayoutList },
   { href: "/board", label: "Board", icon: KanbanSquare },
 ];
 
-/** Table / Board segmented control (shared by /dashboard and /board). */
+/** Table / Board segmented control (shared by /tickets and /board). */
 export function ViewToggle() {
   const pathname = usePathname();
   return (

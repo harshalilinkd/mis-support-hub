@@ -33,3 +33,20 @@ export const createUserSchema = z.object({
   department: z.enum(DEPARTMENTS).nullable(),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+/** Admin "edit user": editable profile fields (role/status handled inline). */
+export const editUserSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string().trim().min(1, "Enter a name").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  department: z.enum(DEPARTMENTS).nullable(),
+});
+export type EditUserInput = z.infer<typeof editUserSchema>;
+
+/** The same fields minus userId — used as the client form resolver. */
+export const editUserFormSchema = editUserSchema.omit({ userId: true });
+export type EditUserFormInput = z.infer<typeof editUserFormSchema>;
+
+export const deleteUserSchema = z.object({
+  userId: z.string().uuid(),
+});

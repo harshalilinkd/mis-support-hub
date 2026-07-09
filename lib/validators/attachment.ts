@@ -4,14 +4,19 @@ import { MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
 
 // Blob URLs look like https://<store>.public.blob.vercel-storage.com/<path>.
 const BLOB_HOST = /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i;
+// Dev-only local uploads (app/api/upload/local) live at <origin>/uploads/…
+const LOCAL_UPLOAD = /^https?:\/\/[^/]+\/uploads\/[^/]+$/i;
+
+/** Accept Vercel Blob URLs always; local /uploads/ URLs only in development. */
+function isAllowedUploadUrl(u: string): boolean {
+  if (BLOB_HOST.test(u)) return true;
+  return process.env.NODE_ENV !== "production" && LOCAL_UPLOAD.test(u);
+}
 
 export const attachToSchema = z.object({
   ticketId: z.string().uuid(),
   commentId: z.string().uuid().nullish(),
-  url: z
-    .string()
-    .url()
-    .refine((u) => BLOB_HOST.test(u), "Not a valid Vercel Blob URL"),
+  url: z.string().url().refine(isAllowedUploadUrl, "Not a valid upload URL"),
   filename: z.string().trim().min(1).max(255),
   contentType: z
     .string()

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import {
+  countAssignedActive,
   countMyActiveTickets,
   listNotifications,
   unreadNotificationCount,
@@ -8,6 +9,7 @@ import {
 import { toIso } from "@/lib/format";
 import { getCurrentUser } from "@/lib/session";
 import { AppShell } from "@/components/shell/app-shell";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export default async function AppLayout({
   children,
@@ -17,10 +19,11 @@ export default async function AppLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  const isStaff = user.role === "MIS_STAFF" || user.role === "MIS_ADMIN";
   const [rows, unreadCount, myActiveCount] = await Promise.all([
     listNotifications(user.id),
     unreadNotificationCount(user.id),
-    countMyActiveTickets(user.id),
+    isStaff ? countAssignedActive(user.id) : countMyActiveTickets(user.id),
   ]);
   const notifications = rows.map((n) => ({
     id: n.id,
@@ -32,13 +35,18 @@ export default async function AppLayout({
   }));
 
   return (
-    <AppShell
-      user={user}
-      notifications={notifications}
-      unreadCount={unreadCount}
-      myActiveCount={myActiveCount}
-    >
-      {children}
-    </AppShell>
+    <>
+      {/* Keeps every screen's data fresh (poll + on-focus) so tickets raised on
+          one screen appear on the MIS screen without a manual refresh. */}
+      <AutoRefresh />
+      <AppShell
+        user={user}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        myActiveCount={myActiveCount}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

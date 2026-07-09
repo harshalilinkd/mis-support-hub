@@ -176,7 +176,7 @@ export function BoardView({
         onDragCancel={() => setActiveId(null)}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible">
+        <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scroll-padding-left:1rem] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:[scroll-padding-left:0]">
           {COLUMNS.map((col) => (
             <BoardColumn
               key={col.id}

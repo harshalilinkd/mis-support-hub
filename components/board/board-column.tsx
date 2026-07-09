@@ -18,7 +18,7 @@ export function BoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
-    <div className="flex w-72 shrink-0 snap-start flex-col sm:w-auto">
+    <div className="flex w-[85vw] max-w-[20rem] shrink-0 snap-start flex-col sm:w-auto sm:max-w-none">
       <div className="mb-2 flex items-center justify-between px-1">
         <span className="text-sm font-medium">{label}</span>
         <span className="font-mono text-xs tabular-nums text-text-muted">

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -36,6 +36,18 @@ export const metadata: Metadata = {
     template: "%s · MIS Support Hub",
   },
   description: "Internal MIS support ticketing for the LINKD group.",
+};
+
+// Correct mobile scaling + browser chrome that matches the app surface
+// (light/dark). `themeColor` tints the address bar / status area so it no
+// longer clashes with the app on phones.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f7f9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0b0f" },
+  ],
 };
 
 export default function RootLayout({

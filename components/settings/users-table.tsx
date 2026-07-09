@@ -4,14 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { setUserActive, updateUserRole } from "@/lib/actions/users";
+import { updateUserRole } from "@/lib/actions/users";
 import type { Department, Role } from "@/lib/db/schema";
 import { ROLE_LABELS, ROLES } from "@/lib/roles";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { UserRowActions } from "./user-row-actions";
 
 /** Serializable row shape passed from the server page (never includes the hash). */
 export type AdminUserView = {
@@ -177,24 +177,9 @@ export function UsersTable({
                 </TableCell>
 
                 <TableCell className="pr-4 text-right">
-                  {isSelf ? (
-                    <span className="text-xs text-text-muted">—</span>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={rowBusy}
-                      onClick={() =>
-                        run(
-                          u.id,
-                          () => setUserActive(u.id, !u.isActive),
-                          u.isActive ? "User deactivated" : "User activated"
-                        )
-                      }
-                    >
-                      {u.isActive ? "Deactivate" : "Activate"}
-                    </Button>
-                  )}
+                  <div className="flex justify-end">
+                    <UserRowActions user={u} isSelf={isSelf} />
+                  </div>
                 </TableCell>
               </TableRow>
             );

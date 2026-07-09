@@ -7,6 +7,7 @@ import {
   Inbox,
   KanbanSquare,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Menu,
   PlusCircle,
@@ -59,6 +60,7 @@ const NAV_SECTIONS: NavSection[] = [
     staffOnly: true,
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, staffOnly: true },
+      { href: "/tickets", label: "All Tickets", icon: ListChecks, staffOnly: true },
       { href: "/board", label: "Board", icon: KanbanSquare, staffOnly: true },
     ],
   },

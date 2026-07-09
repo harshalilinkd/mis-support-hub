@@ -10,7 +10,6 @@ import {
   DEPARTMENT_LABELS,
   DEPARTMENTS,
   PRIORITIES,
-  STATUSES,
 } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,16 +88,15 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
   }, [search]);
 
   const dept = searchParams.get("department") ?? ALL;
-  const status = searchParams.get("status") ?? ALL;
   const priority = searchParams.get("priority") ?? ALL;
   const assignee = searchParams.get("assignee") ?? ALL;
   const hasFilters =
-    [dept, status, priority, assignee].some((v) => v !== ALL) ||
+    [dept, priority, assignee].some((v) => v !== ALL) ||
     !!searchParams.get("q");
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-[200px] flex-1">
+      <div className="relative w-full min-w-[200px] sm:w-auto sm:flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
         <Input
           value={search}
@@ -113,12 +111,6 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
         value={dept}
         onValueChange={(v) => setParam("department", v)}
         options={DEPARTMENTS.map((d) => ({ value: d, label: DEPARTMENT_LABELS[d] }))}
-      />
-      <Facet
-        label="Status"
-        value={status}
-        onValueChange={(v) => setParam("status", v)}
-        options={STATUSES.map((s) => ({ value: s, label: humanizeEnum(s) }))}
       />
       <Facet
         label="Priority"
@@ -141,7 +133,13 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
           size="sm"
           onClick={() => {
             setSearch("");
-            router.push(pathname);
+            // Clear the filters but keep the active status tab (`tab`).
+            const params = new URLSearchParams(searchParams.toString());
+            for (const key of ["department", "priority", "assignee", "q"]) {
+              params.delete(key);
+            }
+            const qs = params.toString();
+            router.push(qs ? `${pathname}?${qs}` : pathname);
           }}
         >
           <X className="size-4" />

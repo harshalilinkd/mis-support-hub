@@ -11,6 +11,7 @@ import { AttachmentGrid } from "./attachment-grid";
 import { PriorityChip, StatusChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
 import { ResolutionActions } from "./resolution-actions";
+import { StaffTicketActions } from "./staff-ticket-actions";
 import { TicketActions } from "./ticket-actions";
 
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
@@ -34,6 +35,7 @@ export function TicketDetail({
 }) {
   const isReporter = ticket.createdById === currentUser.id;
   const isAdmin = currentUser.role === "MIS_ADMIN";
+  const isStaff = currentUser.role === "MIS_STAFF" || isAdmin;
   const showResolution =
     ticket.status === "RESOLVED" && (isReporter || isAdmin);
   const canEdit = (isReporter || isAdmin) && ticket.status !== "CLOSED";
@@ -88,6 +90,18 @@ export function TicketDetail({
           <Meta label="Created" value={<RelativeTime date={ticket.createdAt} />} />
         </dl>
       </div>
+
+      {isStaff ? (
+        <StaffTicketActions
+          ticketId={ticket.id}
+          status={ticket.status}
+          assignedToId={ticket.assignedToId}
+          assignedToName={ticket.assignedToName}
+          currentUserId={currentUser.id}
+          isAdmin={isAdmin}
+          onMutate={onMutate}
+        />
+      ) : null}
 
       {showResolution ? (
         <ResolutionActions

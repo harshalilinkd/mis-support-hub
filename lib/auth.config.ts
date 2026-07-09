@@ -12,7 +12,11 @@ import { isEmailDomainAllowed } from "./email-domains";
 const useSecureCookies = process.env.NODE_ENV === "production";
 
 export const authConfig = {
-  providers: [Google],
+  // allowDangerousEmailAccountLinking: let a Google sign-in attach to an existing
+  // account that has the same email (e.g. one created via email+password), instead
+  // of failing with OAuthAccountNotLinked. Safe with Google because Google verifies
+  // email ownership — so the same person can use either door on one account.
+  providers: [Google({ allowDangerousEmailAccountLinking: true })],
   pages: {
     signIn: "/login",
   },

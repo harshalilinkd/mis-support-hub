@@ -6,6 +6,7 @@ import { SearchX } from "lucide-react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
+import { ClaimButton } from "@/components/tickets/claim-button";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import {
   Table,
@@ -45,7 +46,62 @@ export function TicketTable({
           seed={5}
         />
       ) : (
-        <div className="max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
+        <>
+        {/* Mobile (< md): tap-to-open cards; triage controls stay inline. */}
+        <div className="space-y-3 md:hidden">
+          {tickets.map((t) => (
+            <div
+              key={t.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(t.number)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelected(t.number);
+                }
+              }}
+              className="cursor-pointer rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:shadow-[var(--shadow-hover)]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-mono text-xs text-text-muted">
+                  {t.number}
+                </span>
+                <PriorityControl ticketId={t.id} priority={t.priority} />
+              </div>
+              <p className="mt-1 font-medium">{t.title}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <StatusControl ticketId={t.id} status={t.status} />
+                <span className="text-xs text-text-muted">
+                  {DEPARTMENT_LABELS[t.department]}
+                </span>
+                <RelativeTime
+                  date={t.createdAt}
+                  className="ml-auto font-mono text-xs text-text-muted"
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                <ClaimButton
+                  ticketId={t.id}
+                  status={t.status}
+                  assigneeId={t.assignedToId}
+                  currentUserId={currentUser.id}
+                  isAdmin={currentUser.role === "MIS_ADMIN"}
+                />
+                <AssigneeControl
+                  ticketId={t.id}
+                  assigneeId={t.assignedToId}
+                  assigneeName={t.assignedToName}
+                  assigneeImage={t.assignedToImage}
+                  users={users}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop (md+): full data table. */}
+        <div className="hidden max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-text-muted">
             <TableRow>
@@ -85,13 +141,22 @@ export function TicketTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <AssigneeControl
-                    ticketId={t.id}
-                    assigneeId={t.assignedToId}
-                    assigneeName={t.assignedToName}
-                    assigneeImage={t.assignedToImage}
-                    users={users}
-                  />
+                  <div className="flex items-center gap-2">
+                    <ClaimButton
+                      ticketId={t.id}
+                      status={t.status}
+                      assigneeId={t.assignedToId}
+                      currentUserId={currentUser.id}
+                      isAdmin={currentUser.role === "MIS_ADMIN"}
+                    />
+                    <AssigneeControl
+                      ticketId={t.id}
+                      assigneeId={t.assignedToId}
+                      assigneeName={t.assignedToName}
+                      assigneeImage={t.assignedToImage}
+                      users={users}
+                    />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <StatusControl ticketId={t.id} status={t.status} />
@@ -116,6 +181,7 @@ export function TicketTable({
           </TableBody>
         </Table>
         </div>
+        </>
       )}
 
       <TicketSheet

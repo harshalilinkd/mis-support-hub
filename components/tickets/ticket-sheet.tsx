@@ -5,13 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 import { loadTicketDetail } from "@/lib/actions/tickets";
 import type { TicketDetail as TicketDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketDetail } from "@/components/tickets/ticket-detail";
 
 /**
- * Right-side drawer that hydrates and renders the shared <TicketDetail> for a
- * ticket number (design-system.md: detail opens as a Sheet from lists).
+ * Centered modal that hydrates and renders the shared <TicketDetail> for a
+ * ticket number. Opened from the dashboard table and the board. (Replaced the
+ * former right-side drawer — detail now opens as a centered pop-up.)
  */
 export function TicketSheet({
   number,
@@ -25,7 +26,7 @@ export function TicketSheet({
   const [detail, setDetail] = useState<TicketDetailData | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
-  // Reload the currently-open ticket (used after a mutation inside the Sheet).
+  // Reload the currently-open ticket (used after a mutation inside the modal).
   const reload = useCallback(async (n: string) => {
     const res = await loadTicketDetail(n);
     setDetail(res.ok ? res.data : null);
@@ -52,34 +53,35 @@ export function TicketSheet({
   const showDetail = status === "ready" && detail && detail.number === number;
 
   return (
-    <Sheet open={!!number} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full gap-0 overflow-y-auto p-6 sm:max-w-xl"
+    <Dialog open={!!number} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-h-[88vh] gap-0 overflow-hidden rounded-[var(--radius-card)] border-border p-0 shadow-2xl sm:max-w-2xl"
       >
-        <SheetTitle className="sr-only">{number ?? "Ticket"}</SheetTitle>
-        {showDetail ? (
-          <TicketDetail
-            ticket={detail}
-            currentUser={currentUser}
-            onMutate={() => {
-              if (number) void reload(number);
-            }}
-          />
-        ) : status === "error" ? (
-          <div className="grid h-full place-items-center p-6 text-center text-sm text-text-muted">
-            Couldn&apos;t load this ticket. It may have been removed or you may not
-            have access.
-          </div>
-        ) : (
-          <div className="space-y-4 pt-6">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-8 w-3/4" />
-            <Skeleton className="h-28 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        )}
-      </SheetContent>
-    </Sheet>
+        <DialogTitle className="sr-only">{number ?? "Ticket"}</DialogTitle>
+        <div className="max-h-[88vh] overflow-y-auto px-6 py-6 sm:px-8 sm:py-7">
+          {showDetail ? (
+            <TicketDetail
+              ticket={detail}
+              currentUser={currentUser}
+              onMutate={() => {
+                if (number) void reload(number);
+              }}
+            />
+          ) : status === "error" ? (
+            <div className="grid place-items-center py-16 text-center text-sm text-text-muted">
+              Couldn&apos;t load this ticket. It may have been removed or you may
+              not have access.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-8 w-3/4" />
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

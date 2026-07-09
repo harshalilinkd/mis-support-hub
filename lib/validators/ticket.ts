@@ -75,6 +75,11 @@ export const reopenTicketSchema = z.object({
 });
 export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
 
+export const claimTicketSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
+
 export const deleteTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });

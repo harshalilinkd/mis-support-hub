@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canTransition } from "@/lib/ticket-state";
 import {
   assignTicketSchema,
+  claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
   reopenTicketSchema,
@@ -31,6 +32,7 @@ function firstIssue(error: ZodError): string {
 function revalidateTicketRoutes(number?: string) {
   revalidatePath("/my");
   revalidatePath("/dashboard");
+  revalidatePath("/tickets");
   revalidatePath("/board");
   if (number) revalidatePath(`/tickets/${number}`);
 }
@@ -149,6 +151,68 @@ export async function assignTicket(
   if (parsed.data.assigneeId) {
     await sendAssignmentNotification(ticket.id);
   }
+
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Claim a ticket — a staff member takes ownership and starts work (§5): assigns
+ * it to themselves and moves OPEN/REOPENED → IN_PROGRESS. Won't steal a ticket
+ * already claimed by someone else (an MIS_ADMIN may take it over).
+ */
+export async function claimTicket(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can claim tickets.");
+  }
+
+  const parsed = claimTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+
+  if (ticket.status === "RESOLVED" || ticket.status === "CLOSED") {
+    return fail("This ticket is already resolved — there's nothing to claim.");
+  }
+  if (
+    ticket.assignedTo &&
+    ticket.assignedTo !== user.id &&
+    user.role !== "MIS_ADMIN"
+  ) {
+    const current = await q.getUserById(ticket.assignedTo);
+    return fail(
+      `Already claimed by ${current?.name ?? current?.email ?? "another staff member"}.`
+    );
+  }
+  if (
+    ticket.assignedTo === user.id &&
+    (ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED")
+  ) {
+    return fail("You're already working on this ticket.");
+  }
+
+  // Only log an ASSIGNED event when ownership actually changes; for an admin
+  // take-over, capture the prior owner so the audit trail stays complete.
+  const writeAssigned = ticket.assignedTo !== user.id;
+  let fromAssigneeName: string | null = null;
+  if (writeAssigned && ticket.assignedTo) {
+    const prev = await q.getUserById(ticket.assignedTo);
+    fromAssigneeName = prev?.name ?? prev?.email ?? null;
+  }
+
+  const startWork = ticket.status === "OPEN" || ticket.status === "REOPENED";
+  await q.claimTicketRow({
+    ticketId: ticket.id,
+    actorId: user.id,
+    actorName: user.name ?? user.email ?? "MIS",
+    fromAssigneeName,
+    fromStatus: ticket.status,
+    writeAssigned,
+    startWork,
+  });
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);

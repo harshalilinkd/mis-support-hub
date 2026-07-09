@@ -24,11 +24,40 @@ type Item = {
   meta?: AttachmentMeta;
 };
 
+// Local dev has no Vercel Blob token, so uploads go to a local route that stores
+// under public/uploads; production (Vercel) uploads straight to Blob. Either path
+// returns the URL that becomes the AttachmentMeta.
+const UPLOAD_LOCAL = process.env.NODE_ENV !== "production";
+
+async function uploadFile(
+  file: File,
+  onProgress: (pct: number) => void
+): Promise<string> {
+  if (UPLOAD_LOCAL) {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch("/api/upload/local", { method: "POST", body });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(data?.error ?? "Upload failed.");
+    }
+    onProgress(100);
+    return ((await res.json()) as { url: string }).url;
+  }
+  const result = await upload(file.name, file, {
+    access: "public",
+    handleUploadUrl: "/api/upload",
+    contentType: file.type,
+    onUploadProgress: (p) => onProgress(Math.round(p.percentage)),
+  });
+  return result.url;
+}
+
 /**
- * Drag-drop uploader (design-system styled). Uploads directly to Vercel Blob via
- * the /api/upload client-token flow, then reports the completed AttachmentMeta[]
- * to the parent form via onChange. The parent persists them with attachTo() once
- * it has a ticket id.
+ * Drag-drop uploader (design-system styled). Uploads to Vercel Blob in production
+ * and to a local route in dev (see uploadFile), then reports the completed
+ * AttachmentMeta[] to the parent form via onChange. The parent persists them with
+ * attachTo() once it has a ticket id.
  */
 export function FileDropzone({
   onChange,
@@ -108,17 +137,12 @@ export function FileDropzone({
       ]);
 
       try {
-        const result = await upload(file.name, file, {
-          access: "public",
-          handleUploadUrl: "/api/upload",
-          contentType: file.type,
-          onUploadProgress: (p) => update(id, { progress: Math.round(p.percentage) }),
-        });
+        const url = await uploadFile(file, (pct) => update(id, { progress: pct }));
         update(id, {
           status: "done",
           progress: 100,
           meta: {
-            url: result.url,
+            url,
             filename: file.name,
             contentType: file.type,
             sizeBytes: file.size,
