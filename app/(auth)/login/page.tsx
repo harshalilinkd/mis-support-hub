@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { Ticket } from "lucide-react";
 
 import { auth, signIn } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -8,21 +9,60 @@ export const metadata: Metadata = {
   title: "Sign in",
 };
 
-export default async function LoginPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  AccessDenied:
+    "This Google account isn't permitted. Sign in with your approved company account.",
+  Configuration:
+    "Sign-in is misconfigured. Please contact the MIS team.",
+  Verification: "That sign-in link is invalid or has expired.",
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await auth();
   if (session?.user) redirect("/");
 
+  const { error } = await searchParams;
+  const errorMessage = error
+    ? (ERROR_MESSAGES[error] ?? "Something went wrong signing in. Please try again.")
+    : null;
+
   return (
-    <div className="grid min-h-screen place-items-center bg-background p-6">
-      <div className="w-full max-w-sm space-y-6 rounded-[var(--radius-card)] border border-border bg-surface p-8 text-center shadow-[var(--shadow-elevation)]">
-        <div className="space-y-1.5">
-          <h1 className="font-display text-2xl font-semibold">
-            MIS Support Hub
-          </h1>
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-background p-6">
+      {/*
+        Generative flow-field background — filled in P9 (design-system.md §Generative
+        accent): a deterministic, reduced-motion-aware canvas tinted with the cobalt
+        accent, rendered here behind the card. Left as an empty slot for now.
+      */}
+      <div
+        aria-hidden
+        data-generative-slot="login"
+        className="pointer-events-none absolute inset-0 -z-10"
+      />
+
+      <div className="relative w-full max-w-sm space-y-6 rounded-[var(--radius-card)] border border-border bg-surface p-8 text-center shadow-[var(--shadow-elevation)]">
+        <div className="space-y-2">
+          <div className="mx-auto flex size-10 items-center justify-center rounded-[var(--radius-input)] bg-accent-soft text-primary">
+            <Ticket className="size-5" />
+          </div>
+          <h1 className="font-display text-2xl font-semibold">MIS Support Hub</h1>
           <p className="text-sm text-text-muted">
             Sign in with your company Google account to raise and track tickets.
           </p>
         </div>
+
+        {errorMessage ? (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-input)] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {errorMessage}
+          </p>
+        ) : null}
+
         <form
           action={async () => {
             "use server";
@@ -33,7 +73,11 @@ export default async function LoginPage() {
             Continue with Google
           </Button>
         </form>
+
+        <p className="text-xs text-text-muted">
+          Access is restricted to approved company domains.
+        </p>
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
-import { getCurrentUser } from "@/lib/session";
+import { requireRole, STAFF_ROLES } from "@/lib/authz";
 import { PageHeader } from "@/components/shell/page-header";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   // Staff-only surface (CLAUDE.md §6). USER role can't see all tickets.
-  const user = await getCurrentUser();
-  if (!user || user.role === "USER") redirect("/my");
+  await requireRole(...STAFF_ROLES);
 
   return (
     <div>

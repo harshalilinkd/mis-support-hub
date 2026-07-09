@@ -38,7 +38,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     // Read the authoritative role from the DB on sign-in, and (idempotently)
     // promote ADMIN_EMAILS to MIS_ADMIN on every sign-in — matches CLAUDE.md §7
-    // "on upsert" and avoids the create-only provisioning deadlock.
+    // "on upsert", avoids the create-only provisioning deadlock, and never
+    // downgrades an existing higher role (we only ever bump up to MIS_ADMIN).
     async jwt({ token, user }) {
       if (user?.id) {
         let dbUser = await getUserById(user.id);
