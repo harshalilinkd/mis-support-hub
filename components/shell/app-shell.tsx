@@ -77,7 +77,7 @@ export function AppShell({
 
   const linkClass = (href: string, centered = false) =>
     cn(
-      "flex items-center gap-3 rounded-[var(--radius-input)] px-3 py-2 text-sm font-medium transition-colors",
+      "flex items-center gap-3 rounded-[var(--radius-input)] px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       centered && "justify-center lg:justify-start",
       isActive(href)
         ? "bg-accent-soft text-primary"

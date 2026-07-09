@@ -12,6 +12,10 @@ import type { TicketListRow } from "@/lib/db/queries";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { cn } from "@/lib/utils";
 
+// Shared so the click-vs-drag open threshold can't drift from the PointerSensor
+// activation distance (used in board-view.tsx).
+export const DRAG_ACTIVATION_DISTANCE = 8;
+
 /** Pure card visual — used for both the in-column card and the drag overlay. */
 export const BoardCardContent = forwardRef<
   HTMLDivElement,
@@ -92,11 +96,15 @@ export function BoardCard({
         listeners?.onPointerDown?.(e);
       }}
       onClick={(e) => {
+        // dnd-kit already suppresses the click after an activated drag, so any
+        // click here means no drag started (movement < activation distance).
         const d = downPos.current;
-        if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) onOpen();
+        if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < DRAG_ACTIVATION_DISTANCE) {
+          onOpen();
+        }
       }}
       className={cn(
-        "cursor-grab touch-none",
+        "cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isDragging && "opacity-40"
       )}
     />

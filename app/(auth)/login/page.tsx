@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Ticket } from "lucide-react";
 
 import { auth, signIn } from "@/lib/auth";
+import { GenerativeField } from "@/components/generative-field";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
@@ -39,9 +40,10 @@ export default async function LoginPage({
       */}
       <div
         aria-hidden
-        data-generative-slot="login"
         className="pointer-events-none absolute inset-0 -z-10"
-      />
+      >
+        <GenerativeField seed={42} density={850} />
+      </div>
 
       <div className="relative w-full max-w-sm space-y-6 rounded-[var(--radius-card)] border border-border bg-surface p-8 text-center shadow-[var(--shadow-elevation)]">
         <div className="space-y-2">

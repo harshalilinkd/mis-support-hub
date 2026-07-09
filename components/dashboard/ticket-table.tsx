@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { SearchX } from "lucide-react";
 
+import { EmptyState } from "@/components/shell/empty-state";
 import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
@@ -35,7 +37,15 @@ export function TicketTable({
 
   return (
     <>
-      <div className="max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border">
+      {tickets.length === 0 ? (
+        <EmptyState
+          icon={<SearchX className="size-5" />}
+          title="No tickets match"
+          description="No tickets match your current filters."
+          seed={5}
+        />
+      ) : (
+        <div className="max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-10">
             <TableRow>
@@ -105,12 +115,8 @@ export function TicketTable({
             ))}
           </TableBody>
         </Table>
-        {tickets.length === 0 ? (
-          <div className="p-12 text-center text-sm text-text-muted">
-            No tickets match these filters.
-          </div>
-        ) : null}
-      </div>
+        </div>
+      )}
 
       <TicketSheet
         number={selected}

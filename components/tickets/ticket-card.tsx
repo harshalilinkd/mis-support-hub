@@ -28,7 +28,7 @@ export function TicketCard({
     <Link
       href={`/tickets/${ticket.number}`}
       style={style}
-      className="block animate-in rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] fade-in slide-in-from-bottom-1 duration-200 hover:border-primary/40"
+      className="block animate-in rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] fade-in slide-in-from-bottom-1 duration-200 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

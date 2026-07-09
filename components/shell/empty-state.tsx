@@ -1,10 +1,11 @@
 import Link from "next/link";
 
+import { GenerativeField } from "@/components/generative-field";
 import { Button } from "@/components/ui/button";
 
 /**
- * Empty state with a placeholder for the P9 generative accent + one clear CTA
- * (design-system.md). The subtle cobalt radial stands in for the real art.
+ * Empty state with the generative accent behind + one clear CTA (design-system).
+ * The field is kept faint (opacity) so foreground text keeps ≥ 4.5:1 contrast.
  */
 export function EmptyState({
   icon,
@@ -12,24 +13,23 @@ export function EmptyState({
   description,
   actionHref,
   actionLabel,
+  seed = 7,
 }: {
   icon?: React.ReactNode;
   title: string;
   description?: string;
   actionHref?: string;
   actionLabel?: string;
+  seed?: number;
 }) {
   return (
     <div className="relative overflow-hidden rounded-[var(--radius-card)] border border-dashed border-border bg-surface-muted/30 px-6 py-14 text-center">
       <div
         aria-hidden
-        data-generative-slot="empty"
-        className="pointer-events-none absolute inset-0 -z-10 opacity-70"
-        style={{
-          background:
-            "radial-gradient(60% 55% at 50% 0%, var(--accent-soft), transparent 70%)",
-        }}
-      />
+        className="pointer-events-none absolute inset-0 -z-10 opacity-40"
+      >
+        <GenerativeField seed={seed} density={340} />
+      </div>
       {icon ? (
         <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-accent-soft text-primary">
           {icon}

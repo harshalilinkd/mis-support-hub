@@ -14,8 +14,10 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { KanbanSquare } from "lucide-react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/shell/empty-state";
 import { updateStatus } from "@/lib/actions/tickets";
 import type { TicketListRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
@@ -25,7 +27,11 @@ import { canTransition } from "@/lib/ticket-state";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
-import { BoardCard, BoardCardContent } from "./board-card";
+import {
+  BoardCard,
+  BoardCardContent,
+  DRAG_ACTIVATION_DISTANCE,
+} from "./board-card";
 import { BoardColumn } from "./board-column";
 
 type ColId = "OPEN" | "IN_PROGRESS" | "RESOLVED";
@@ -77,7 +83,9 @@ export function BoardView({
   }, [signature]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: DRAG_ACTIVATION_DISTANCE },
+    }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
     useSensor(KeyboardSensor)
   );
@@ -148,9 +156,19 @@ export function BoardView({
   }
 
   const activeCard = activeId ? cardById.get(activeId) : null;
+  const total =
+    columns.OPEN.length + columns.IN_PROGRESS.length + columns.RESOLVED.length;
 
   return (
     <>
+      {total === 0 ? (
+        <EmptyState
+          icon={<KanbanSquare className="size-5" />}
+          title="No active tickets"
+          description="Open, in-progress, and resolved tickets show up here as a board."
+          seed={3}
+        />
+      ) : (
       <DndContext
         sensors={sensors}
         collisionDetection={pointerWithin}
@@ -188,6 +206,7 @@ export function BoardView({
           ) : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       <TicketSheet
         number={selected}

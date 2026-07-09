@@ -51,7 +51,8 @@ export function StatusControl({
           type="button"
           disabled={pending}
           onClick={stop}
-          className="inline-flex items-center gap-1 transition-opacity disabled:opacity-60"
+          aria-label="Change status"
+          className="inline-flex items-center gap-1 rounded-[6px] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         >
           <StatusChip status={status} />
           <ChevronDown className="size-3 text-text-muted" />
@@ -95,7 +96,8 @@ export function PriorityControl({
           type="button"
           disabled={pending}
           onClick={stop}
-          className="inline-flex items-center gap-1 transition-opacity disabled:opacity-60"
+          aria-label="Change priority"
+          className="inline-flex items-center gap-1 rounded-[6px] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         >
           <PriorityChip priority={priority} />
           <ChevronDown className="size-3 text-text-muted" />
@@ -145,7 +147,8 @@ export function AssigneeControl({
           type="button"
           disabled={pending}
           onClick={stop}
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius-input)] px-1 py-0.5 text-sm transition-colors hover:bg-surface-muted disabled:opacity-60"
+          aria-label="Change assignee"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius-input)] px-1 py-0.5 text-sm transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         >
           {assigneeId ? (
             <>

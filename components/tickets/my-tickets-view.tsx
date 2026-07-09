@@ -47,7 +47,7 @@ export function MyTicketsView({ tickets }: { tickets: TicketCardData[] }) {
               type="button"
               onClick={() => setTab(t.key)}
               className={cn(
-                "rounded-[6px] px-3 py-1 text-sm font-medium transition-colors",
+                "rounded-[6px] px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 tab === t.key
                   ? "bg-accent-soft text-primary"
                   : "text-text-muted hover:text-foreground"
