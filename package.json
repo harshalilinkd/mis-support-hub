@@ -13,7 +13,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx lib/db/seed.ts",
-    "db:seed:demo": "tsx lib/db/seed-demo.ts"
+    "db:seed:demo": "tsx lib/db/seed-demo.ts",
+    "db:clean": "tsx lib/db/clean.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

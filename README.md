@@ -80,6 +80,71 @@ wiring the real **WhatsApp Business (Cloud) API** is a drop-in replacement — s
 the `TODO(P-later)` in that file (needs `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID`
 env vars and a phone field on `users`).
 
+## Deploy to Vercel
+
+### 1. Provision the external services
+
+- **Database (Neon).** You can reuse the current Neon database or create a fresh
+  project/branch for production. Copy the **pooled** connection string
+  (`...-pooler...`, `?sslmode=require`).
+- **Google OAuth.** [Google Cloud Console](https://console.cloud.google.com) →
+  APIs & Services → Credentials → *Create OAuth client ID* → **Web application**.
+  You'll add the redirect URI in step 4 once you know the domain. Copy the
+  **Client ID** and **Client secret**.
+- **Vercel Blob.** In the Vercel project → Storage → *Create* → **Blob**. This
+  auto-adds `BLOB_READ_WRITE_TOKEN` to the project.
+- **Resend (email, optional).** Create an API key and verify your sending domain
+  (Resend → Domains). Without a key, emails are skipped (in-app still works).
+
+### 2. Import the repo into Vercel
+
+New Project → Import `harshalilinkd/mis-support-hub`. Framework preset **Next.js**
+is auto-detected (build `next build`, output handled automatically). Don't deploy
+yet — set env vars first.
+
+### 3. Set environment variables (Project → Settings → Environment Variables)
+
+| Var | Value |
+| --- | --- |
+| `DATABASE_URL` | Neon pooled connection string |
+| `AUTH_SECRET` | generate a fresh one: `npx auth secret` (don't reuse the dev value) |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | from the Google OAuth client |
+| `ALLOWED_EMAIL_DOMAINS` | your Workspace domain(s), comma-separated, e.g. `linkd.com` (**required in prod** — empty allows any Google account) |
+| `ADMIN_EMAILS` | comma-separated emails that become `MIS_ADMIN` on first sign-in (put yourself here) |
+| `BLOB_READ_WRITE_TOKEN` | added automatically when you create the Blob store |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Resend key + a `From` on your verified domain |
+| `NEXT_PUBLIC_APP_URL` | your production URL (set after the first deploy, then redeploy) |
+
+Do **not** set `DEV_AUTH_STUB` / `DEV_STUB_ROLE` / `DEV_STUB_ID` in production —
+the stub is `NODE_ENV`-gated and never runs in a production build anyway.
+
+### 4. Apply migrations to the production database
+
+If you're using a fresh Neon DB, run the migrations from your machine against it:
+
+```bash
+# with the production DATABASE_URL in .env.local (or exported):
+npm run db:migrate
+```
+
+(The existing Neon database is already migrated.)
+
+### 5. Deploy, then wire the domain
+
+1. Click **Deploy**. Note the assigned URL (e.g. `https://mis-support-hub.vercel.app`).
+2. Set `NEXT_PUBLIC_APP_URL` to that URL and **redeploy**.
+3. In the Google OAuth client add:
+   - **Authorized JavaScript origin:** `https://<your-domain>`
+   - **Authorized redirect URI:** `https://<your-domain>/api/auth/callback/google`
+
+### 6. Go-live checklist
+
+- Sign in with an email in `ADMIN_EMAILS` → you land on the dashboard as `MIS_ADMIN`.
+- Confirm `ALLOWED_EMAIL_DOMAINS` is set so only your org can sign in.
+- Upload a screenshot on a ticket to confirm Blob works; resolve a ticket to
+  confirm email (if Resend is configured).
+- Reset seed/test data anytime with `npm run db:clean`.
+
 ## Scripts
 
 | Script | Does |
