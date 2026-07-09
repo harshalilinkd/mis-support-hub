@@ -111,7 +111,8 @@ flowchart TD
   fresh from the DB on each sign-in, and `ADMIN_EMAILS` are (idempotently)
   promoted to `MIS_ADMIN`. See [`lib/auth.ts`](./lib/auth.ts).
 - **Email/password specifics** ([`lib/actions/auth.ts`](./lib/actions/auth.ts)):
-  - Self-signup only (no admin invite). Passwords hashed with **bcrypt** (cost 10).
+  - Created by **self-signup** or by an **MIS_ADMIN** (Settings → Users → Add
+    user). Passwords hashed with **bcrypt** (cost 10).
   - Sign-up **rejects an already-registered email** — you can never set a
     password on an account you don't control (no takeover of a Google account).
   - The `Credentials` provider lives only in `lib/auth.ts` (Node runtime), so
@@ -169,23 +170,32 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     A[MIS Admin] --> B[Settings -> Users]
+    B --> N[Add user: email + password + role + dept]
     B --> C[Change role: USER / MIS Staff / MIS Admin]
     B --> D[Activate / Deactivate]
+    N --> P[adminCreateUser action]
     C --> E[updateUserRole action]
     D --> F[setUserActive action]
-    E --> G{server: caller is MIS_ADMIN? not self?}
+    P --> Q{server: MIS_ADMIN? domain ok? email free?}
+    E --> G{server: MIS_ADMIN? not self?}
     F --> G
-    G -->|ok| H[DB update + revalidate]
-    G -->|blocked| I[Error toast]
+    Q -->|ok| H[DB write + revalidate]
+    G -->|ok| H
+    Q -->|blocked| I[Error toast]
+    G -->|blocked| I
 ```
 
-- Users **self-provision** (they appear in the list after their first sign-in);
-  the admin then adjusts role / active status.
+- Users appear by **self-provisioning** (after their first sign-in) or by the
+  admin **adding** them — Settings → Users → **Add user** creates an
+  email+password account with a chosen role/department (`adminCreateUser`:
+  MIS_ADMIN-only, domain-allowlisted, rejects duplicate emails). The admin then
+  adjusts role / active status.
 - **Anti-lockout guards:** an admin cannot change **their own** role or
   deactivate **their own** account.
 - Deactivating a user immediately blocks both Google and password sign-in.
 - Code: [`app/(app)/settings/users/page.tsx`](./app/(app)/settings/users/page.tsx),
   [`components/settings/users-table.tsx`](./components/settings/users-table.tsx),
+  [`components/settings/add-user-dialog.tsx`](./components/settings/add-user-dialog.tsx),
   [`lib/actions/users.ts`](./lib/actions/users.ts).
 
 ---
@@ -225,4 +235,5 @@ npm run dev                    # http://localhost:3000
 ---
 
 _Last updated to reflect: email/password login alongside Google SSO, the
-`Settings → Users` admin area, and the Vercel/Google Cloud provisioning path._
+`Settings → Users` admin area (including admin **Add user**), and the
+Vercel/Google Cloud provisioning path._
