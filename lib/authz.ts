@@ -31,4 +31,4 @@ export function hasRole(user: SessionUser | null, ...roles: Role[]): boolean {
 }
 
 /** MIS staff or admin — the "can see all tickets / dashboard / board" group. */
-export const STAFF_ROLES: Role[] = ["MIS_STAFF", "MIS_ADMIN"];
+export { STAFF_ROLES } from "@/lib/roles";

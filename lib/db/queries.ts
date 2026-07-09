@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "./index";
@@ -30,6 +41,24 @@ export async function getUserByEmail(email: string) {
     .limit(1);
   return row ?? null;
 }
+
+/** Active MIS staff/admin — candidates a ticket can be assigned to. */
+export async function listAssignableUsers() {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(users)
+    .where(
+      and(inArray(users.role, ["MIS_STAFF", "MIS_ADMIN"]), eq(users.isActive, true))
+    )
+    .orderBy(asc(users.name));
+}
+
+export type AssignableUser = Awaited<ReturnType<typeof listAssignableUsers>>[number];
 
 /* ------------------------------------------------------------------ *
  * Aliases (users is joined several times per query)
@@ -262,8 +291,10 @@ const ticketListSelect = {
   resolvedAt: tickets.resolvedAt,
   createdById: tickets.createdBy,
   createdByName: creatorUser.name,
+  createdByImage: creatorUser.image,
   assignedToId: tickets.assignedTo,
   assignedToName: assigneeUser.name,
+  assignedToImage: assigneeUser.image,
   commentCount:
     sql<number>`(select count(*) from ${ticketComments} where ${ticketComments.ticketId} = ${tickets.id})`.mapWith(
       Number
@@ -317,6 +348,8 @@ export async function listAllTickets(filters: TicketFilters = {}) {
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(tickets.createdAt));
 }
+
+export type TicketListRow = Awaited<ReturnType<typeof listAllTickets>>[number];
 
 /**
  * Full ticket detail with comments + attachments + activity + people joined.

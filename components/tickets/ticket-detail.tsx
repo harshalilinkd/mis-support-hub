@@ -1,9 +1,10 @@
+"use client";
+
 import { ExternalLink } from "lucide-react";
 
 import { RelativeTime } from "@/components/relative-time";
 import type { TicketDetail as TicketDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
-import { STAFF_ROLES } from "@/lib/authz";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ActivityTimeline } from "./activity-timeline";
 import { AttachmentGrid } from "./attachment-grid";
@@ -23,13 +24,15 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
 export function TicketDetail({
   ticket,
   currentUser,
+  onMutate,
 }: {
   ticket: TicketDetailData;
   currentUser: SessionUser;
+  /** Called after a mutation inside the detail (used to reload the Sheet). */
+  onMutate?: () => void;
 }) {
   const isReporter = ticket.createdById === currentUser.id;
   const isAdmin = currentUser.role === "MIS_ADMIN";
-  const isStaff = STAFF_ROLES.includes(currentUser.role);
   const showResolution =
     ticket.status === "RESOLVED" && (isReporter || isAdmin);
 
@@ -67,7 +70,11 @@ export function TicketDetail({
       </div>
 
       {showResolution ? (
-        <ResolutionActions ticketId={ticket.id} showConfirm={isReporter} />
+        <ResolutionActions
+          ticketId={ticket.id}
+          showConfirm={isReporter}
+          onDone={onMutate}
+        />
       ) : null}
 
       {/* Description */}
@@ -102,16 +109,9 @@ export function TicketDetail({
           comments={ticket.comments}
         />
         <div className="pt-2">
-          <CommentComposer ticketId={ticket.id} />
+          <CommentComposer ticketId={ticket.id} onDone={onMutate} />
         </div>
       </section>
-
-      {isStaff ? (
-        <p className="text-center text-xs text-text-muted">
-          MIS status, assignment, and priority controls arrive with the dashboard
-          and board.
-        </p>
-      ) : null}
     </div>
   );
 }

@@ -16,9 +16,11 @@ import { Button } from "@/components/ui/button";
 export function ResolutionActions({
   ticketId,
   showConfirm,
+  onDone,
 }: {
   ticketId: string;
   showConfirm: boolean;
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState(false);
@@ -33,6 +35,7 @@ export function ResolutionActions({
       }
       toast.success("Ticket reopened");
       router.refresh();
+      onDone?.();
     });
   }
 

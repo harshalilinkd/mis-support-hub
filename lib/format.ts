@@ -28,3 +28,11 @@ export function formatDateTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
+
+/** "IN_PROGRESS" → "In progress"; passes through non-enum strings (names). */
+export function humanizeEnum(value: string | null): string {
+  if (!value) return "";
+  return /^[A-Z_]+$/.test(value)
+    ? value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, " ")
+    : value;
+}

@@ -12,7 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileDropzone } from "./file-dropzone";
 
-export function CommentComposer({ ticketId }: { ticketId: string }) {
+export function CommentComposer({
+  ticketId,
+  onDone,
+}: {
+  ticketId: string;
+  onDone?: () => void;
+}) {
   const router = useRouter();
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
@@ -58,6 +64,7 @@ export function CommentComposer({ ticketId }: { ticketId: string }) {
         toast.success("Comment added");
       }
       router.refresh();
+      onDone?.();
     });
   }
 

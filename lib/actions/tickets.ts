@@ -5,6 +5,7 @@ import type { ZodError } from "zod";
 
 import { STAFF_ROLES } from "@/lib/authz";
 import * as q from "@/lib/db/queries";
+import type { TicketDetail } from "@/lib/db/queries";
 import type { Priority, Status } from "@/lib/db/schema";
 import {
   sendAssignmentNotification,
@@ -210,4 +211,21 @@ export async function reopenTicket(ticketId: string): Promise<ActionResult> {
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);
+}
+
+/**
+ * Read the full ticket detail for the current viewer (§6 visibility enforced by
+ * getTicketByNumber). Used to hydrate the detail Sheet on demand from lists.
+ */
+export async function loadTicketDetail(
+  number: string
+): Promise<ActionResult<TicketDetail>> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  const ticket = await q.getTicketByNumber(number, {
+    id: user.id,
+    role: user.role,
+  });
+  if (!ticket) return fail("Ticket not found.");
+  return ok(ticket);
 }
