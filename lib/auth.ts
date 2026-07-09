@@ -1,11 +1,14 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import NextAuth from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 
 import { authConfig } from "./auth.config";
 import { db } from "./db";
 import { getUserByEmail, getUserById } from "./db/queries";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
+import { signInSchema } from "./validators/auth";
 
 const adminEmails = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
@@ -14,6 +17,34 @@ const adminEmails = (process.env.ADMIN_EMAILS ?? "")
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  // Google (from the edge config) + email/password. The Credentials provider
+  // lives ONLY here (Node runtime) so bcrypt/DB never leak into edge middleware.
+  providers: [
+    ...authConfig.providers,
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const parsed = signInSchema.safeParse(credentials);
+        if (!parsed.success) return null;
+        const { email, password } = parsed.data;
+        const dbUser = await getUserByEmail(email);
+        // No account, no password set (Google-only), or deactivated → reject.
+        if (!dbUser || !dbUser.passwordHash || !dbUser.isActive) return null;
+        const valid = await bcrypt.compare(password, dbUser.passwordHash);
+        if (!valid) return null;
+        return {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          image: dbUser.image,
+          role: dbUser.role,
+        };
+      },
+    }),
+  ],
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,

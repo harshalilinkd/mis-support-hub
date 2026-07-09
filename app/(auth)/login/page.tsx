@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Ticket } from "lucide-react";
 
 import { auth, signIn } from "@/lib/auth";
+import { CredentialsForm } from "@/components/auth/credentials-form";
 import { GenerativeField } from "@/components/generative-field";
 import { Button } from "@/components/ui/button";
 
@@ -81,6 +82,14 @@ export default async function LoginPage({
             Continue with Google
           </Button>
         </form>
+
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-xs text-text-muted">or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <CredentialsForm />
 
         <p className="text-xs text-text-muted">
           Access is restricted to approved company domains.

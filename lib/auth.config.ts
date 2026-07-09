@@ -1,16 +1,14 @@
 import type { NextAuthConfig, Session } from "next-auth";
 import Google from "next-auth/providers/google";
 
+import { isEmailDomainAllowed } from "./email-domains";
+
 /**
  * Edge-safe Auth.js config: providers + callbacks that do NOT touch the DB.
- * The full config (adapter, DB-backed role lookup) lives in `lib/auth.ts`.
- * Middleware imports this file so it stays lightweight at the edge.
+ * The full config (adapter, DB-backed role lookup, Credentials provider) lives
+ * in `lib/auth.ts`. Middleware imports this file so it stays lightweight at the
+ * edge — no DB driver, no bcrypt.
  */
-const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "")
-  .split(",")
-  .map((d) => d.trim().toLowerCase())
-  .filter(Boolean);
-
 const useSecureCookies = process.env.NODE_ENV === "production";
 
 export const authConfig = {
@@ -37,9 +35,7 @@ export const authConfig = {
     signIn({ profile, user }) {
       const email = (profile?.email ?? user?.email ?? "").toLowerCase();
       if (!email) return false;
-      if (allowedDomains.length === 0) return true;
-      const domain = email.split("@")[1] ?? "";
-      return allowedDomains.includes(domain);
+      return isEmailDomainAllowed(email);
     },
     // Pass-through at the edge; the DB-backed role is set in lib/auth.ts.
     jwt({ token, user }) {

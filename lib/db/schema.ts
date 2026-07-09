@@ -82,7 +82,11 @@ export const users = pgTable("users", {
     withTimezone: true,
   }),
   image: text("image"),
+  // bcrypt hash for email+password sign-in. Null for Google-only accounts
+  // (auth stays Google SSO first; passwords are an additional door — CLAUDE.md §7).
+  passwordHash: text("password_hash"),
   role: roleEnum("role").notNull().default("USER"),
+  department: departmentEnum("department"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

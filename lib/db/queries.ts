@@ -44,6 +44,14 @@ export async function getUserByEmail(email: string) {
   return row ?? null;
 }
 
+export async function setUserProfile(
+  userId: string,
+  name: string,
+  department: Department | null
+) {
+  await db.update(users).set({ name, department }).where(eq(users.id, userId));
+}
+
 /** Active MIS staff/admin — candidates a ticket can be assigned to. */
 export async function listAssignableUsers() {
   return db
@@ -61,6 +69,60 @@ export async function listAssignableUsers() {
 }
 
 export type AssignableUser = Awaited<ReturnType<typeof listAssignableUsers>>[number];
+
+/** Create an email+password account (self-signup). role defaults to USER. */
+export async function createUserWithPassword(args: {
+  name: string;
+  email: string;
+  passwordHash: string;
+}) {
+  const [row] = await db
+    .insert(users)
+    .values({
+      name: args.name,
+      email: args.email.toLowerCase(),
+      passwordHash: args.passwordHash,
+    })
+    .returning();
+  return row;
+}
+
+/**
+ * Every user, for the admin Settings → Users screen. Never selects the
+ * password hash — only whether one is set (`hasPassword`).
+ */
+export async function listAllUsers() {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+      role: users.role,
+      isActive: users.isActive,
+      department: users.department,
+      hasPassword: sql<boolean>`(${users.passwordHash} is not null)`,
+      createdAt: users.createdAt,
+      ticketCount:
+        sql<number>`(select count(*) from ${tickets} where ${tickets.createdBy} = ${users.id})`.mapWith(
+          Number
+        ),
+    })
+    .from(users)
+    .orderBy(asc(users.name), asc(users.email));
+}
+
+export type AdminUserRow = Awaited<ReturnType<typeof listAllUsers>>[number];
+
+/** Change a user's role. Caller must enforce MIS_ADMIN (CLAUDE.md §6). */
+export async function setUserRole(id: string, role: Role) {
+  await db.update(users).set({ role }).where(eq(users.id, id));
+}
+
+/** Activate/deactivate a user (blocks sign-in). Caller must enforce MIS_ADMIN. */
+export async function setUserActiveStatus(id: string, isActive: boolean) {
+  await db.update(users).set({ isActive }).where(eq(users.id, id));
+}
 
 /* ------------------------------------------------------------------ *
  * Aliases (users is joined several times per query)

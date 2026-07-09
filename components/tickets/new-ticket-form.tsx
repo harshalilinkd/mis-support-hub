@@ -9,7 +9,9 @@ import type { z } from "zod";
 
 import { attachTo } from "@/lib/actions/attachments";
 import { createTicket } from "@/lib/actions/tickets";
+import { updateMyProfile } from "@/lib/actions/users";
 import type { AttachmentMeta } from "@/lib/attachments";
+import type { Department } from "@/lib/db/schema";
 import {
   createTicketSchema,
   DEPARTMENT_LABELS,
@@ -43,7 +45,13 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs text-destructive">{message}</p>;
 }
 
-function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
+function Label({
+  children,
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  htmlFor?: string;
+}) {
   return (
     <label htmlFor={htmlFor} className="mb-1 block text-sm font-medium">
       {children}
@@ -51,10 +59,15 @@ function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: str
   );
 }
 
-export function NewTicketForm({ requester }: { requester: string }) {
+export function NewTicketForm({
+  requester,
+}: {
+  requester: { name: string; email: string; department: Department | null };
+}) {
   const router = useRouter();
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [requesterName, setRequesterName] = useState(requester.name);
   const [pending, startTransition] = useTransition();
 
   const {
@@ -69,6 +82,7 @@ export function NewTicketForm({ requester }: { requester: string }) {
       description: "",
       sheetLink: "",
       priority: "MEDIUM",
+      department: requester.department ?? undefined,
     },
   });
 
@@ -77,7 +91,14 @@ export function NewTicketForm({ requester }: { requester: string }) {
       toast.error("Please wait for uploads to finish.");
       return;
     }
+    if (!requesterName.trim()) {
+      toast.error("Enter your name.");
+      return;
+    }
     startTransition(async () => {
+      // Remember the requester's name + department for next time (best-effort).
+      await updateMyProfile(requesterName.trim(), values.department);
+
       const res = await createTicket(values);
       if (!res.ok) {
         toast.error(res.error);
@@ -85,8 +106,6 @@ export function NewTicketForm({ requester }: { requester: string }) {
       }
       const { id, number } = res.data;
 
-      // Link uploaded blobs; count failures without letting a thrown/failed
-      // attach abort the success path (the ticket already exists).
       let failed = 0;
       if (attachments.length > 0) {
         const results = await Promise.allSettled(
@@ -113,23 +132,21 @@ export function NewTicketForm({ requester }: { requester: string }) {
       onSubmit={handleSubmit(onSubmit)}
       className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]"
     >
-      <div className="flex flex-wrap items-center gap-x-1.5 border-b border-border pb-3 text-xs text-text-muted">
-        <span>Raising as</span>
-        <span className="font-medium text-foreground">{requester}</span>
-      </div>
-
-      <div>
-        <Label htmlFor="title">Summary</Label>
-        <Input
-          id="title"
-          placeholder="Short summary of the issue"
-          disabled={pending}
-          {...register("title")}
-        />
-        <FieldError message={errors.title?.message} />
-      </div>
-
+      {/* Who's raising this — name + department */}
       <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="requesterName">Your name</Label>
+          <Input
+            id="requesterName"
+            value={requesterName}
+            onChange={(e) => setRequesterName(e.target.value)}
+            placeholder="Your full name"
+            disabled={pending}
+          />
+          <p className="mt-1 truncate text-xs text-text-muted">
+            Signed in as {requester.email}
+          </p>
+        </div>
         <div>
           <Label>Department</Label>
           <Controller
@@ -156,35 +173,46 @@ export function NewTicketForm({ requester }: { requester: string }) {
           />
           <FieldError message={errors.department?.message} />
         </div>
+      </div>
 
-        <div>
-          <Label>Priority</Label>
-          <Controller
-            control={control}
-            name="priority"
-            render={({ field }) => (
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                disabled={pending}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITIES.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {PRIORITY_LABELS[p]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <p className="mt-1 text-xs text-text-muted">
-            MIS may adjust this after triage.
-          </p>
-        </div>
+      <div>
+        <Label htmlFor="title">Summary</Label>
+        <Input
+          id="title"
+          placeholder="Short summary of the issue"
+          disabled={pending}
+          {...register("title")}
+        />
+        <FieldError message={errors.title?.message} />
+      </div>
+
+      <div>
+        <Label>Priority</Label>
+        <Controller
+          control={control}
+          name="priority"
+          render={({ field }) => (
+            <Select
+              value={field.value}
+              onValueChange={field.onChange}
+              disabled={pending}
+            >
+              <SelectTrigger className="w-full sm:max-w-xs">
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITIES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {PRIORITY_LABELS[p]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="mt-1 text-xs text-text-muted">
+          MIS may adjust this after triage.
+        </p>
       </div>
 
       <div>

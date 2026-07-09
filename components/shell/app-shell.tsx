@@ -14,6 +14,7 @@ import {
   Settings,
   Ticket,
   User as UserIcon,
+  Users,
 } from "lucide-react";
 
 import { signOutAction } from "@/lib/actions/auth";
@@ -40,10 +41,16 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   staffOnly?: boolean;
+  adminOnly?: boolean;
   badge?: "myActive";
 };
 
-type NavSection = { label: string; staffOnly?: boolean; items: NavItem[] };
+type NavSection = {
+  label: string;
+  staffOnly?: boolean;
+  adminOnly?: boolean;
+  items: NavItem[];
+};
 
 // Resequenced: Overview (Dashboard, Board) then Tickets (My Tickets, Raise Ticket).
 const NAV_SECTIONS: NavSection[] = [
@@ -62,6 +69,13 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/new", label: "Raise Ticket", icon: PlusCircle },
     ],
   },
+  {
+    label: "Administration",
+    adminOnly: true,
+    items: [
+      { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
+    ],
+  },
 ];
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -72,9 +86,12 @@ const ROLE_LABELS: Record<Role, string> = {
 
 function sectionsFor(role: Role) {
   const isStaff = role !== "USER";
-  return NAV_SECTIONS.filter((s) => !s.staffOnly || isStaff).map((s) => ({
+  const isAdmin = role === "MIS_ADMIN";
+  const allow = (x: { staffOnly?: boolean; adminOnly?: boolean }) =>
+    (!x.staffOnly || isStaff) && (!x.adminOnly || isAdmin);
+  return NAV_SECTIONS.filter(allow).map((s) => ({
     ...s,
-    items: s.items.filter((i) => !i.staffOnly || isStaff),
+    items: s.items.filter(allow),
   }));
 }
 
@@ -291,9 +308,17 @@ export function AppShell({
                 <DropdownMenuItem disabled>
                   <UserIcon className="size-4" /> Profile
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <Settings className="size-4" /> Settings
-                </DropdownMenuItem>
+                {user.role === "MIS_ADMIN" ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/users">
+                      <Settings className="size-4" /> Settings
+                    </Link>
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem disabled>
+                    <Settings className="size-4" /> Settings
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={(event) => {

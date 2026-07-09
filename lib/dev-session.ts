@@ -1,4 +1,4 @@
-import type { Role } from "@/lib/db/schema";
+import type { Department, Role } from "@/lib/db/schema";
 
 /**
  * Dev-only session stub. Lets the app shell render before Google OAuth is
@@ -29,4 +29,5 @@ export const DEV_STUB_USER = {
   name: "Dev User",
   email: "dev@localhost",
   image: null as string | null,
+  department: "LINKD" as Department | null,
 };

@@ -8,7 +8,6 @@ export const metadata: Metadata = { title: "Raise a Ticket" };
 
 export default async function NewTicketPage() {
   const user = await requireUser();
-  const requester = user.name ? `${user.name} · ${user.email}` : (user.email ?? "");
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -16,7 +15,13 @@ export default async function NewTicketPage() {
         title="Raise a Ticket"
         description="Tell MIS what's broken. You'll get a ticket number to track it."
       />
-      <NewTicketForm requester={requester} />
+      <NewTicketForm
+        requester={{
+          name: user.name ?? "You",
+          email: user.email ?? "",
+          department: user.department,
+        }}
+      />
     </div>
   );
 }

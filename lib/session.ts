@@ -3,7 +3,7 @@ import type { Session } from "next-auth";
 
 import { auth } from "@/lib/auth";
 import { getUserById } from "@/lib/db/queries";
-import type { Role } from "@/lib/db/schema";
+import type { Department, Role } from "@/lib/db/schema";
 import { DEV_STUB_ENABLED, DEV_STUB_USER } from "@/lib/dev-session";
 
 export type SessionUser = {
@@ -12,6 +12,7 @@ export type SessionUser = {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  department: Department | null;
 };
 
 /**
@@ -40,6 +41,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       name: session.user.name,
       email: session.user.email,
       image: session.user.image,
+      department: dbUser.department,
     };
   }
   if (DEV_STUB_ENABLED) return DEV_STUB_USER;
