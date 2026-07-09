@@ -2,9 +2,23 @@ import { cache } from "react";
 import type { Session } from "next-auth";
 
 import { auth } from "@/lib/auth";
-import { getUserById } from "@/lib/db/queries";
+import { ensureUserRow, getUserById } from "@/lib/db/queries";
 import type { Department, Role } from "@/lib/db/schema";
 import { DEV_STUB_ENABLED, DEV_STUB_USER } from "@/lib/dev-session";
+
+// Ensure the dev-stub users row exists exactly once per process, so writes that
+// FK-reference it (tickets, comments, activity) succeed. Best-effort: a failure
+// is logged and retried on the next request rather than crashing the app.
+let devStubEnsured: Promise<void> | null = null;
+function ensureDevStubUser(): Promise<void> {
+  if (!devStubEnsured) {
+    devStubEnsured = ensureUserRow(DEV_STUB_USER).catch((error) => {
+      devStubEnsured = null;
+      console.error("[dev-stub] could not ensure users row", error);
+    });
+  }
+  return devStubEnsured;
+}
 
 export type SessionUser = {
   id: string;
@@ -44,6 +58,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       department: dbUser.department,
     };
   }
-  if (DEV_STUB_ENABLED) return DEV_STUB_USER;
+  if (DEV_STUB_ENABLED) {
+    await ensureDevStubUser();
+    return DEV_STUB_USER;
+  }
   return null;
 });

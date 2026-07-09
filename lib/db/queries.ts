@@ -52,6 +52,32 @@ export async function setUserProfile(
   await db.update(users).set({ name, department }).where(eq(users.id, userId));
 }
 
+/**
+ * Dev-only: make sure a users row exists for the given id so foreign keys that
+ * point at it (e.g. tickets.created_by) are satisfiable. Idempotent and
+ * NON-destructive — onConflictDoNothing() so impersonating a real user via
+ * DEV_STUB_ID never overwrites that user's row.
+ */
+export async function ensureUserRow(u: {
+  id: string;
+  name: string | null;
+  email: string;
+  role: Role;
+  department: Department | null;
+}) {
+  await db
+    .insert(users)
+    .values({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      department: u.department,
+      isActive: true,
+    })
+    .onConflictDoNothing();
+}
+
 /** Active MIS staff/admin — candidates a ticket can be assigned to. */
 export async function listAssignableUsers() {
   return db
