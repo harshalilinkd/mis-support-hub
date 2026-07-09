@@ -19,8 +19,10 @@ export default DEV_STUB_ENABLED
 
 export const config = {
   matcher: [
-    // Run on everything except Auth.js routes, the login page, Next internals,
-    // and static files (anything with a file extension).
-    "/((?!api/auth|login|_next/static|_next/image|favicon.ico|.*\\..*).*)",
+    // Run on PAGES only — never API routes (they do their own auth and must
+    // return JSON, not a login redirect; the client-upload POST to /api/upload
+    // broke when the middleware redirected it). Also skip the login page, Next
+    // internals, and static files (anything with a file extension).
+    "/((?!api|login|_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };
