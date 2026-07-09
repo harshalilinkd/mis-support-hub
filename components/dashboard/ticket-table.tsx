@@ -45,9 +45,9 @@ export function TicketTable({
           seed={5}
         />
       ) : (
-        <div className="max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border">
+        <div className="max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-10">
+          <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-text-muted">
             <TableRow>
               <TableHead>Number</TableHead>
               <TableHead>Title</TableHead>
@@ -65,7 +65,7 @@ export function TicketTable({
               <TableRow
                 key={t.id}
                 onClick={() => setSelected(t.number)}
-                className="cursor-pointer"
+                className="cursor-pointer transition-colors hover:bg-surface-muted/50"
               >
                 <TableCell className="font-mono text-xs text-text-muted">
                   {t.number}

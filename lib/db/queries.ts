@@ -343,6 +343,20 @@ export async function listMyTickets(userId: string, filters: TicketFilters = {})
     .orderBy(desc(tickets.createdAt));
 }
 
+/** Count of the user's active (non-closed, non-resolved) tickets — for the nav badge. */
+export async function countMyActiveTickets(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.createdBy, userId),
+        sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
+      )
+    );
+  return row?.count ?? 0;
+}
+
 /** MIS visibility (§6): all tickets. Caller must enforce the staff role. */
 export async function listAllTickets(filters: TicketFilters = {}) {
   const conds = ticketFilterConditions(filters);
@@ -450,6 +464,8 @@ export interface DashboardStats {
   open: number;
   inProgress: number;
   unassigned: number;
+  resolved: number;
+  closed: number;
   resolvedLast7d: number;
   avgResolutionHours: number;
 }
@@ -467,6 +483,14 @@ export async function dashboardStats(): Promise<DashboardStats> {
         ),
       unassigned:
         sql<number>`count(*) filter (where ${tickets.assignedTo} is null and ${tickets.status}::text <> 'CLOSED')`.mapWith(
+          Number
+        ),
+      resolved:
+        sql<number>`count(*) filter (where ${tickets.status}::text = 'RESOLVED')`.mapWith(
+          Number
+        ),
+      closed:
+        sql<number>`count(*) filter (where ${tickets.status}::text = 'CLOSED')`.mapWith(
           Number
         ),
       resolvedLast7d:
@@ -491,10 +515,40 @@ export async function dashboardStats(): Promise<DashboardStats> {
       open: 0,
       inProgress: 0,
       unassigned: 0,
+      resolved: 0,
+      closed: 0,
       resolvedLast7d: 0,
       avgResolutionHours: 0,
     }
   );
+}
+
+export interface TrendPoint {
+  date: string; // YYYY-MM-DD (UTC)
+  created: number;
+}
+
+/** Tickets created per day for the last `days` days (zero-filled). */
+export async function ticketTrend(days = 30): Promise<TrendPoint[]> {
+  const rows = await db
+    .select({
+      day: sql<string>`to_char(date_trunc('day', ${tickets.createdAt}), 'YYYY-MM-DD')`,
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(tickets)
+    .where(sql`${tickets.createdAt} >= now() - (${days - 1} * interval '1 day')`)
+    .groupBy(sql`1`);
+
+  const map = new Map(rows.map((r) => [r.day, r.count]));
+  const out: TrendPoint[] = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    out.push({ date: key, created: map.get(key) ?? 0 });
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ *

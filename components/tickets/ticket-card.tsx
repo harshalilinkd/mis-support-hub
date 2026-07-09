@@ -6,6 +6,14 @@ import type { Department, Priority, Status } from "@/lib/db/schema";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityChip, StatusChip } from "./chips";
 
+const STATUS_BAR: Record<Status, string> = {
+  OPEN: "var(--status-open)",
+  IN_PROGRESS: "var(--status-in-progress)",
+  REOPENED: "var(--status-reopened)",
+  RESOLVED: "var(--status-resolved)",
+  CLOSED: "var(--status-closed)",
+};
+
 export type TicketCardData = {
   number: string;
   title: string;
@@ -28,8 +36,13 @@ export function TicketCard({
     <Link
       href={`/tickets/${ticket.number}`}
       style={style}
-      className="block animate-in rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] fade-in slide-in-from-bottom-1 duration-200 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className="relative block animate-in overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface py-4 pl-5 pr-4 shadow-[var(--shadow-elevation)] transition-shadow duration-200 fade-in slide-in-from-bottom-1 hover:shadow-[var(--shadow-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ backgroundColor: STATUS_BAR[ticket.status] }}
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

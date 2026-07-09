@@ -109,7 +109,10 @@ export function NewTicketForm({ requester }: { requester: string }) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-5 rounded-[var(--radius-card)] border border-border bg-surface p-6 shadow-[var(--shadow-elevation)]"
+    >
       <div>
         <Label htmlFor="title">Summary</Label>
         <Input
@@ -221,7 +224,7 @@ export function NewTicketForm({ requester }: { requester: string }) {
         />
       </div>
 
-      <div className="flex justify-end gap-2">
+      <div className="-mx-6 flex justify-end gap-2 border-t border-border px-6 pt-5">
         <Button
           type="button"
           variant="ghost"

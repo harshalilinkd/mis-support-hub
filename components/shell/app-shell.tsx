@@ -16,10 +16,11 @@ import {
   User as UserIcon,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import type { SessionUser } from "@/lib/session";
 import { signOutAction } from "@/lib/actions/auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { Role } from "@/lib/db/schema";
+import type { SessionUser } from "@/lib/session";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -39,84 +40,172 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   staffOnly?: boolean;
+  badge?: "myActive";
 };
 
-const NAV: NavItem[] = [
-  { href: "/my", label: "My Tickets", icon: Inbox },
-  { href: "/new", label: "Raise Ticket", icon: PlusCircle },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, staffOnly: true },
-  { href: "/board", label: "Board", icon: KanbanSquare, staffOnly: true },
+type NavSection = { label: string; staffOnly?: boolean; items: NavItem[] };
+
+// Resequenced: Overview (Dashboard, Board) then Tickets (My Tickets, Raise Ticket).
+const NAV_SECTIONS: NavSection[] = [
+  {
+    label: "Overview",
+    staffOnly: true,
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, staffOnly: true },
+      { href: "/board", label: "Board", icon: KanbanSquare, staffOnly: true },
+    ],
+  },
+  {
+    label: "Tickets",
+    items: [
+      { href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" },
+      { href: "/new", label: "Raise Ticket", icon: PlusCircle },
+    ],
+  },
 ];
 
-function initials(name?: string | null, email?: string | null) {
-  const base = (name ?? email ?? "?").trim();
-  const parts = base.split(/\s+/);
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return base.slice(0, 2).toUpperCase();
+const ROLE_LABELS: Record<Role, string> = {
+  USER: "Employee",
+  MIS_STAFF: "MIS Staff",
+  MIS_ADMIN: "MIS Admin",
+};
+
+function sectionsFor(role: Role) {
+  const isStaff = role !== "USER";
+  return NAV_SECTIONS.filter((s) => !s.staffOnly || isStaff).map((s) => ({
+    ...s,
+    items: s.items.filter((i) => !i.staffOnly || isStaff),
+  }));
 }
 
 export function AppShell({
   user,
   notifications,
   unreadCount,
+  myActiveCount = 0,
   children,
 }: {
   user: SessionUser;
   notifications: BellNotification[];
   unreadCount: number;
+  myActiveCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const items = NAV.filter((n) => !n.staffOnly || user.role !== "USER");
+  const sections = sectionsFor(user.role);
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
 
-  const linkClass = (href: string, centered = false) =>
-    cn(
-      "flex items-center gap-3 rounded-[var(--radius-input)] px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      centered && "justify-center lg:justify-start",
-      isActive(href)
-        ? "bg-accent-soft text-primary"
-        : "text-text-muted hover:bg-surface-muted hover:text-foreground"
+  const badgeValue = (item: NavItem) =>
+    item.badge === "myActive" && myActiveCount > 0 ? myActiveCount : null;
+
+  function NavLink({
+    item,
+    onNavigate,
+    dense,
+  }: {
+    item: NavItem;
+    onNavigate?: () => void;
+    dense?: boolean;
+  }) {
+    const active = isActive(item.href);
+    const badge = badgeValue(item);
+    return (
+      <Link
+        href={item.href}
+        title={item.label}
+        onClick={onNavigate}
+        className={cn(
+          "group flex items-center gap-3 rounded-[var(--radius-input)] px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          dense && "justify-center lg:justify-start",
+          active
+            ? "bg-accent-soft text-primary"
+            : "text-text-muted hover:bg-surface-muted hover:text-foreground"
+        )}
+      >
+        <item.icon className="size-[18px] shrink-0" />
+        <span className={cn("truncate", dense && "hidden lg:inline")}>
+          {item.label}
+        </span>
+        {badge !== null ? (
+          <span
+            className={cn(
+              "ml-auto shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+              dense && "hidden lg:inline-block",
+              active
+                ? "bg-primary/15 text-primary"
+                : "bg-surface-muted text-text-muted"
+            )}
+          >
+            {badge}
+          </span>
+        ) : null}
+      </Link>
     );
+  }
+
+  const brand = (
+    <div className="flex items-center gap-2.5">
+      <div className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground shadow-[var(--shadow-elevation)]">
+        <Ticket className="size-[18px]" />
+      </div>
+      <span className="font-display text-[15px] font-semibold tracking-tight">
+        MIS Support Hub
+      </span>
+    </div>
+  );
+
+  const userCard = (
+    <div className="flex items-center gap-2.5 rounded-[var(--radius-input)] border border-border bg-surface-muted/60 p-2">
+      <UserAvatar
+        name={user.name}
+        email={user.email}
+        image={user.image}
+        className="size-8"
+      />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium">
+          {user.name ?? "Unknown user"}
+        </div>
+        <div className="truncate text-xs text-text-muted">
+          {ROLE_LABELS[user.role]}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-screen">
-      {/* Desktop sidebar: full (>= lg) collapsing to an icon rail (md..lg). */}
-      <aside className="hidden flex-col border-r border-border bg-surface md:flex md:w-16 lg:w-60">
-        <div className="flex h-14 items-center justify-center gap-2 border-b border-border lg:justify-start lg:px-5">
-          <Ticket className="size-5 shrink-0 text-primary" />
-          <span className="hidden font-display text-[15px] font-semibold lg:inline">
-            MIS Support Hub
-          </span>
-        </div>
-        <nav className="flex-1 space-y-1 p-3">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className={linkClass(item.href, true)}
-            >
-              <item.icon className="size-4 shrink-0" />
-              <span className="hidden lg:inline">{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-        <div className="hidden border-t border-border p-4 lg:block">
-          <div className="truncate text-sm font-medium">{user.name ?? "—"}</div>
-          <div className="truncate font-mono text-xs text-text-muted">
-            {user.role}
+    <div className="flex min-h-screen bg-background">
+      {/* Desktop sidebar — full (≥ lg) collapsing to an icon rail (md..lg) */}
+      <aside className="hidden flex-col border-r border-border bg-surface md:flex md:w-[68px] lg:w-64">
+        <div className="flex h-16 items-center justify-center border-b border-border px-0 lg:justify-start lg:px-4">
+          <span className="hidden lg:block">{brand}</span>
+          <div className="grid size-8 place-items-center rounded-[10px] bg-primary text-primary-foreground lg:hidden">
+            <Ticket className="size-[18px]" />
           </div>
         </div>
+
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+          {sections.map((section) => (
+            <div key={section.label} className="space-y-1">
+              <div className="hidden px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">
+                {section.label}
+              </div>
+              {section.items.map((item) => (
+                <NavLink key={item.href} item={item} dense />
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="hidden border-t border-border p-3 lg:block">{userCard}</div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur">
+        {/* Topbar */}
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-md">
           {/* Mobile drawer */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
@@ -131,41 +220,45 @@ export function AppShell({
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0">
               <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <div className="flex h-14 items-center gap-2 border-b border-border px-5">
-                <Ticket className="size-5 text-primary" />
-                <span className="font-display text-[15px] font-semibold">
-                  MIS Support Hub
-                </span>
+              <div className="flex h-16 items-center border-b border-border px-4">
+                {brand}
               </div>
-              <nav className="space-y-1 p-3">
-                {items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={linkClass(item.href)}
-                  >
-                    <item.icon className="size-4 shrink-0" />
-                    {item.label}
-                  </Link>
+              <nav className="space-y-5 p-3">
+                {sections.map((section) => (
+                  <div key={section.label} className="space-y-1">
+                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                      {section.label}
+                    </div>
+                    {section.items.map((item) => (
+                      <NavLink
+                        key={item.href}
+                        item={item}
+                        onNavigate={() => setMobileOpen(false)}
+                      />
+                    ))}
+                  </div>
                 ))}
               </nav>
+              <div className="border-t border-border p-3">{userCard}</div>
             </SheetContent>
           </Sheet>
 
-          {/* Search placeholder (wired in a later phase) */}
-          <div className="relative hidden max-w-xs flex-1 sm:block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
+          {/* Search */}
+          <div className="relative hidden max-w-md flex-1 sm:block">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
             <Input
               type="search"
               placeholder="Search tickets…"
-              className="pl-9"
+              className="h-10 rounded-full border-transparent bg-surface-muted pl-10 pr-16 focus-visible:bg-surface"
               disabled
               aria-label="Search (coming soon)"
             />
+            <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-md border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-muted md:flex">
+              ⌘K
+            </kbd>
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-1">
             <NotificationBell
               notifications={notifications}
               unreadCount={unreadCount}
@@ -174,15 +267,15 @@ export function AppShell({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="ml-1 flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   aria-label="Account menu"
                 >
-                  <Avatar className="size-8">
-                    {user.image ? <AvatarImage src={user.image} alt="" /> : null}
-                    <AvatarFallback className="bg-accent-soft text-xs font-medium text-primary">
-                      {initials(user.name, user.email)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    name={user.name}
+                    email={user.email}
+                    image={user.image}
+                    className="size-8"
+                  />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -215,7 +308,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

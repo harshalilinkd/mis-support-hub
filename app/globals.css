@@ -10,12 +10,12 @@
  * ------------------------------------------------------------------ */
 :root {
   /* base surfaces + text (light) */
-  --background: #fafafa;
+  --background: #f6f7f9;
   --surface: #ffffff;
-  --surface-muted: #f4f4f5;
-  --border: #e4e4e7;
-  --text: #18181b;
-  --text-muted: #71717a;
+  --surface-muted: #f2f3f5;
+  --border: #e6e8ec;
+  --text: #101828;
+  --text-muted: #667085;
 
   /* accent — cobalt (light) */
   --accent: #2563eb;
@@ -58,14 +58,15 @@
   --priority-urgent: #f43f5e;
 
   /* radii */
-  --radius: 0.625rem; /* 10px base */
-  --radius-card: 10px;
-  --radius-input: 8px;
+  --radius: 0.875rem; /* 14px base */
+  --radius-card: 14px;
+  --radius-input: 10px;
   --radius-chip: 999px;
 
-  /* elevation (one for cards, one for popovers) */
-  --shadow-elevation: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
-  --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.14);
+  /* elevation — soft, layered (premium SaaS) */
+  --shadow-elevation: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 4px 14px -6px rgb(16 24 40 / 0.06);
+  --shadow-hover: 0 4px 10px -3px rgb(16 24 40 / 0.08), 0 12px 28px -8px rgb(16 24 40 / 0.1);
+  --shadow-popover: 0 16px 44px -12px rgb(16 24 40 / 0.2), 0 6px 14px -6px rgb(16 24 40 / 0.1);
 }
 
 .dark {
@@ -98,8 +99,9 @@
   --destructive: #f43f5e;
   --destructive-foreground: #ffffff;
 
-  --shadow-elevation: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 0 rgb(0 0 0 / 0.4);
-  --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.5);
+  --shadow-elevation: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 4px 14px -6px rgb(0 0 0 / 0.5);
+  --shadow-hover: 0 4px 10px -3px rgb(0 0 0 / 0.5), 0 12px 28px -8px rgb(0 0 0 / 0.55);
+  --shadow-popover: 0 16px 44px -12px rgb(0 0 0 / 0.65), 0 6px 14px -6px rgb(0 0 0 / 0.5);
 }
 
 /* Expose tokens to Tailwind's utility engine (v4 CSS-first theme). */
@@ -152,6 +154,7 @@
   --radius-chip: var(--radius-chip);
 
   --shadow-elevation: var(--shadow-elevation);
+  --shadow-hover: var(--shadow-hover);
   --shadow-popover: var(--shadow-popover);
 
   /* Fonts — next/font sets --font-cabinet / --font-hanken / --font-plex on <html>.
