@@ -102,3 +102,28 @@ export async function sendAssignmentNotification(ticketId: string): Promise<void
     console.error("[sendAssignmentNotification]", e);
   }
 }
+
+/**
+ * New comment → notify the "other party" (CLAUDE.md §8): if the actor is the
+ * reporter, notify the assignee; otherwise notify the reporter. In-app only —
+ * email is intentionally off by default for comments. Real delivery lands in P8.
+ */
+export async function sendCommentNotification(
+  ticketId: string,
+  actorId: string
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const otherId =
+      actorId === ticket.createdBy ? ticket.assignedTo : ticket.createdBy;
+    if (!otherId || otherId === actorId) return;
+    // In-app notification (no persistent store yet — surfaced via the activity
+    // feed + client toast in the UI phases). Email stays off by default (§8).
+    console.info(
+      `[notifications:in-app] new comment on ${ticket.number} → notify user ${otherId}`
+    );
+  } catch (e) {
+    console.error("[sendCommentNotification]", e);
+  }
+}

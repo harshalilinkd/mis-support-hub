@@ -69,3 +69,18 @@ export const updatePrioritySchema = z.object({
   priority: z.enum(PRIORITIES),
 });
 export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
+
+export const reopenTicketSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
+
+/** Filters for list views (parsed from query params in the UI phases). */
+export const ticketFiltersSchema = z.object({
+  status: z.enum(STATUSES).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  department: z.enum(DEPARTMENTS).optional(),
+  assigneeId: z.union([z.string().uuid(), z.literal("unassigned")]).optional(),
+  search: z.string().trim().max(200).optional(),
+});
+export type TicketFiltersInput = z.infer<typeof ticketFiltersSchema>;
