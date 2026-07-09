@@ -301,6 +301,10 @@ const ticketListSelect = {
     sql<number>`(select count(*) from ${ticketComments} where ${ticketComments.ticketId} = ${tickets.id})`.mapWith(
       Number
     ),
+  attachmentCount:
+    sql<number>`(select count(*) from ${ticketAttachments} where ${ticketAttachments.ticketId} = ${tickets.id})`.mapWith(
+      Number
+    ),
 };
 
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
