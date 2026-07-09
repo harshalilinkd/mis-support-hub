@@ -1,4 +1,5 @@
 import { cache } from "react";
+import type { Session } from "next-auth";
 
 import { auth } from "@/lib/auth";
 import { getUserById } from "@/lib/db/queries";
@@ -21,7 +22,15 @@ export type SessionUser = {
  * cache() dedupes the work across the layout + page in a single render pass.
  */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
-  const session = await auth();
+  let session: Session | null = null;
+  try {
+    session = await auth();
+  } catch (error) {
+    // A stale/undecryptable session cookie (rotated AUTH_SECRET, an Auth.js
+    // version change, or a cookie left by another app on localhost) must never
+    // crash the app — treat it as signed-out and fall through to the dev stub.
+    console.error("[getCurrentUser] session decode failed; treating as signed-out", error);
+  }
   if (session?.user) {
     const dbUser = await getUserById(session.user.id);
     if (!dbUser?.isActive) return null;

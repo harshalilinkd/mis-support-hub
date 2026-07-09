@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 import { Ticket } from "lucide-react";
 
@@ -23,7 +24,12 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const session = await auth();
+  let session: Session | null = null;
+  try {
+    session = await auth();
+  } catch {
+    session = null;
+  }
   if (session?.user) redirect("/");
 
   const { error } = await searchParams;

@@ -11,12 +11,27 @@ const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "")
   .map((d) => d.trim().toLowerCase())
   .filter(Boolean);
 
+const useSecureCookies = process.env.NODE_ENV === "production";
+
 export const authConfig = {
   providers: [Google],
   pages: {
     signIn: "/login",
   },
   session: { strategy: "jwt" },
+  // App-specific cookie name so we never read a foreign/stale
+  // `authjs.session-token` set by another app on localhost (ports share cookies).
+  cookies: {
+    sessionToken: {
+      name: `${useSecureCookies ? "__Secure-" : ""}mis-hub.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
+  },
   callbacks: {
     // Domain allowlist (CLAUDE.md §7). Empty list = allow any (local dev).
     signIn({ profile, user }) {
