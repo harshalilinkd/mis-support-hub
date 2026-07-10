@@ -10,9 +10,9 @@ export const metadata: Metadata = { title: "Board" };
 
 export default async function BoardPage() {
   const user = await requireRole(...STAFF_ROLES);
-  const all = await listAllTickets();
-  // The board shows active + resolved work; CLOSED tickets drop off.
-  const tickets = all.filter((t) => t.status !== "CLOSED");
+  // Every ticket shows on the board; RESOLVED + CLOSED both live in the Resolved
+  // column (matches the All Tickets "Resolved" tab).
+  const tickets = await listAllTickets();
 
   return (
     <div className="space-y-6">

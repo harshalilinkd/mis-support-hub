@@ -80,8 +80,11 @@ export function BoardCard({
   ticket: TicketListRow;
   onOpen: () => void;
 }) {
+  // Terminal tickets (resolved/closed) sit in the Resolved column but can't move
+  // anywhere via the state machine, so make them non-draggable (still clickable).
+  const draggable = ticket.status !== "RESOLVED" && ticket.status !== "CLOSED";
   const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: ticket.id });
+    useDraggable({ id: ticket.id, disabled: !draggable });
   const downPos = useRef<{ x: number; y: number } | null>(null);
 
   return (
@@ -104,7 +107,8 @@ export function BoardCard({
         }
       }}
       className={cn(
-        "cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        draggable ? "cursor-grab" : "cursor-pointer",
         isDragging && "opacity-40"
       )}
     />

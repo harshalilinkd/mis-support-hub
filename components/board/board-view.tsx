@@ -42,11 +42,11 @@ const COLUMNS: { id: ColId; label: string; target: Status }[] = [
   { id: "RESOLVED", label: "Resolved", target: "RESOLVED" },
 ];
 
-function columnFor(status: Status): ColId | null {
+function columnFor(status: Status): ColId {
   if (status === "OPEN") return "OPEN";
   if (status === "IN_PROGRESS" || status === "REOPENED") return "IN_PROGRESS";
-  if (status === "RESOLVED") return "RESOLVED";
-  return null; // CLOSED is not shown on the board
+  // RESOLVED + CLOSED both live in the Resolved column.
+  return "RESOLVED";
 }
 
 function group(tickets: TicketListRow[]): Record<ColId, TicketListRow[]> {
@@ -56,8 +56,7 @@ function group(tickets: TicketListRow[]): Record<ColId, TicketListRow[]> {
     RESOLVED: [],
   };
   for (const t of tickets) {
-    const c = columnFor(t.status);
-    if (c) cols[c].push(t);
+    cols[columnFor(t.status)].push(t);
   }
   return cols;
 }
