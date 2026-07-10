@@ -189,3 +189,44 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Dashboard: staggered card entrance (design-system.md §Motion effect 1) and the
+   line-draw for the flow chart. Both collapse to instant under the block above. */
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.enter-up {
+  /* `backwards` (not `both`) so the finished animation doesn't pin `transform`
+     and block the hover-lift; the delay still hides it before it starts. */
+  animation: enter-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes flow-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.flow-draw {
+  stroke-dasharray: 1;
+  animation: flow-draw 1.15s ease-out both;
+}
+@keyframes flow-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.flow-fade {
+  animation: flow-fade 1.15s ease-out both;
+}

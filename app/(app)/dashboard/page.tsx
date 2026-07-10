@@ -54,17 +54,20 @@ function Panel({
   title,
   subtitle,
   className,
+  delay = 0,
   children,
 }: {
   title: string;
   subtitle?: string;
   className?: string;
+  delay?: number;
   children: React.ReactNode;
 }) {
   return (
     <section
+      style={{ animationDelay: `${delay}ms` }}
       className={cn(
-        "rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]",
+        "enter-up rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)] transition-[box-shadow,border-color] duration-200 hover:border-primary/20 hover:shadow-[var(--shadow-hover)]",
         className
       )}
     >
@@ -123,6 +126,7 @@ export default async function DashboardPage({
     label: w.name ?? "Unnamed",
     value: w.count,
   }));
+  const deptTotal = deptItems.reduce((sum, i) => sum + i.value, 0);
 
   const rangeLabel = `last ${days} days`;
 
@@ -148,26 +152,27 @@ export default async function DashboardPage({
           title="Created vs resolved"
           subtitle={`${createdInRange} in · ${resolvedInRange} out · ${rangeLabel}`}
           className="lg:col-span-2"
+          delay={60}
         >
           <FlowChart data={flow} />
         </Panel>
-        <Panel title="By status" subtitle="Current, all-time">
+        <Panel title="By status" subtitle="Current, all-time" delay={120}>
           <StatusBreakdown stats={stats} />
         </Panel>
       </div>
 
       {/* Department + priority + aging */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Panel title="By department" subtitle={`Created · ${rangeLabel}`}>
+        <Panel title="By department" subtitle={`Created · ${rangeLabel}`} delay={60}>
           <BarList
             items={deptItems}
-            totalLabel={(t) => `${t} ${t === 1 ? "ticket" : "tickets"} in range`}
+            totalLabel={`${deptTotal} ${deptTotal === 1 ? "ticket" : "tickets"} in range`}
           />
         </Panel>
-        <Panel title="By priority" subtitle={`Created · ${rangeLabel}`}>
+        <Panel title="By priority" subtitle={`Created · ${rangeLabel}`} delay={120}>
           <BarList items={priorityItems} />
         </Panel>
-        <Panel title="Open ticket aging" subtitle="Active tickets by age">
+        <Panel title="Open ticket aging" subtitle="Active tickets by age" delay={180}>
           <BarList items={agingItems} emptyLabel="No open tickets right now." />
         </Panel>
       </div>
@@ -178,6 +183,7 @@ export default async function DashboardPage({
           title="Workload by assignee"
           subtitle="Active tickets per MIS member"
           className="lg:col-span-2"
+          delay={60}
         >
           <BarList
             items={workloadItems}

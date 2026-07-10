@@ -105,7 +105,7 @@ export function FlowChart({ data }: { data: FlowPoint[] }) {
           />
         ))}
 
-        <path d={createdArea} fill="url(#flowFill)" />
+        <path d={createdArea} fill="url(#flowFill)" className="flow-fade" />
         <path
           d={createdLine}
           fill="none"
@@ -113,6 +113,8 @@ export function FlowChart({ data }: { data: FlowPoint[] }) {
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
+          pathLength={1}
+          className="flow-draw"
         />
         <path
           d={resolvedLine}
@@ -121,6 +123,9 @@ export function FlowChart({ data }: { data: FlowPoint[] }) {
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
+          pathLength={1}
+          className="flow-draw"
+          style={{ animationDelay: "0.15s" }}
         />
 
         {point ? (
