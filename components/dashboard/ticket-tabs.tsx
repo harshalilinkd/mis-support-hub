@@ -14,7 +14,11 @@ import { cn } from "@/lib/utils";
  * into the URL (`?tab=`) like the toolbar facets, so views stay shareable and the
  * server does the filtering. Other query params (search, dept, …) are preserved.
  */
-export function TicketTabs() {
+export function TicketTabs({
+  counts,
+}: {
+  counts?: Record<TicketTabKey, number>;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -42,13 +46,25 @@ export function TicketTabs() {
             aria-pressed={active}
             onClick={() => select(t.key)}
             className={cn(
-              "rounded-[6px] px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
                 ? "bg-accent-soft text-primary"
                 : "text-text-muted hover:text-foreground"
             )}
           >
             {t.label}
+            {counts ? (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                  active
+                    ? "bg-primary/15 text-primary"
+                    : "bg-surface-muted text-text-muted"
+                )}
+              >
+                {counts[t.key]}
+              </span>
+            ) : null}
           </button>
         );
       })}

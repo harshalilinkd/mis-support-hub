@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { requireRole, STAFF_ROLES } from "@/lib/authz";
 import {
+  countTicketsByTab,
   listAllTickets,
   listAssignableUsers,
   type TicketFilters,
@@ -55,9 +56,10 @@ export default async function TicketsPage({
     search: pick(sp.q)?.trim() || undefined,
   };
 
-  const [tickets, users] = await Promise.all([
+  const [tickets, users, tabCounts] = await Promise.all([
     listAllTickets(filters),
     listAssignableUsers(),
+    countTicketsByTab(filters),
   ]);
 
   return (
@@ -71,7 +73,7 @@ export default async function TicketsPage({
 
       {/* Tabs + search + facet filters, all on one row (wraps on small screens). */}
       <div className="flex flex-wrap items-center gap-3">
-        <TicketTabs />
+        <TicketTabs counts={tabCounts} />
         <div className="min-w-[240px] flex-1">
           <TableToolbar users={users} />
         </div>

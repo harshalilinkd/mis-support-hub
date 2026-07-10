@@ -27,6 +27,7 @@ import {
   tickets,
   users,
 } from "./schema";
+import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
 
 /* ------------------------------------------------------------------ *
  * Users
@@ -709,6 +710,41 @@ export async function listAllTickets(filters: TicketFilters = {}) {
 }
 
 export type TicketListRow = Awaited<ReturnType<typeof listAllTickets>>[number];
+
+/**
+ * Per-tab ticket counts for the All Tickets tabs. Honors the facet filters
+ * (department/priority/assignee/search) but ignores the status tab itself, so a
+ * badge shows how many tickets fall under each tab given the current filters.
+ */
+export async function countTicketsByTab(
+  filters: TicketFilters = {}
+): Promise<Record<TicketTabKey, number>> {
+  // Count across every status — honor the facet filters but not the status tab.
+  const conds = ticketFilterConditions({
+    priority: filters.priority,
+    department: filters.department,
+    assigneeId: filters.assigneeId,
+    search: filters.search,
+  });
+  const rows = await db
+    .select({
+      status: tickets.status,
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(tickets)
+    .where(conds.length ? and(...conds) : undefined)
+    .groupBy(tickets.status);
+
+  const byStatus = new Map<Status, number>(rows.map((r) => [r.status, r.count]));
+  const result = {} as Record<TicketTabKey, number>;
+  for (const tab of TICKET_TABS) {
+    result[tab.key] = statusesForTab(tab.key).reduce(
+      (sum, s) => sum + (byStatus.get(s) ?? 0),
+      0
+    );
+  }
+  return result;
+}
 
 /**
  * Full ticket detail with comments + attachments + activity + people joined.
