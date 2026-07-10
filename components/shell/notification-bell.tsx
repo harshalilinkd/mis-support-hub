@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell } from "lucide-react";
+import { Bell, Volume2, VolumeX } from "lucide-react";
 
 import { markNotificationsRead } from "@/lib/actions/notifications";
+import {
+  isSoundMuted,
+  playNotificationChime,
+  primeNotificationSound,
+  setSoundMuted,
+} from "@/lib/notification-sound";
 import { cn } from "@/lib/utils";
 import { RelativeTime } from "@/components/relative-time";
 import { Button } from "@/components/ui/button";
@@ -34,8 +40,33 @@ export function NotificationBell({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [unread, setUnread] = useState(unreadCount);
+  const [muted, setMuted] = useState(false);
+  const prevUnread = useRef(unreadCount);
 
   useEffect(() => setUnread(unreadCount), [unreadCount]);
+
+  // Reflect the stored mute preference and prime audio for the autoplay policy.
+  useEffect(() => {
+    setMuted(isSoundMuted());
+    return primeNotificationSound();
+  }, []);
+
+  // Chime when the unread count rises (a new notification arrived) — never on the
+  // initial mount, and never when the count drops (marking notifications read).
+  useEffect(() => {
+    if (unreadCount > prevUnread.current) {
+      playNotificationChime();
+    }
+    prevUnread.current = unreadCount;
+  }, [unreadCount]);
+
+  function toggleMute() {
+    setMuted((m) => {
+      const next = !m;
+      setSoundMuted(next);
+      return next;
+    });
+  }
 
   function handleOpenChange(open: boolean) {
     if (open && unread > 0) {
@@ -65,8 +96,23 @@ export function NotificationBell({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 p-0">
-        <div className="border-b border-border px-3 py-2 text-sm font-medium">
-          Notifications
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-sm font-medium">Notifications</span>
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-label={
+              muted ? "Unmute notification sound" : "Mute notification sound"
+            }
+            title={muted ? "Sound off — click to unmute" : "Sound on — click to mute"}
+            className="grid size-6 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
+          >
+            {muted ? (
+              <VolumeX className="size-3.5" />
+            ) : (
+              <Volume2 className="size-3.5" />
+            )}
+          </button>
         </div>
         {notifications.length === 0 ? (
           <div className="px-3 py-10 text-center text-sm text-text-muted">
