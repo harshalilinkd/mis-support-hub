@@ -202,9 +202,10 @@ export function AppShell({
   );
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar — full (≥ lg) collapsing to an icon rail (md..lg) */}
-      <aside className="sticky top-0 hidden h-screen flex-col border-r border-border bg-surface md:flex md:w-[68px] lg:w-64">
+    <div className="min-h-screen bg-background">
+      {/* Desktop sidebar — fixed to the viewport so it never scrolls; full (≥ lg)
+          collapsing to an icon rail (md..lg). Content is offset by its width. */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[68px] flex-col border-r border-border bg-surface md:flex lg:w-64">
         <div className="flex h-16 items-center justify-center border-b border-border px-0 lg:justify-start lg:px-4">
           <span className="hidden lg:block">{brand}</span>
           <div className="grid size-8 place-items-center rounded-[10px] bg-primary text-primary-foreground lg:hidden">
@@ -228,7 +229,7 @@ export function AppShell({
         <div className="hidden border-t border-border p-3 lg:block">{userCard}</div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-col md:pl-[68px] lg:pl-64">
         {/* Topbar */}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-md">
           {/* Mobile drawer */}
