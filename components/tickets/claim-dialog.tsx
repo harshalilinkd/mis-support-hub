@@ -74,7 +74,15 @@ export function ClaimDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-md">
+      {/* React portals bubble events through the component tree, not the DOM, so
+          a click/keydown on the Priority select or date field would otherwise
+          bubble to an ancestor row/card onClick (which opens the ticket-detail
+          sheet). Stop it at the dialog content so the fields are self-contained. */}
+      <DialogContent
+        className="max-w-md"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <DialogHeader>
           <DialogTitle>Claim &amp; start work</DialogTitle>
           <DialogDescription>
