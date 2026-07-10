@@ -93,7 +93,13 @@ function sectionsFor(role: Role) {
     (!x.staffOnly || isStaff) && (!x.adminOnly || isAdmin);
   return NAV_SECTIONS.filter(allow).map((s) => ({
     ...s,
-    items: s.items.filter(allow),
+    items: s.items.filter(allow).map((item) =>
+      // Staff don't raise tickets from here — /my is their assigned work queue,
+      // so "My Tickets" is misleading; show "Assigned to Me" for staff/admins.
+      item.href === "/my" && isStaff
+        ? { ...item, label: "Assigned to Me" }
+        : item
+    ),
   }));
 }
 
@@ -198,7 +204,7 @@ export function AppShell({
   return (
     <div className="flex min-h-screen bg-background">
       {/* Desktop sidebar — full (≥ lg) collapsing to an icon rail (md..lg) */}
-      <aside className="hidden flex-col border-r border-border bg-surface md:flex md:w-[68px] lg:w-64">
+      <aside className="sticky top-0 hidden h-screen flex-col border-r border-border bg-surface md:flex md:w-[68px] lg:w-64">
         <div className="flex h-16 items-center justify-center border-b border-border px-0 lg:justify-start lg:px-4">
           <span className="hidden lg:block">{brand}</span>
           <div className="grid size-8 place-items-center rounded-[10px] bg-primary text-primary-foreground lg:hidden">

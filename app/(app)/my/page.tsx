@@ -33,7 +33,7 @@ export default async function MyTicketsPage() {
   return (
     <div>
       <PageHeader
-        title="My Tickets"
+        title={isStaff ? "Assigned to Me" : "My Tickets"}
         description={
           isStaff
             ? "Tickets assigned to you — the ones you're actively working on."
