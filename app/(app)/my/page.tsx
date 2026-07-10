@@ -26,6 +26,8 @@ export default async function MyTicketsPage() {
     updatedAt: toIso(r.updatedAt),
     assignedToName: r.assignedToName,
     commentCount: r.commentCount,
+    sheetLink: r.sheetLink,
+    attachments: r.attachments,
   }));
 
   return (

@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { AbsoluteTime } from "@/components/absolute-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { ClaimButton } from "@/components/tickets/claim-button";
+import { TicketLinkFiles } from "@/components/tickets/ticket-link-files";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import {
   Table,
@@ -80,6 +81,12 @@ export function TicketTable({
                   className="ml-auto font-mono text-xs text-text-muted"
                 />
               </div>
+              <div className="mt-2">
+                <TicketLinkFiles
+                  sheetLink={t.sheetLink}
+                  attachments={t.attachments}
+                />
+              </div>
               <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
                 <ClaimButton
                   ticketId={t.id}
@@ -108,6 +115,7 @@ export function TicketTable({
               <TableHead>Number</TableHead>
               <TableHead>Title</TableHead>
               <TableHead>Dept</TableHead>
+              <TableHead>Link / Files</TableHead>
               <TableHead>Reporter</TableHead>
               <TableHead>Assignee</TableHead>
               <TableHead>Status</TableHead>
@@ -131,6 +139,12 @@ export function TicketTable({
                 </TableCell>
                 <TableCell className="text-sm text-text-muted">
                   {DEPARTMENT_LABELS[t.department]}
+                </TableCell>
+                <TableCell className="align-top">
+                  <TicketLinkFiles
+                    sheetLink={t.sheetLink}
+                    attachments={t.attachments}
+                  />
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">

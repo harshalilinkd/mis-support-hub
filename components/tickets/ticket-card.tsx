@@ -2,6 +2,7 @@ import Link from "next/link";
 import { MessageSquare } from "lucide-react";
 
 import { RelativeTime } from "@/components/relative-time";
+import type { TicketAttachmentThumb } from "@/lib/db/queries";
 import type { Department, Priority, Status } from "@/lib/db/schema";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityChip, StatusChip } from "./chips";
@@ -23,6 +24,8 @@ export type TicketCardData = {
   updatedAt: string | Date;
   assignedToName: string | null;
   commentCount: number;
+  sheetLink: string | null;
+  attachments: TicketAttachmentThumb[];
 };
 
 export function TicketCard({

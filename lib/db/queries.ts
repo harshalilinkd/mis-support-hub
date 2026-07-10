@@ -584,6 +584,14 @@ export async function getTicketById(id: string) {
   return row ?? null;
 }
 
+/** Attachment metadata shown inline in the list tables (link/thumbnail chips). */
+export type TicketAttachmentThumb = {
+  id: string;
+  url: string;
+  filename: string;
+  contentType: string;
+};
+
 const ticketListSelect = {
   id: tickets.id,
   number: tickets.number,
@@ -609,6 +617,21 @@ const ticketListSelect = {
     sql<number>`(select count(*) from ${ticketAttachments} where ${ticketAttachments.ticketId} = ${tickets.id})`.mapWith(
       Number
     ),
+  // Attachment metadata for inline thumbnails/links. Correlates on the outer
+  // tickets.id like the counts above (the list joins force qualification).
+  attachments: sql<TicketAttachmentThumb[]>`(
+    select coalesce(
+      json_agg(json_build_object(
+        'id', ${ticketAttachments.id},
+        'url', ${ticketAttachments.url},
+        'filename', ${ticketAttachments.filename},
+        'contentType', ${ticketAttachments.contentType}
+      ) order by ${ticketAttachments.createdAt}),
+      '[]'::json
+    )
+    from ${ticketAttachments}
+    where ${ticketAttachments.ticketId} = ${tickets.id}
+  )`,
 };
 
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
