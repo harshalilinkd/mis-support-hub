@@ -10,6 +10,9 @@ import type { Priority, Status } from "@/lib/db/schema";
 import {
   sendAssignmentNotification,
   sendClaimNotification,
+  sendClosureNotification,
+  sendEditNotification,
+  sendReopenNotification,
   sendResolutionNotification,
 } from "@/lib/notifications";
 import { getCurrentUser } from "@/lib/session";
@@ -287,6 +290,50 @@ export async function reopenTicket(ticketId: string): Promise<ActionResult> {
     from: ticket.status,
   });
 
+  // Tell the assigned MIS member their ticket is active again — it stays with
+  // them and returns to their In Progress list (§ workflow; best-effort, §8).
+  await sendReopenNotification(ticket.id);
+
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Confirm a resolved ticket — the reporter (or MIS_ADMIN) accepts the fix, which
+ * permanently CLOSES it (§ workflow: it can't be reopened after this). Notifies
+ * the assigned MIS member that the reporter confirmed and the ticket is closed.
+ */
+export async function confirmResolved(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+
+  const parsed = reopenTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+
+  const isReporter = ticket.createdBy === user.id;
+  const isAdmin = user.role === "MIS_ADMIN";
+  if (!isReporter && !isAdmin) {
+    return fail("Only the reporter or an MIS admin can confirm a ticket.");
+  }
+  if (ticket.status !== "RESOLVED") {
+    return fail("Only a resolved ticket can be confirmed.");
+  }
+
+  await q.setTicketStatus({
+    ticketId: ticket.id,
+    actorId: user.id,
+    from: "RESOLVED",
+    to: "CLOSED",
+  });
+
+  await sendClosureNotification(
+    ticket.id,
+    user.name ?? user.email ?? "The reporter"
+  );
+
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);
 }
@@ -311,14 +358,31 @@ export async function updateTicket(input: unknown): Promise<ActionResult> {
     return fail("A closed ticket can't be edited.");
   }
 
+  // No-op guard: if nothing actually changed, don't record an activity row or
+  // notify anyone (§ workflow: no notification when the edit form is opened and
+  // closed without a real change).
+  const nextSheet = parsed.data.sheetLink ?? null;
+  const unchanged =
+    ticket.title === parsed.data.title &&
+    ticket.description === parsed.data.description &&
+    ticket.department === parsed.data.department &&
+    (ticket.sheetLink ?? null) === nextSheet;
+  if (unchanged) return ok(undefined);
+
   await q.updateTicketFields({
     ticketId: ticket.id,
     actorId: user.id,
     title: parsed.data.title,
     description: parsed.data.description,
     department: parsed.data.department,
-    sheetLink: parsed.data.sheetLink ?? null,
+    sheetLink: nextSheet,
   });
+
+  // Tell the assigned MIS member the reporter added/changed details (§ workflow;
+  // in-app only). Only for the reporter's own edits, and only when assigned.
+  if (isReporter && ticket.assignedTo) {
+    await sendEditNotification(ticket.id);
+  }
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);

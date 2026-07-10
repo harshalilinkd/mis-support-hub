@@ -209,6 +209,106 @@ export async function sendClaimNotification(ticketId: string): Promise<void> {
 }
 
 /**
+ * Ticket reopened by the reporter: tell the assigned MIS member it's active again
+ * and back in their In Progress list (§ workflow; in-app + email; §8).
+ */
+export async function sendReopenNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const worker = await loadUser(ticket.assignedTo);
+    if (!worker) return;
+    const reporter = await loadUser(ticket.createdBy);
+    const who = reporter?.name ?? "The reporter";
+
+    await createInApp({
+      userId: worker.id,
+      type: "TICKET_REOPENED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} was reopened`,
+      body: `${ticket.title}\n${who} reopened this — it's back in your In Progress list.`,
+    });
+
+    if (worker.email) {
+      await notify({
+        to: { email: worker.email, name: worker.name },
+        template: "TICKET_REOPENED",
+        data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+      });
+    }
+  } catch (e) {
+    console.error("[sendReopenNotification]", e);
+  }
+}
+
+/**
+ * Reporter confirmed the fix: tell the assigned MIS member the ticket is now
+ * closed for good (§ workflow; in-app + email; §8).
+ */
+export async function sendClosureNotification(
+  ticketId: string,
+  closedByName: string
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const worker = await loadUser(ticket.assignedTo);
+    if (!worker) return;
+
+    await createInApp({
+      userId: worker.id,
+      type: "TICKET_CLOSED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} confirmed resolved & closed`,
+      body: `${ticket.title}\n${closedByName} confirmed the fix. The ticket is now closed.`,
+    });
+
+    if (worker.email) {
+      await notify({
+        to: { email: worker.email, name: worker.name },
+        template: "TICKET_CLOSED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          closedBy: closedByName,
+          appUrl: appUrl(),
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[sendClosureNotification]", e);
+  }
+}
+
+/**
+ * Reporter added/changed details after MIS started: tell the assigned MIS member
+ * so they see the new info. In-app only (like comments) to avoid email noise; the
+ * caller only fires this for a real change (§ workflow).
+ */
+export async function sendEditNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const worker = await loadUser(ticket.assignedTo);
+    if (!worker) return;
+    const reporter = await loadUser(ticket.createdBy);
+
+    await createInApp({
+      userId: worker.id,
+      type: "TICKET_UPDATED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} was updated by the reporter`,
+      body: `${ticket.title}\n${reporter?.name ?? "The reporter"} added or changed details.`,
+    });
+  } catch (e) {
+    console.error("[sendEditNotification]", e);
+  }
+}
+
+/**
  * New comment → notify the "other party" (CLAUDE.md §8): if the actor is the
  * reporter, notify the assignee; otherwise notify the reporter. In-app only —
  * email is intentionally off by default for comments.

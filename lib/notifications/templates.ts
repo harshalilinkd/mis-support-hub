@@ -67,6 +67,24 @@ export function renderTemplate(input: NotifyInput): {
           cta
         ),
       };
+    case "TICKET_REOPENED":
+      return {
+        subject: `${number} was reopened`,
+        html: shell(
+          `${number} was reopened`,
+          `<p style="margin:0;line-height:1.6"><strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was reopened by the reporter and is back in your In Progress list.</p>`,
+          cta
+        ),
+      };
+    case "TICKET_CLOSED":
+      return {
+        subject: `${number} confirmed resolved & closed`,
+        html: shell(
+          `${number} was confirmed & closed`,
+          `<p style="margin:0;line-height:1.6"><strong>${escapeHtml(input.data.closedBy ?? "The reporter")}</strong> confirmed that <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — is resolved. The ticket is now closed.</p>`,
+          cta
+        ),
+      };
     case "NEW_COMMENT":
       return {
         subject: `New comment on ${number}`,

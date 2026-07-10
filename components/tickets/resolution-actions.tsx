@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
-import { reopenTicket } from "@/lib/actions/tickets";
+import { confirmResolved, reopenTicket } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
 
 /**
- * Shown to the reporter (and MIS admins) when a ticket is RESOLVED.
- * "Confirm resolved" is an acknowledgement — the ticket auto-closes after 7 days
- * if not reopened (§5); the USER can't set CLOSED (§6). Reopen → reopenTicket.
+ * Shown to the reporter (and MIS admins) while a ticket is RESOLVED.
+ * "Confirm resolved" permanently CLOSES the ticket (§ workflow) — once closed
+ * this prompt no longer renders and the ticket can't be reopened. "Reopen"
+ * sends it back to the same MIS member as REOPENED.
  */
 export function ResolutionActions({
   ticketId,
@@ -23,29 +24,22 @@ export function ResolutionActions({
   onDone?: () => void;
 }) {
   const router = useRouter();
-  const [confirmed, setConfirmed] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  function reopen() {
+  function run(
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    success: string
+  ) {
     startTransition(async () => {
-      const res = await reopenTicket(ticketId);
+      const res = await fn();
       if (!res.ok) {
-        toast.error(res.error);
+        toast.error(res.error ?? "Something went wrong.");
         return;
       }
-      toast.success("Ticket reopened");
+      toast.success(success);
       router.refresh();
       onDone?.();
     });
-  }
-
-  if (confirmed) {
-    return (
-      <p className="rounded-[var(--radius-card)] border border-border bg-accent-soft/40 p-3 text-sm text-status-resolved">
-        Thanks for confirming — this ticket will close automatically unless it is
-        reopened.
-      </p>
-    );
   }
 
   return (
@@ -55,19 +49,26 @@ export function ResolutionActions({
         {showConfirm ? (
           <Button
             size="sm"
-            onClick={() => {
-              setConfirmed(true);
-              toast.success("Marked as confirmed. Thanks!");
-            }}
+            onClick={() =>
+              run(
+                () => confirmResolved(ticketId),
+                "Thanks for confirming — the ticket is now closed."
+              )
+            }
             disabled={pending}
           >
             <CheckCircle2 className="size-4" />
             Confirm resolved
           </Button>
         ) : null}
-        <Button size="sm" variant="outline" onClick={reopen} disabled={pending}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => run(() => reopenTicket(ticketId), "Ticket reopened")}
+          disabled={pending}
+        >
           <RotateCcw className="size-4" />
-          {pending ? "Reopening…" : "Reopen"}
+          {pending ? "Working…" : "Reopen"}
         </Button>
       </div>
     </div>

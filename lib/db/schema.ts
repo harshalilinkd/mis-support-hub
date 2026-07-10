@@ -58,6 +58,9 @@ export const NOTIFICATION_TYPES = [
   "TICKET_RESOLVED",
   "TICKET_ASSIGNED",
   "TICKET_CLAIMED",
+  "TICKET_REOPENED",
+  "TICKET_CLOSED",
+  "TICKET_UPDATED",
   "NEW_COMMENT",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

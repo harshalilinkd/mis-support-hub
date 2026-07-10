@@ -4,6 +4,8 @@ export type NotificationTemplate =
   | "TICKET_RESOLVED"
   | "TICKET_ASSIGNED"
   | "TICKET_CLAIMED"
+  | "TICKET_REOPENED"
+  | "TICKET_CLOSED"
   | "NEW_COMMENT";
 
 export interface NotifyRecipient {
