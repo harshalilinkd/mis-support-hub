@@ -314,8 +314,10 @@ export function AppShell({
                   </span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>
-                  <UserIcon className="size-4" /> Profile
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">
+                    <UserIcon className="size-4" /> Profile
+                  </Link>
                 </DropdownMenuItem>
                 {user.role === "MIS_ADMIN" ? (
                   <DropdownMenuItem asChild>
