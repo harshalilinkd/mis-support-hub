@@ -22,6 +22,7 @@ import { BarList } from "@/components/dashboard/bar-list";
 import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
 import { FlowChart } from "@/components/dashboard/flow-chart";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
+import { ResolutionGauge } from "@/components/dashboard/resolution-gauge";
 import { StatusBreakdown } from "@/components/dashboard/status-breakdown";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,9 @@ export default async function DashboardPage({
     value: w.count,
   }));
   const deptTotal = deptItems.reduce((sum, i) => sum + i.value, 0);
+  const totalTickets =
+    stats.open + stats.inProgress + stats.resolved + stats.closed;
+  const doneTickets = stats.resolved + stats.closed;
 
   const rangeLabel = `last ${days} days`;
 
@@ -177,7 +181,7 @@ export default async function DashboardPage({
         </Panel>
       </div>
 
-      {/* Workload */}
+      {/* Workload + resolution rate */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel
           title="Workload by assignee"
@@ -189,6 +193,13 @@ export default async function DashboardPage({
             items={workloadItems}
             emptyLabel="No active assignments right now."
           />
+        </Panel>
+        <Panel
+          title="Resolution rate"
+          subtitle="Resolved + closed of all tickets"
+          delay={120}
+        >
+          <ResolutionGauge done={doneTickets} total={totalTickets} />
         </Panel>
       </div>
     </div>
