@@ -407,13 +407,17 @@ export async function claimTicketRow(args: {
 
   const events = [];
   if (args.writeAssigned) {
+    // A claim is always a self-assignment, so record it as CLAIMED (not ASSIGNED)
+    // — the timeline then reads "claimed the ticket" instead of "assigned it to
+    // <self>". Store the deadline in toValue so it shows on the same line;
+    // fromValue keeps the prior owner on an admin take-over.
     events.push(
       db.insert(ticketActivity).values({
         ticketId: args.ticketId,
         actorId: args.actorId,
-        type: "ASSIGNED",
+        type: "CLAIMED",
         fromValue: args.fromAssigneeName,
-        toValue: args.actorName,
+        toValue: args.deadline.toISOString(),
       })
     );
   }

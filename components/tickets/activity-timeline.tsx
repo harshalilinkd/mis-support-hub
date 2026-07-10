@@ -12,15 +12,38 @@ function humanize(value: string | null): string {
     : value;
 }
 
+// Deadlines are stored on the CLAIMED event as an ISO string; show them as a
+// plain IST date (matches the AbsoluteTime date format used elsewhere).
+const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+function formatDue(value: string | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : DUE_FMT.format(d);
+}
+
 function describe(a: ActivityRow): string {
   const actor = a.actorName ?? "Someone";
   switch (a.type) {
     case "CREATED":
       return `${actor} raised the ticket`;
+    case "CLAIMED": {
+      const from = a.fromValue ? ` from ${a.fromValue}` : "";
+      const due = a.toValue ? ` · due by ${formatDue(a.toValue)}` : "";
+      return `${actor} claimed the ticket${from}${due}`;
+    }
     case "ASSIGNED":
-      return a.toValue
-        ? `${actor} assigned it to ${a.toValue}`
-        : `${actor} unassigned it`;
+      if (!a.toValue) return `${actor} unassigned it`;
+      // A self-assignment reads as a claim (covers historical rows written before
+      // CLAIMED existed); a genuine hand-off keeps "assigned it to <name>".
+      if (a.actorName && a.toValue === a.actorName) {
+        return `${actor} claimed the ticket`;
+      }
+      return `${actor} assigned it to ${a.toValue}`;
     case "STATUS_CHANGED":
       return `${actor} changed status: ${humanize(a.fromValue)} → ${humanize(a.toValue)}`;
     case "PRIORITY_CHANGED":
