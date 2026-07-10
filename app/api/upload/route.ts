@@ -26,6 +26,9 @@ export async function POST(request: Request): Promise<NextResponse> {
         return {
           allowedContentTypes: [...ACCEPTED_CONTENT_TYPES],
           maximumSizeInBytes: MAX_ATTACHMENT_BYTES,
+          // Give every upload a unique filename so two files with the same name
+          // (e.g. "Screenshot ….png") don't collide with a "blob already exists".
+          addRandomSuffix: true,
           tokenPayload: JSON.stringify({ userId: session.user.id }),
         };
       },

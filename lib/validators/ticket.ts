@@ -33,8 +33,8 @@ export const createTicketSchema = z.object({
   title: z
     .string()
     .trim()
-    .min(4, "Give it a short summary (min 4 characters)")
-    .max(160, "Keep the summary under 160 characters"),
+    .min(4, "Give it a short subject (min 4 characters)")
+    .max(160, "Keep the subject under 160 characters"),
   description: z
     .string()
     .trim()
@@ -97,18 +97,20 @@ export const editTicketSchema = z.object({
   title: z
     .string()
     .trim()
-    .min(4, "Give it a short summary (min 4 characters)")
-    .max(160, "Keep the summary under 160 characters"),
+    .min(4, "Give it a short subject (min 4 characters)")
+    .max(160, "Keep the subject under 160 characters"),
   description: z
     .string()
     .trim()
     .min(10, "Describe the issue (min 10 characters)")
     .max(5000),
   department: z.enum(DEPARTMENTS),
+  // Not necessarily a URL — a sheet/app link OR just the system name is fine
+  // (mirrors the raise form, so a ticket saved with a system name stays editable).
   sheetLink: z
     .string()
     .trim()
-    .url("Must be a valid URL")
+    .max(500)
     .optional()
     .or(z.literal(""))
     .transform((v) => (v ? v : undefined)),

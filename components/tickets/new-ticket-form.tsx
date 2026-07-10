@@ -167,10 +167,10 @@ export function NewTicketForm({
       </div>
 
       <div>
-        <Label htmlFor="title">Summary</Label>
+        <Label htmlFor="title">Subject</Label>
         <Input
           id="title"
-          placeholder="Short summary of the issue"
+          placeholder="A short one-line title for the issue"
           disabled={pending}
           {...register("title")}
         />
@@ -195,11 +195,11 @@ export function NewTicketForm({
       </div>
 
       <div>
-        <Label htmlFor="description">Describe the problem</Label>
+        <Label htmlFor="description">Describe the problem / Summary</Label>
         <Textarea
           id="description"
           rows={4}
-          placeholder="What's happening, what you expected, and any steps to reproduce."
+          placeholder="Explain the issue in detail — what's happening, what you expected, and any steps to reproduce."
           disabled={pending}
           {...register("description")}
         />

@@ -92,7 +92,7 @@ export function TicketActions({
           <DialogHeader>
             <DialogTitle>Edit ticket {number}</DialogTitle>
             <DialogDescription>
-              Update the summary, department, sheet link, or description.
+              Update the subject, department, sheet link, or description.
             </DialogDescription>
           </DialogHeader>
           <EditTicketForm

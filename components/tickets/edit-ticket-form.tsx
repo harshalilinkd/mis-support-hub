@@ -82,7 +82,7 @@ export function EditTicketForm({
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div>
         <label htmlFor="edit-title" className="mb-1.5 block text-sm font-medium">
-          Summary
+          Subject
         </label>
         <Input id="edit-title" disabled={pending} {...register("title")} />
         <FieldError message={errors.title?.message} />
@@ -117,12 +117,11 @@ export function EditTicketForm({
 
       <div>
         <label htmlFor="edit-sheet" className="mb-1.5 block text-sm font-medium">
-          Sheet link (optional)
+          Sheet link / System
         </label>
         <Input
           id="edit-sheet"
-          type="url"
-          placeholder="https://docs.google.com/spreadsheets/…"
+          placeholder="Sheet URL, web app URL, or the system name (e.g. Data entry Interface)"
           disabled={pending}
           {...register("sheetLink")}
         />
@@ -131,7 +130,7 @@ export function EditTicketForm({
 
       <div>
         <label htmlFor="edit-desc" className="mb-1.5 block text-sm font-medium">
-          Description
+          Describe the problem / Summary
         </label>
         <Textarea
           id="edit-desc"
