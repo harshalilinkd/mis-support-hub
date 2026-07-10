@@ -2,16 +2,13 @@ import type { Metadata } from "next";
 
 import { requireRole, STAFF_ROLES } from "@/lib/authz";
 import {
-  countTicketsByTab,
   listAllTickets,
   listAssignableUsers,
   type TicketFilters,
 } from "@/lib/db/queries";
-import { statusesForTab, ticketTabFromParam } from "@/lib/ticket-tabs";
+import { ticketTabFromParam } from "@/lib/ticket-tabs";
 import { DEPARTMENTS, PRIORITIES } from "@/lib/validators/ticket";
-import { TableToolbar } from "@/components/dashboard/table-toolbar";
-import { TicketTable } from "@/components/dashboard/ticket-table";
-import { TicketTabs } from "@/components/dashboard/ticket-tabs";
+import { AllTicketsView } from "@/components/dashboard/all-tickets-view";
 import { ViewToggle } from "@/components/dashboard/view-toggle";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -39,13 +36,11 @@ export default async function TicketsPage({
   const user = await requireRole(...STAFF_ROLES);
   const sp = await searchParams;
 
-  // Status sub-tab (Open / In Progress / Resolved) → a set of statuses to match.
-  const tab = ticketTabFromParam(pick(sp.tab));
-
   const assignee = pick(sp.assignee);
+  // Facet filters only (department / priority / assignee / search). The status
+  // tabs are applied client-side in <AllTicketsView> so switching is instant.
   const filters: TicketFilters = {
     department: oneOf(pick(sp.department), DEPARTMENTS),
-    statuses: statusesForTab(tab),
     priority: oneOf(pick(sp.priority), PRIORITIES),
     assigneeId:
       assignee === "unassigned"
@@ -56,10 +51,9 @@ export default async function TicketsPage({
     search: pick(sp.q)?.trim() || undefined,
   };
 
-  const [tickets, users, tabCounts] = await Promise.all([
+  const [tickets, users] = await Promise.all([
     listAllTickets(filters),
     listAssignableUsers(),
-    countTicketsByTab(filters),
   ]);
 
   return (
@@ -70,15 +64,12 @@ export default async function TicketsPage({
       >
         <ViewToggle />
       </PageHeader>
-
-      {/* Tabs + search + facet filters, all on one row (wraps on small screens). */}
-      <div className="flex flex-wrap items-center gap-3">
-        <TicketTabs counts={tabCounts} />
-        <div className="min-w-[240px] flex-1">
-          <TableToolbar users={users} />
-        </div>
-      </div>
-      <TicketTable tickets={tickets} users={users} currentUser={user} />
+      <AllTicketsView
+        tickets={tickets}
+        users={users}
+        currentUser={user}
+        initialTab={ticketTabFromParam(pick(sp.tab))}
+      />
     </div>
   );
 }
