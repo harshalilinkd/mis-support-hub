@@ -9,6 +9,7 @@ import type { TicketDetail } from "@/lib/db/queries";
 import type { Priority, Status } from "@/lib/db/schema";
 import {
   sendAssignmentNotification,
+  sendClaimNotification,
   sendResolutionNotification,
 } from "@/lib/notifications";
 import { getCurrentUser } from "@/lib/session";
@@ -157,18 +158,23 @@ export async function assignTicket(
 }
 
 /**
- * Claim a ticket — a staff member takes ownership and starts work (§5): assigns
- * it to themselves and moves OPEN/REOPENED → IN_PROGRESS. Won't steal a ticket
- * already claimed by someone else (an MIS_ADMIN may take it over).
+ * Claim a ticket — a staff member takes ownership, sets the priority + an
+ * estimated resolution date, and starts work (§5: OPEN/REOPENED → IN_PROGRESS).
+ * Won't steal a ticket already claimed by someone else (an MIS_ADMIN may take it
+ * over). Notifies the reporter that work has started.
  */
-export async function claimTicket(ticketId: string): Promise<ActionResult> {
+export async function claimTicket(input: {
+  ticketId: string;
+  priority: string;
+  deadline: string;
+}): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
   if (!STAFF_ROLES.includes(user.role)) {
     return fail("Only MIS staff can claim tickets.");
   }
 
-  const parsed = claimTicketSchema.safeParse({ ticketId });
+  const parsed = claimTicketSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
@@ -210,9 +216,15 @@ export async function claimTicket(ticketId: string): Promise<ActionResult> {
     actorName: user.name ?? user.email ?? "MIS",
     fromAssigneeName,
     fromStatus: ticket.status,
+    fromPriority: ticket.priority,
+    priority: parsed.data.priority,
+    deadline: new Date(parsed.data.deadline),
     writeAssigned,
     startWork,
   });
+
+  // Tell the reporter their ticket is now being worked on (priority + ETA; §8).
+  await sendClaimNotification(ticket.id);
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);

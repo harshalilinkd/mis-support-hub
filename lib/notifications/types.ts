@@ -3,6 +3,7 @@ export type NotificationChannel = "email" | "whatsapp" | "in_app";
 export type NotificationTemplate =
   | "TICKET_RESOLVED"
   | "TICKET_ASSIGNED"
+  | "TICKET_CLAIMED"
   | "NEW_COMMENT";
 
 export interface NotifyRecipient {

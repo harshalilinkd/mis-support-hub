@@ -80,6 +80,20 @@ async function loadUser(id: string | null | undefined) {
 
 const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "";
 
+function formatDeadline(value: Date | string): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** "HIGH" → "High" */
+function priorityLabel(p: string): string {
+  return p.charAt(0) + p.slice(1).toLowerCase();
+}
+
 /** Status → RESOLVED/CLOSED: notify the reporter to verify (in-app + email; §8). */
 export async function sendResolutionNotification(ticketId: string): Promise<void> {
   try {
@@ -146,6 +160,51 @@ export async function sendAssignmentNotification(ticketId: string): Promise<void
     }
   } catch (e) {
     console.error("[sendAssignmentNotification]", e);
+  }
+}
+
+/**
+ * Ticket claimed by MIS: tell the reporter their ticket is now being worked on,
+ * with the priority the MIS member set and the estimated resolution date (§8).
+ */
+export async function sendClaimNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+    const worker = await loadUser(ticket.assignedTo);
+    const workerName = worker?.name ?? "The MIS team";
+    const prio = priorityLabel(ticket.priority);
+    const eta = ticket.deadline ? formatDeadline(ticket.deadline) : null;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "TICKET_CLAIMED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${workerName} started working on ${ticket.number}`,
+      body: eta
+        ? `Priority: ${prio}. Expected resolution by ${eta}.`
+        : `Priority: ${prio}. Work has started.`,
+    });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "TICKET_CLAIMED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          claimedBy: workerName,
+          priority: prio,
+          deadline: eta ?? "",
+          appUrl: appUrl(),
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[sendClaimNotification]", e);
   }
 }
 

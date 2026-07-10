@@ -42,13 +42,13 @@ export const createTicketSchema = z.object({
     .max(5000),
   department: z.enum(DEPARTMENTS),
   priority: z.enum(PRIORITIES).default("MEDIUM"),
+  // Required, but not necessarily a URL — a sheet/app link OR just the system
+  // name (e.g. "Data entry Interface") is accepted.
   sheetLink: z
     .string()
     .trim()
-    .url("Must be a valid URL")
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : undefined)),
+    .min(1, "Add a sheet link, web app URL, or the system name")
+    .max(500),
 });
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
@@ -77,6 +77,14 @@ export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
 
 export const claimTicketSchema = z.object({
   ticketId: z.string().uuid(),
+  // MIS sets these when they claim: the priority and an estimated resolution
+  // date (a "YYYY-MM-DD" string from a date input).
+  priority: z.enum(PRIORITIES),
+  deadline: z
+    .string()
+    .trim()
+    .min(1, "Pick an estimated resolution date")
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
 });
 export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
 

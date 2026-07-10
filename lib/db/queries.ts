@@ -391,41 +391,58 @@ export async function claimTicketRow(args: {
   actorName: string | null;
   fromAssigneeName: string | null;
   fromStatus: Status;
+  fromPriority: Priority;
+  priority: Priority;
+  deadline: Date;
   writeAssigned: boolean;
   startWork: boolean;
 }) {
-  const update = db
-    .update(tickets)
-    .set(
-      args.startWork
-        ? { assignedTo: args.actorId, status: "IN_PROGRESS" }
-        : { assignedTo: args.actorId }
-    )
-    .where(eq(tickets.id, args.ticketId));
-  const assignedEvent = db.insert(ticketActivity).values({
-    ticketId: args.ticketId,
-    actorId: args.actorId,
-    type: "ASSIGNED",
-    fromValue: args.fromAssigneeName,
-    toValue: args.actorName,
-  });
-  const statusEvent = db.insert(ticketActivity).values({
-    ticketId: args.ticketId,
-    actorId: args.actorId,
-    type: "STATUS_CHANGED",
-    fromValue: args.fromStatus,
-    toValue: "IN_PROGRESS",
-  });
+  const set: Partial<typeof tickets.$inferInsert> = {
+    assignedTo: args.actorId,
+    priority: args.priority,
+    deadline: args.deadline,
+  };
+  if (args.startWork) set.status = "IN_PROGRESS";
 
-  if (args.writeAssigned && args.startWork) {
-    await db.batch([update, assignedEvent, statusEvent]);
-  } else if (args.writeAssigned) {
-    await db.batch([update, assignedEvent]);
-  } else if (args.startWork) {
-    await db.batch([update, statusEvent]);
-  } else {
-    await db.batch([update]);
+  const events = [];
+  if (args.writeAssigned) {
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "ASSIGNED",
+        fromValue: args.fromAssigneeName,
+        toValue: args.actorName,
+      })
+    );
   }
+  if (args.startWork) {
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "STATUS_CHANGED",
+        fromValue: args.fromStatus,
+        toValue: "IN_PROGRESS",
+      })
+    );
+  }
+  if (args.priority !== args.fromPriority) {
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "PRIORITY_CHANGED",
+        fromValue: args.fromPriority,
+        toValue: args.priority,
+      })
+    );
+  }
+
+  await db.batch([
+    db.update(tickets).set(set).where(eq(tickets.id, args.ticketId)),
+    ...events,
+  ]);
 }
 
 export async function setTicketPriority(args: {

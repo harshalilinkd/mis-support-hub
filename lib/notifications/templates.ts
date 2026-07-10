@@ -57,6 +57,16 @@ export function renderTemplate(input: NotifyInput): {
           cta
         ),
       };
+    case "TICKET_CLAIMED":
+      return {
+        subject: `${input.data.claimedBy ?? "The MIS team"} started working on ${number}`,
+        html: shell(
+          `Work started on ${number}`,
+          `<p style="margin:0;line-height:1.6"><strong>${escapeHtml(input.data.claimedBy ?? "The MIS team")}</strong> has started working on <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}”.</p>
+           <p style="margin:12px 0 0;line-height:1.6">Priority: <strong>${escapeHtml(input.data.priority ?? "")}</strong>${input.data.deadline ? ` · expected resolution by <strong>${escapeHtml(input.data.deadline)}</strong>` : ""}.</p>`,
+          cta
+        ),
+      };
     case "NEW_COMMENT":
       return {
         subject: `New comment on ${number}`,

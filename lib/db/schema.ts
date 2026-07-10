@@ -57,6 +57,7 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 export const NOTIFICATION_TYPES = [
   "TICKET_RESOLVED",
   "TICKET_ASSIGNED",
+  "TICKET_CLAIMED",
   "NEW_COMMENT",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -159,6 +160,8 @@ export const tickets = pgTable("tickets", {
   assignedTo: uuid("assigned_to").references(() => users.id),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedBy: uuid("resolved_by").references(() => users.id),
+  // Estimated resolution date set by MIS when they claim the ticket (§ claim flow).
+  deadline: timestamp("deadline", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

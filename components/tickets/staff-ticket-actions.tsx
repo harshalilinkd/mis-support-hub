@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Hand } from "lucide-react";
 import { toast } from "sonner";
 
-import { claimTicket, updateStatus } from "@/lib/actions/tickets";
+import { updateStatus } from "@/lib/actions/tickets";
 import type { Status } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
+import { ClaimDialog } from "./claim-dialog";
 
 /**
  * MIS-only action bar on the ticket detail: one-click Claim (assign to me +
@@ -91,16 +92,15 @@ export function StaffTicketActions({
               ? `Assigned to ${assignedToName ?? "someone"} — take it over?`
               : "Pick this up to start working on it."}
           </span>
-          <Button
-            className="ml-auto"
-            size="sm"
-            disabled={pending}
-            onClick={() =>
-              act(() => claimTicket(ticketId), "Ticket claimed — it is yours now")
+          <ClaimDialog
+            ticketId={ticketId}
+            onDone={onMutate}
+            trigger={
+              <Button className="ml-auto" size="sm" disabled={pending}>
+                <Hand className="size-4" /> Claim &amp; start
+              </Button>
             }
-          >
-            <Hand className="size-4" /> Claim &amp; start
-          </Button>
+          />
         </>
       ) : null}
     </div>

@@ -117,15 +117,22 @@ export function TicketDetail({
           {ticket.description}
         </p>
         {ticket.sheetLink ? (
-          <a
-            href={ticket.sheetLink}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-          >
-            <ExternalLink className="size-4" />
-            Open linked sheet
-          </a>
+          /^https?:\/\//i.test(ticket.sheetLink) ? (
+            <a
+              href={ticket.sheetLink}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              <ExternalLink className="size-4" />
+              Open linked sheet
+            </a>
+          ) : (
+            <p className="mt-4 inline-flex items-center gap-1.5 text-sm text-text-muted">
+              <ExternalLink className="size-4" />
+              System: {ticket.sheetLink}
+            </p>
+          )
         ) : null}
       </section>
 

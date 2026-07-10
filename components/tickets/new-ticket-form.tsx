@@ -16,7 +16,6 @@ import {
   createTicketSchema,
   DEPARTMENT_LABELS,
   DEPARTMENTS,
-  PRIORITIES,
   type CreateTicketInput,
 } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
@@ -32,13 +31,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FileDropzone } from "./file-dropzone";
 
 type FormValues = z.input<typeof createTicketSchema>;
-
-const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-  URGENT: "Urgent",
-};
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -67,7 +59,6 @@ export function NewTicketForm({
   const router = useRouter();
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [requesterName, setRequesterName] = useState(requester.name);
   const [pending, startTransition] = useTransition();
 
   const {
@@ -81,6 +72,7 @@ export function NewTicketForm({
       title: "",
       description: "",
       sheetLink: "",
+      // Priority is set by the MIS team when they claim the ticket, not here.
       priority: "MEDIUM",
       department: requester.department ?? undefined,
     },
@@ -91,13 +83,14 @@ export function NewTicketForm({
       toast.error("Please wait for uploads to finish.");
       return;
     }
-    if (!requesterName.trim()) {
-      toast.error("Enter your name.");
+    if (attachments.length === 0) {
+      toast.error("Please attach at least one file (a screenshot, sheet, or PDF).");
       return;
     }
     startTransition(async () => {
-      // Remember the requester's name + department for next time (best-effort).
-      await updateMyProfile(requesterName.trim(), values.department);
+      // Remember the requester's department for next time (name is fixed to the
+      // signed-in account). Best-effort.
+      await updateMyProfile(requester.name, values.department);
 
       const res = await createTicket(values);
       if (!res.ok) {
@@ -106,15 +99,12 @@ export function NewTicketForm({
       }
       const { id, number } = res.data;
 
-      let failed = 0;
-      if (attachments.length > 0) {
-        const results = await Promise.allSettled(
-          attachments.map((m) => attachTo(id, null, m))
-        );
-        failed = results.filter(
-          (r) => r.status === "rejected" || !r.value.ok
-        ).length;
-      }
+      const results = await Promise.allSettled(
+        attachments.map((m) => attachTo(id, null, m))
+      );
+      const failed = results.filter(
+        (r) => r.status === "rejected" || !r.value.ok
+      ).length;
 
       if (failed > 0) {
         toast.warning(
@@ -132,16 +122,17 @@ export function NewTicketForm({
       onSubmit={handleSubmit(onSubmit)}
       className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]"
     >
-      {/* Who's raising this — name + department */}
+      {/* Who's raising this — name (locked to the account) + department */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="requesterName">Your name</Label>
           <Input
             id="requesterName"
-            value={requesterName}
-            onChange={(e) => setRequesterName(e.target.value)}
-            placeholder="Your full name"
-            disabled={pending}
+            value={requester.name}
+            readOnly
+            aria-readonly
+            tabIndex={-1}
+            className="cursor-not-allowed bg-surface-muted text-text-muted"
           />
           <p className="mt-1 truncate text-xs text-text-muted">
             Signed in as {requester.email}
@@ -187,45 +178,18 @@ export function NewTicketForm({
       </div>
 
       <div>
-        <Label>Priority</Label>
-        <Controller
-          control={control}
-          name="priority"
-          render={({ field }) => (
-            <Select
-              value={field.value}
-              onValueChange={field.onChange}
-              disabled={pending}
-            >
-              <SelectTrigger className="w-full sm:max-w-xs">
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITIES.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {PRIORITY_LABELS[p]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          MIS may adjust this after triage.
-        </p>
-      </div>
-
-      <div>
-        <Label htmlFor="sheetLink">Sheet link (optional)</Label>
+        <Label htmlFor="sheetLink">
+          Sheet link / System <span className="text-destructive">*</span>
+        </Label>
         <Input
           id="sheetLink"
-          type="url"
-          placeholder="https://docs.google.com/spreadsheets/…"
+          placeholder="Sheet URL, web app URL, or the system name (e.g. Data entry Interface)"
           disabled={pending}
           {...register("sheetLink")}
         />
         <p className="mt-1 text-xs text-text-muted">
-          Link a Google Sheet, AppSheet, or Apps Script so MIS can jump to it.
+          The sheet, app, or system the issue is about — paste a link or just type
+          its name.
         </p>
         <FieldError message={errors.sheetLink?.message} />
       </div>
@@ -244,8 +208,7 @@ export function NewTicketForm({
 
       <div>
         <Label>
-          Attachments{" "}
-          <span className="font-normal text-text-muted">(optional)</span>
+          Attachments <span className="text-destructive">*</span>
         </Label>
         <FileDropzone
           onChange={setAttachments}
@@ -253,6 +216,11 @@ export function NewTicketForm({
           disabled={pending}
           compact
         />
+        {attachments.length === 0 ? (
+          <p className="mt-1 text-xs text-text-muted">
+            At least one image or PDF is required — e.g. a screenshot of the issue.
+          </p>
+        ) : null}
       </div>
 
       <div className="-mx-5 flex justify-end gap-2 border-t border-border px-5 pt-4">
