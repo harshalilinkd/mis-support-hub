@@ -56,6 +56,7 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 /** In-app notification kinds (P8). */
 export const NOTIFICATION_TYPES = [
+  "NEW_TICKET",
   "TICKET_RESOLVED",
   "TICKET_ASSIGNED",
   "TICKET_CLAIMED",

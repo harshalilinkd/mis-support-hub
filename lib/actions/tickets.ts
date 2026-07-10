@@ -12,6 +12,7 @@ import {
   sendClaimNotification,
   sendClosureNotification,
   sendEditNotification,
+  sendNewTicketNotification,
   sendReopenNotification,
   sendResolutionNotification,
 } from "@/lib/notifications";
@@ -52,6 +53,8 @@ export async function createTicket(
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
   const ticket = await q.createTicket({ ...parsed.data, createdBy: user.id });
+  // Alert the MIS team that a new ticket needs triage (§8; best-effort).
+  await sendNewTicketNotification(ticket.id);
   revalidateTicketRoutes(ticket.number);
   // id is returned so the caller can link freshly-uploaded attachments (attachTo).
   return ok({ id: ticket.id, number: ticket.number });

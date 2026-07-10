@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { createNotification } from "@/lib/db/queries";
+import { createNotification, listAssignableUsers } from "@/lib/db/queries";
 import { type NotificationType, tickets, users } from "@/lib/db/schema";
 import { emailProvider } from "./email";
 import type {
@@ -305,6 +305,33 @@ export async function sendEditNotification(ticketId: string): Promise<void> {
     });
   } catch (e) {
     console.error("[sendEditNotification]", e);
+  }
+}
+
+/**
+ * New ticket raised: alert the whole MIS team (in-app) so it gets triaged. The
+ * reporter is skipped if they happen to be staff. Best-effort (§8).
+ */
+export async function sendNewTicketNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    const who = reporter?.name ?? "Someone";
+    const staff = await listAssignableUsers();
+    for (const s of staff) {
+      if (s.id === ticket.createdBy) continue;
+      await createInApp({
+        userId: s.id,
+        type: "NEW_TICKET",
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        title: `New ticket ${ticket.number}`,
+        body: `${ticket.title}\nRaised by ${who} — needs triage.`,
+      });
+    }
+  } catch (e) {
+    console.error("[sendNewTicketNotification]", e);
   }
 }
 
