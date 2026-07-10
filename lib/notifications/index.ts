@@ -110,7 +110,7 @@ export async function sendResolutionNotification(ticketId: string): Promise<void
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       title: `Issue ${ticket.number} was resolved`,
-      body: `Resolved by ${resolverName}. Please verify.`,
+      body: `${ticket.title}\nResolved by ${resolverName}. Please verify.`,
     });
 
     if (reporter.email) {
@@ -185,8 +185,8 @@ export async function sendClaimNotification(ticketId: string): Promise<void> {
       ticketNumber: ticket.number,
       title: `${workerName} started working on ${ticket.number}`,
       body: eta
-        ? `Priority: ${prio}. Expected resolution by ${eta}.`
-        : `Priority: ${prio}. Work has started.`,
+        ? `${ticket.title}\nPriority: ${prio}. Expected resolution by ${eta}.`
+        : `${ticket.title}\nPriority: ${prio}. Work has started.`,
     });
 
     if (reporter.email) {

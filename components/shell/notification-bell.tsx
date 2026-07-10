@@ -92,11 +92,22 @@ export function NotificationBell({
                   />
                   <div className="min-w-0">
                     <div className="text-sm font-medium">{n.title}</div>
-                    {n.body ? (
-                      <div className="truncate text-xs text-text-muted">
-                        {n.body}
-                      </div>
-                    ) : null}
+                    {/* Body may carry multiple lines (e.g. ticket subject on the
+                        first line, then the detail); render each on its own
+                        truncated row so the subject is always visible. */}
+                    {n.body
+                      ? n.body.split("\n").map((line, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "truncate text-xs",
+                              i === 0 ? "text-foreground/80" : "text-text-muted"
+                            )}
+                          >
+                            {line}
+                          </div>
+                        ))
+                      : null}
                     <RelativeTime
                       date={n.createdAt}
                       className="text-xs text-text-muted"
