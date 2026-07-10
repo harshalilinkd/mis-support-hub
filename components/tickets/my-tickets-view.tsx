@@ -248,9 +248,9 @@ export function MyTicketsView({
                     onClick={() => open(t.number)}
                     tabIndex={0}
                     onKeyDown={onKeyOpen(t.number)}
-                    className="cursor-pointer transition-colors hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="cursor-pointer transition-colors hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>td]:py-2.5 [&>td]:align-top"
                   >
-                    <TableCell className="pl-4 align-top">
+                    <TableCell className="whitespace-nowrap pl-4">
                       <div className="flex items-center gap-2">
                         <span
                           aria-hidden
@@ -262,9 +262,11 @@ export function MyTicketsView({
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-[22rem] align-top">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">{t.title}</span>
+                    <TableCell>
+                      <div className="flex min-w-0 max-w-[20rem] items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {t.title}
+                        </span>
                         {t.commentCount > 0 ? (
                           <span className="inline-flex shrink-0 items-center gap-0.5 text-xs text-text-muted">
                             <MessageSquare className="size-3" />
@@ -273,31 +275,33 @@ export function MyTicketsView({
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap align-top text-sm text-text-muted">
+                    <TableCell className="whitespace-nowrap text-sm text-text-muted">
                       {DEPARTMENT_LABELS[t.department]}
                     </TableCell>
-                    <TableCell className="align-top">
+                    <TableCell>
                       <TicketLinkFiles
                         sheetLink={t.sheetLink}
                         attachments={t.attachments}
                       />
                     </TableCell>
-                    <TableCell className="align-top">
+                    <TableCell>
                       <StatusChip status={t.status} />
                     </TableCell>
-                    <TableCell className="align-top">
+                    <TableCell>
                       <PriorityChip priority={t.priority} />
                     </TableCell>
                     {showAssignee ? (
-                      <TableCell className="max-w-[9rem] truncate align-top text-sm text-text-muted">
-                        {t.assignedToName ?? "Unassigned"}
+                      <TableCell className="max-w-[9rem] text-sm text-text-muted">
+                        <span className="block truncate">
+                          {t.assignedToName ?? "Unassigned"}
+                        </span>
                       </TableCell>
                     ) : null}
-                    <TableCell className="pr-4 text-right align-top">
+                    <TableCell className="whitespace-nowrap pr-4 text-right">
                       <AbsoluteTime
                         date={t.updatedAt}
                         stacked
-                        className="font-mono text-xs text-text-muted"
+                        className="font-mono text-xs leading-tight tabular-nums text-text-muted"
                       />
                     </TableCell>
                   </TableRow>

@@ -129,18 +129,20 @@ export function TicketTable({
               <TableRow
                 key={t.id}
                 onClick={() => setSelected(t.number)}
-                className="cursor-pointer transition-colors hover:bg-surface-muted/50"
+                className="cursor-pointer transition-colors hover:bg-surface-muted/50 [&>td]:py-2.5 [&>td]:align-top"
               >
-                <TableCell className="font-mono text-xs text-text-muted">
+                <TableCell className="whitespace-nowrap font-mono text-xs text-text-muted">
                   {t.number}
                 </TableCell>
-                <TableCell className="max-w-[20rem] truncate font-medium">
-                  {t.title}
+                <TableCell>
+                  <div className="max-w-[16rem] truncate text-sm font-medium">
+                    {t.title}
+                  </div>
                 </TableCell>
-                <TableCell className="text-sm text-text-muted">
+                <TableCell className="whitespace-nowrap text-sm text-text-muted">
                   {DEPARTMENT_LABELS[t.department]}
                 </TableCell>
-                <TableCell className="align-top">
+                <TableCell>
                   <TicketLinkFiles
                     sheetLink={t.sheetLink}
                     attachments={t.attachments}
@@ -178,18 +180,18 @@ export function TicketTable({
                 <TableCell>
                   <PriorityControl ticketId={t.id} priority={t.priority} />
                 </TableCell>
-                <TableCell className="text-right align-top">
+                <TableCell className="whitespace-nowrap text-right">
                   <AbsoluteTime
                     date={t.createdAt}
                     stacked
-                    className="font-mono text-xs text-text-muted"
+                    className="font-mono text-xs leading-tight tabular-nums text-text-muted"
                   />
                 </TableCell>
-                <TableCell className="text-right align-top">
+                <TableCell className="whitespace-nowrap text-right">
                   <AbsoluteTime
                     date={t.updatedAt}
                     stacked
-                    className="font-mono text-xs text-text-muted"
+                    className="font-mono text-xs leading-tight tabular-nums text-text-muted"
                   />
                 </TableCell>
               </TableRow>

@@ -33,7 +33,7 @@ export function TicketLinkFiles({
   }
 
   return (
-    <div className={cn("flex min-w-0 max-w-[15rem] flex-col gap-1.5", className)}>
+    <div className={cn("flex min-w-0 max-w-[14rem] flex-col gap-1", className)}>
       {sheetLink ? (
         isUrl(sheetLink) ? (
           <a
@@ -69,7 +69,7 @@ export function TicketLinkFiles({
                 rel="noreferrer"
                 onClick={stop}
                 title={a.filename}
-                className="block size-8 shrink-0 overflow-hidden rounded border border-border bg-surface-muted transition-transform hover:scale-105"
+                className="block size-7 shrink-0 overflow-hidden rounded border border-border bg-surface-muted transition-transform hover:scale-105"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -87,7 +87,7 @@ export function TicketLinkFiles({
                 rel="noreferrer"
                 onClick={stop}
                 title={a.filename}
-                className="grid size-8 shrink-0 place-items-center rounded border border-border bg-surface-muted text-text-muted hover:bg-surface"
+                className="grid size-7 shrink-0 place-items-center rounded border border-border bg-surface-muted text-text-muted hover:bg-surface"
               >
                 <FileText className="size-4" />
               </a>
