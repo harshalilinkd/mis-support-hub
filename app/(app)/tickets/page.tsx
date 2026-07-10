@@ -38,7 +38,7 @@ export default async function TicketsPage({
   const user = await requireRole(...STAFF_ROLES);
   const sp = await searchParams;
 
-  // Status sub-tab (All / Active / Resolved) → a set of statuses to match.
+  // Status sub-tab (Open / In Progress / Resolved) → a set of statuses to match.
   const tab = ticketTabFromParam(pick(sp.tab));
 
   const assignee = pick(sp.assignee);

@@ -10,7 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Status sub-tabs for the All Tickets view (All / Active / Resolved). Reflects
+ * Status sub-tabs for the All Tickets view (Open / In Progress / Resolved). Reflects
  * into the URL (`?tab=`) like the toolbar facets, so views stay shareable and the
  * server does the filtering. Other query params (search, dept, …) are preserved.
  */
@@ -22,7 +22,7 @@ export function TicketTabs() {
 
   function select(key: TicketTabKey) {
     const params = new URLSearchParams(searchParams.toString());
-    if (key === "all") params.delete("tab");
+    if (key === "open") params.delete("tab");
     else params.set("tab", key);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);

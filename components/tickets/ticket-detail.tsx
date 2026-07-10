@@ -2,7 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 
-import { RelativeTime } from "@/components/relative-time";
+import { AbsoluteTime } from "@/components/absolute-time";
 import type { TicketDetail as TicketDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
@@ -87,7 +87,7 @@ export function TicketDetail({
             label="Assignee"
             value={ticket.assignedToName ?? "Unassigned"}
           />
-          <Meta label="Created" value={<RelativeTime date={ticket.createdAt} />} />
+          <Meta label="Created" value={<AbsoluteTime date={ticket.createdAt} />} />
         </dl>
       </div>
 

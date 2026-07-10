@@ -565,7 +565,7 @@ export async function addAttachment(args: {
  * ------------------------------------------------------------------ */
 export interface TicketFilters {
   status?: Status;
-  /** Match any of these statuses (used by the All Tickets tabs: Active/Resolved). */
+  /** Match any of these statuses (used by the All Tickets tabs: Open/In Progress/Resolved). */
   statuses?: Status[];
   priority?: Priority;
   department?: Department;

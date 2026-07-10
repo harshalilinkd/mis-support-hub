@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SearchX } from "lucide-react";
 
 import { EmptyState } from "@/components/shell/empty-state";
-import { RelativeTime } from "@/components/relative-time";
+import { AbsoluteTime } from "@/components/absolute-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { ClaimButton } from "@/components/tickets/claim-button";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
@@ -75,7 +75,7 @@ export function TicketTable({
                 <span className="text-xs text-text-muted">
                   {DEPARTMENT_LABELS[t.department]}
                 </span>
-                <RelativeTime
+                <AbsoluteTime
                   date={t.createdAt}
                   className="ml-auto font-mono text-xs text-text-muted"
                 />
@@ -112,7 +112,7 @@ export function TicketTable({
               <TableHead>Assignee</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
-              <TableHead className="text-right">Age</TableHead>
+              <TableHead className="text-right">Created</TableHead>
               <TableHead className="text-right">Updated</TableHead>
             </TableRow>
           </TableHeader>
@@ -164,15 +164,17 @@ export function TicketTable({
                 <TableCell>
                   <PriorityControl ticketId={t.id} priority={t.priority} />
                 </TableCell>
-                <TableCell className="text-right">
-                  <RelativeTime
+                <TableCell className="text-right align-top">
+                  <AbsoluteTime
                     date={t.createdAt}
+                    stacked
                     className="font-mono text-xs text-text-muted"
                   />
                 </TableCell>
-                <TableCell className="text-right">
-                  <RelativeTime
+                <TableCell className="text-right align-top">
+                  <AbsoluteTime
                     date={t.updatedAt}
+                    stacked
                     className="font-mono text-xs text-text-muted"
                   />
                 </TableCell>

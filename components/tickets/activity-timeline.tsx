@@ -1,4 +1,4 @@
-import { RelativeTime } from "@/components/relative-time";
+import { AbsoluteTime } from "@/components/absolute-time";
 import type { TicketDetail } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
 
@@ -81,7 +81,7 @@ export function ActivityTimeline({
                 <span className="font-medium">
                   {item.row.authorName ?? "Unknown"}
                 </span>
-                <RelativeTime date={item.at} className="text-text-muted" />
+                <AbsoluteTime date={item.at} className="text-text-muted" />
               </div>
               <p className="mt-1 whitespace-pre-wrap break-words text-sm">
                 {item.row.body}
@@ -95,7 +95,7 @@ export function ActivityTimeline({
               className="ml-2.5 size-1.5 shrink-0 rounded-full bg-border"
             />
             <span className="text-text-muted">{describe(item.row)}</span>
-            <RelativeTime date={item.at} className="text-xs text-text-muted" />
+            <AbsoluteTime date={item.at} className="text-xs text-text-muted" />
           </li>
         )
       )}
