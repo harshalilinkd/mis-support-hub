@@ -40,6 +40,7 @@ Do NOT use Prisma, do NOT use an ORM other than Drizzle, do NOT store files in t
   /(app)/board/page.tsx             # MIS: Kanban
   /(app)/profile/page.tsx           # edit name/department + set/change password
   /(app)/settings/users/page.tsx    # admin: user management + bulk add
+  /(app)/settings/bulk-delete/page.tsx # admin: multi-select active tickets → soft-delete
   /(app)/settings/recycle-bin/page.tsx # admin: soft-deleted tickets (restore / purge)
   /api/auth/[...nextauth]/route.ts
   /api/upload/route.ts              # Vercel Blob client-upload token

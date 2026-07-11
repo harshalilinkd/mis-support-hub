@@ -8,6 +8,7 @@ import {
   KanbanSquare,
   LayoutDashboard,
   ListChecks,
+  ListX,
   LogOut,
   Menu,
   PlusCircle,
@@ -77,6 +78,12 @@ const NAV_SECTIONS: NavSection[] = [
     adminOnly: true,
     items: [
       { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
+      {
+        href: "/settings/bulk-delete",
+        label: "Bulk Delete",
+        icon: ListX,
+        adminOnly: true,
+      },
       {
         href: "/settings/recycle-bin",
         label: "Recycle Bin",

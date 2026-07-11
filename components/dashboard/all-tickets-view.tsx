@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Hand, Trash2 } from "lucide-react";
+import { Hand } from "lucide-react";
 
 import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
@@ -12,7 +12,6 @@ import {
 } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
 import { BulkClaimDialog } from "@/components/tickets/bulk-claim-dialog";
-import { BulkDeleteDialog } from "@/components/tickets/bulk-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { TableToolbar } from "./table-toolbar";
 import { TicketTable } from "./ticket-table";
@@ -22,9 +21,8 @@ import { TicketTable } from "./ticket-table";
  * ticket matching the facet filters (department / priority / assignee / search
  * from the URL); switching Open / In Progress / Resolved / Closed just re-filters
  * in memory — no navigation or refetch. Facets stay server-driven (the toolbar
- * reflects them into the URL). MIS can bulk-select rows and, from the selection
- * bar, either claim the claimable ones or delete (soft → recycle bin) the ones
- * they're allowed to.
+ * reflects them into the URL). MIS can bulk-select claimable tickets and claim
+ * them together via the selection bar. (Bulk delete lives in Settings.)
  */
 export function AllTicketsView({
   tickets,
@@ -40,7 +38,6 @@ export function AllTicketsView({
   const [tab, setTab] = useState<TicketTabKey>(initialTab);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
@@ -58,7 +55,7 @@ export function AllTicketsView({
 
   // Rows the user can CLAIM (same rule as the per-row Claim button): not
   // resolved/closed, and unassigned or already mine — never someone else's, not
-  // even for an admin (§6 ownership lock).
+  // even for an admin (§6 ownership lock). Only these get a checkbox here.
   const claimableIds = useMemo(() => {
     const ids = new Set<string>();
     for (const t of filtered) {
@@ -71,50 +68,20 @@ export function AllTicketsView({
     return ids;
   }, [filtered, currentUser.id]);
 
-  // Rows the user can DELETE (same rule as deleteTicket §6): an MIS_ADMIN can
-  // delete any; a reporter only their own still-OPEN ticket.
-  const deletableIds = useMemo(() => {
-    const isAdmin = currentUser.role === "MIS_ADMIN";
-    const ids = new Set<string>();
-    for (const t of filtered) {
-      if (isAdmin || (t.createdById === currentUser.id && t.status === "OPEN")) {
-        ids.add(t.id);
-      }
-    }
-    return ids;
-  }, [filtered, currentUser.id, currentUser.role]);
-
-  // A row is checkable if the user can do anything with it (claim or delete).
-  const selectableIds = useMemo(() => {
-    const ids = new Set(claimableIds);
-    for (const id of deletableIds) ids.add(id);
-    return ids;
-  }, [claimableIds, deletableIds]);
-
   const selectedTickets = useMemo(
     () => filtered.filter((t) => selectedIds.has(t.id)),
     [filtered, selectedIds]
   );
-  // The selection split by what each bulk action can act on.
-  const claimableSelected = useMemo(
-    () => selectedTickets.filter((t) => claimableIds.has(t.id)),
-    [selectedTickets, claimableIds]
-  );
-  const deletableSelected = useMemo(
-    () => selectedTickets.filter((t) => deletableIds.has(t.id)),
-    [selectedTickets, deletableIds]
-  );
 
-  // Keep the selection in sync with what's actually selectable: `filtered` (and
-  // thus the eligibility sets) is re-derived whenever a facet/search changes the
-  // server result, a tab switch runs, or the 15s auto-refresh re-fetches — so
-  // drop any selected id that's no longer selectable, keeping the counts honest.
+  // Keep the selection in sync with what's actually claimable — drop any id no
+  // longer claimable when a facet/search/tab/auto-refresh changes the rows, so
+  // the "N selected" count never lies or dead-ends.
   useEffect(() => {
     setSelectedIds((prev) => {
-      const next = new Set([...prev].filter((id) => selectableIds.has(id)));
+      const next = new Set([...prev].filter((id) => claimableIds.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [selectableIds]);
+  }, [claimableIds]);
 
   // Selection is scoped to the visible set — switching tabs clears it.
   function switchTab(key: TicketTabKey) {
@@ -133,9 +100,9 @@ export function AllTicketsView({
 
   function toggleSelectAll() {
     const allSelected =
-      selectableIds.size > 0 &&
-      [...selectableIds].every((id) => selectedIds.has(id));
-    setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
+      claimableIds.size > 0 &&
+      [...claimableIds].every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(claimableIds));
   }
 
   return (
@@ -183,20 +150,9 @@ export function AllTicketsView({
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-primary/30 bg-accent-soft px-3 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
-          {claimableSelected.length > 0 ? (
-            <Button size="sm" onClick={() => setBulkOpen(true)}>
-              <Hand className="size-4" /> Claim {claimableSelected.length}
-            </Button>
-          ) : null}
-          {deletableSelected.length > 0 ? (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="size-4" /> Delete {deletableSelected.length}
-            </Button>
-          ) : null}
+          <Button size="sm" onClick={() => setBulkOpen(true)}>
+            <Hand className="size-4" /> Claim selected
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -211,27 +167,17 @@ export function AllTicketsView({
         tickets={filtered}
         currentUser={currentUser}
         selectedIds={selectedIds}
-        selectableIds={selectableIds}
+        selectableIds={claimableIds}
         onToggleSelect={toggleSelect}
         onToggleSelectAll={toggleSelectAll}
       />
 
       <BulkClaimDialog
-        tickets={claimableSelected}
+        tickets={selectedTickets}
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         onDone={() => {
           setBulkOpen(false);
-          setSelectedIds(new Set());
-        }}
-      />
-
-      <BulkDeleteDialog
-        ticketIds={deletableSelected.map((t) => t.id)}
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        onDone={() => {
-          setDeleteOpen(false);
           setSelectedIds(new Set());
         }}
       />
