@@ -39,6 +39,7 @@ function revalidateTicketRoutes(number?: string) {
   revalidatePath("/dashboard");
   revalidatePath("/tickets");
   revalidatePath("/board");
+  revalidatePath("/settings/recycle-bin");
   if (number) revalidatePath(`/tickets/${number}`);
 }
 
@@ -392,8 +393,10 @@ export async function updateTicket(input: unknown): Promise<ActionResult> {
 }
 
 /**
- * Delete a ticket. The reporter may withdraw their own ticket while it's still
- * OPEN (before MIS starts work); MIS_ADMIN may delete at any time.
+ * Delete a ticket → move it to the recycle bin (soft delete). The reporter may
+ * withdraw their own ticket while it's still OPEN; MIS_ADMIN may bin any ticket.
+ * It vanishes from every list but can be restored (or permanently deleted) by an
+ * admin from the recycle bin.
  */
 export async function deleteTicket(ticketId: string): Promise<ActionResult> {
   const user = await getCurrentUser();
@@ -415,6 +418,50 @@ export async function deleteTicket(ticketId: string): Promise<ActionResult> {
         : "Only the reporter or an MIS admin can delete this ticket."
     );
   }
+
+  await q.softDeleteTicketById(ticket.id, user.id);
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/** Restore a ticket from the recycle bin — MIS_ADMIN only. */
+export async function restoreTicket(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (user.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can manage the recycle bin.");
+  }
+
+  const parsed = deleteTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getDeletedTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found in the recycle bin.");
+
+  await q.restoreTicketById(ticket.id);
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Permanently delete a ticket from the recycle bin — MIS_ADMIN only. Irreversible:
+ * the row (and its comments, attachments, activity, notifications) are dropped.
+ * Only works on a ticket that's already in the bin.
+ */
+export async function permanentlyDeleteTicket(
+  ticketId: string
+): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (user.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can manage the recycle bin.");
+  }
+
+  const parsed = deleteTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getDeletedTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found in the recycle bin.");
 
   await q.deleteTicketById(ticket.id);
   revalidateTicketRoutes(ticket.number);

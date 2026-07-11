@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   Ticket,
+  Trash2,
   User as UserIcon,
   Users,
 } from "lucide-react";
@@ -76,6 +77,12 @@ const NAV_SECTIONS: NavSection[] = [
     adminOnly: true,
     items: [
       { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
+      {
+        href: "/settings/recycle-bin",
+        label: "Recycle Bin",
+        icon: Trash2,
+        adminOnly: true,
+      },
     ],
   },
 ];

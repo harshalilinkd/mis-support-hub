@@ -167,6 +167,10 @@ export const tickets = pgTable("tickets", {
   resolvedBy: uuid("resolved_by").references(() => users.id),
   // Estimated resolution date set by MIS when they claim the ticket (§ claim flow).
   deadline: timestamp("deadline", { withTimezone: true }),
+  // Soft delete (recycle bin): non-null means the ticket is in the bin — hidden
+  // everywhere except the bin. Restore clears these; permanent delete drops the row.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: uuid("deleted_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

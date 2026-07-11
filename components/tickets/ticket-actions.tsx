@@ -56,7 +56,7 @@ export function TicketActions({
         toast.error(res.error);
         return;
       }
-      toast.success(`Ticket ${number} deleted`);
+      toast.success(`Ticket ${number} moved to recycle bin`);
       setDeleteOpen(false);
       router.push("/my");
     });
@@ -111,8 +111,8 @@ export function TicketActions({
           <DialogHeader>
             <DialogTitle>Delete ticket {number}?</DialogTitle>
             <DialogDescription>
-              This permanently removes the ticket and its comments, attachments,
-              and history. This can&apos;t be undone.
+              This moves the ticket to the recycle bin. An MIS admin can restore
+              it — or delete it permanently — from Settings → Recycle Bin.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

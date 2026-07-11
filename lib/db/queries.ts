@@ -5,6 +5,7 @@ import {
   eq,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   ne,
   or,
@@ -274,6 +275,7 @@ const assigneeUser = alias(users, "assignee");
 const resolverUser = alias(users, "resolver");
 const authorUser = alias(users, "author");
 const actorUser = alias(users, "actor");
+const deleterUser = alias(users, "deleter");
 
 /* ------------------------------------------------------------------ *
  * Ticket writes — each is atomic (ticket + activity via db.batch, since
@@ -525,6 +527,57 @@ export async function deleteTicketById(id: string) {
   await db.delete(tickets).where(eq(tickets.id, id));
 }
 
+/** Soft-delete → move a ticket to the recycle bin (hidden everywhere but the bin). */
+export async function softDeleteTicketById(id: string, deletedBy: string) {
+  await db
+    .update(tickets)
+    .set({ deletedAt: new Date(), deletedBy })
+    .where(and(eq(tickets.id, id), isNull(tickets.deletedAt)));
+}
+
+/** Restore a ticket from the recycle bin (clears the soft-delete marks). */
+export async function restoreTicketById(id: string) {
+  await db
+    .update(tickets)
+    .set({ deletedAt: null, deletedBy: null })
+    .where(eq(tickets.id, id));
+}
+
+/** A single recycle-bin ticket — only if it is currently soft-deleted. */
+export async function getDeletedTicketById(id: string) {
+  const [row] = await db
+    .select()
+    .from(tickets)
+    .where(and(eq(tickets.id, id), isNotNull(tickets.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Recycle bin: soft-deleted tickets with reporter + who/when deleted, newest first. */
+export async function listDeletedTickets() {
+  return db
+    .select({
+      id: tickets.id,
+      number: tickets.number,
+      title: tickets.title,
+      department: tickets.department,
+      status: tickets.status,
+      priority: tickets.priority,
+      createdAt: tickets.createdAt,
+      deletedAt: tickets.deletedAt,
+      createdByName: creatorUser.name,
+      deletedByName: deleterUser.name,
+    })
+    .from(tickets)
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(deleterUser, eq(tickets.deletedBy, deleterUser.id))
+    .where(isNotNull(tickets.deletedAt))
+    .orderBy(desc(tickets.deletedAt));
+}
+export type DeletedTicketRow = Awaited<
+  ReturnType<typeof listDeletedTickets>
+>[number];
+
 export async function logActivity(args: {
   ticketId: string;
   actorId: string;
@@ -583,7 +636,7 @@ export async function getTicketById(id: string) {
   const [row] = await db
     .select()
     .from(tickets)
-    .where(eq(tickets.id, id))
+    .where(and(eq(tickets.id, id), isNull(tickets.deletedAt)))
     .limit(1);
   return row ?? null;
 }
@@ -639,7 +692,8 @@ const ticketListSelect = {
 };
 
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
-  const conds: SQL[] = [];
+  // Soft-deleted tickets live only in the recycle bin — never in any list.
+  const conds: SQL[] = [isNull(tickets.deletedAt)];
   if (filters.status) conds.push(eq(tickets.status, filters.status));
   if (filters.statuses?.length) {
     conds.push(inArray(tickets.status, filters.statuses));
@@ -690,6 +744,7 @@ export async function listAssignedToMe(userId: string) {
     .where(
       and(
         eq(tickets.assignedTo, userId),
+        isNull(tickets.deletedAt),
         sql`${tickets.status}::text <> 'CLOSED'`
       )
     )
@@ -704,6 +759,7 @@ export async function countMyActiveTickets(userId: string): Promise<number> {
     .where(
       and(
         eq(tickets.createdBy, userId),
+        isNull(tickets.deletedAt),
         sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
       )
     );
@@ -718,6 +774,7 @@ export async function countAssignedActive(userId: string): Promise<number> {
     .where(
       and(
         eq(tickets.assignedTo, userId),
+        isNull(tickets.deletedAt),
         sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
       )
     );
@@ -810,7 +867,7 @@ export async function getTicketByNumber(
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
     .leftJoin(resolverUser, eq(tickets.resolvedBy, resolverUser.id))
-    .where(eq(tickets.number, number))
+    .where(and(eq(tickets.number, number), isNull(tickets.deletedAt)))
     .limit(1);
 
   if (!ticket) return null;
@@ -910,7 +967,8 @@ export async function dashboardStats(): Promise<DashboardStats> {
         )
       `.mapWith(Number),
     })
-    .from(tickets);
+    .from(tickets)
+    .where(isNull(tickets.deletedAt));
 
   return (
     row ?? {
@@ -938,7 +996,12 @@ export async function ticketTrend(days = 30): Promise<TrendPoint[]> {
       count: sql<number>`count(*)`.mapWith(Number),
     })
     .from(tickets)
-    .where(sql`${tickets.createdAt} >= now() - (${days - 1} * interval '1 day')`)
+    .where(
+      and(
+        isNull(tickets.deletedAt),
+        sql`${tickets.createdAt} >= now() - (${days - 1} * interval '1 day')`
+      )
+    )
     .groupBy(sql`1`);
 
   const map = new Map(rows.map((r) => [r.day, r.count]));

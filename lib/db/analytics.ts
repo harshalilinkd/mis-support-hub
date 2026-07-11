@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "./index";
 import type { Department, Priority } from "./schema";
@@ -44,12 +44,12 @@ export async function flowTrend(
     db
       .select({ day: dayOf(tickets.createdAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(gte(tickets.createdAt, since), deptEq(department)))
+      .where(and(gte(tickets.createdAt, since), isNull(tickets.deletedAt), deptEq(department)))
       .groupBy(dayOf(tickets.createdAt)),
     db
       .select({ day: dayOf(tickets.resolvedAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, since), deptEq(department)))
+      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, since), isNull(tickets.deletedAt), deptEq(department)))
       .groupBy(dayOf(tickets.resolvedAt)),
   ]);
 
@@ -70,7 +70,7 @@ export async function createdByDepartment(
   return db
     .select({ department: tickets.department, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(gte(tickets.createdAt, startOfRange(days)))
+    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt)))
     .groupBy(tickets.department);
 }
 
@@ -82,7 +82,7 @@ export async function createdByPriority(
   return db
     .select({ priority: tickets.priority, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(gte(tickets.createdAt, startOfRange(days)), deptEq(department)))
+    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt), deptEq(department)))
     .groupBy(tickets.priority);
 }
 
@@ -98,7 +98,7 @@ export async function openAging(
   return db
     .select({ key: bucket, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(inArray(tickets.status, [...ACTIVE]), deptEq(department)))
+    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), deptEq(department)))
     .groupBy(bucket);
 }
 
@@ -110,7 +110,7 @@ export async function assigneeWorkload(
     .select({ id: users.id, name: users.name, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
     .innerJoin(users, eq(tickets.assignedTo, users.id))
-    .where(and(inArray(tickets.status, [...ACTIVE]), deptEq(department)))
+    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), deptEq(department)))
     .groupBy(users.id, users.name)
     .orderBy(desc(sql`count(*)`));
 }
