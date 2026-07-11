@@ -98,7 +98,6 @@ export function TicketDetail({
           assignedToId={ticket.assignedToId}
           assignedToName={ticket.assignedToName}
           currentUserId={currentUser.id}
-          isAdmin={isAdmin}
           onMutate={onMutate}
         />
       ) : null}

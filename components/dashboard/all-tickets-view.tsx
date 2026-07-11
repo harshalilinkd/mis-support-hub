@@ -54,22 +54,24 @@ export function AllTicketsView({
   }, [tickets, tab]);
 
   // Which of the currently-visible tickets this user can actually claim (same
-  // rule as the per-row Claim button): not resolved/closed, and unassigned, or
-  // mine, or I'm an admin (take-over). Only these get a checkbox.
+  // rule as the per-row Claim button): not resolved/closed, and unassigned or
+  // already mine — never someone else's, not even for an admin (§6 ownership
+  // lock). Only these get a checkbox.
   const claimableIds = useMemo(() => {
-    const isAdmin = currentUser.role === "MIS_ADMIN";
     const ids = new Set<string>();
     for (const t of filtered) {
       const done = t.status === "RESOLVED" || t.status === "CLOSED";
       const mine = t.assignedToId === currentUser.id;
       const working =
         mine && (t.status === "IN_PROGRESS" || t.status === "REOPENED");
-      if (!done && !working && (!t.assignedToId || mine || isAdmin)) {
+      // Claimable only when unassigned (or already mine) — never a ticket claimed
+      // by someone else, not even for an admin (§6 ownership lock).
+      if (!done && !working && (!t.assignedToId || mine)) {
         ids.add(t.id);
       }
     }
     return ids;
-  }, [filtered, currentUser.id, currentUser.role]);
+  }, [filtered, currentUser.id]);
 
   const selectedTickets = useMemo(
     () => filtered.filter((t) => selectedIds.has(t.id)),
@@ -171,7 +173,6 @@ export function AllTicketsView({
 
       <TicketTable
         tickets={filtered}
-        users={users}
         currentUser={currentUser}
         selectedIds={selectedIds}
         claimableIds={claimableIds}

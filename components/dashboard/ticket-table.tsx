@@ -18,19 +18,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
+import type { TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { formatDueDate } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
-import {
-  AssigneeControl,
-  PriorityControl,
-  StatusControl,
-} from "./inline-controls";
+import { PriorityControl, StatusControl } from "./inline-controls";
 
 export function TicketTable({
   tickets,
-  users,
   currentUser,
   selectedIds,
   claimableIds,
@@ -38,7 +33,6 @@ export function TicketTable({
   onToggleSelectAll,
 }: {
   tickets: TicketListRow[];
-  users: AssignableUser[];
   currentUser: SessionUser;
   selectedIds?: Set<string>;
   claimableIds?: Set<string>;
@@ -46,6 +40,11 @@ export function TicketTable({
   onToggleSelectAll?: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+
+  // A ticket claimed by another member is read-only for me (§6 ownership lock):
+  // I can't change its status/priority — only the assignee can.
+  const lockedFor = (t: TicketListRow) =>
+    !!(t.assignedToId && t.assignedToId !== currentUser.id);
 
   // Bulk-select column (desktop only): rendered when the parent wires selection
   // in. A row is checkable only if the current user can actually claim it.
@@ -91,11 +90,11 @@ export function TicketTable({
                 <span className="font-mono text-xs text-text-muted">
                   {t.number}
                 </span>
-                <PriorityControl ticketId={t.id} priority={t.priority} />
+                <PriorityControl ticketId={t.id} priority={t.priority} locked={lockedFor(t)} />
               </div>
               <p className="mt-1 font-medium">{t.title}</p>
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <StatusControl ticketId={t.id} status={t.status} />
+                <StatusControl ticketId={t.id} status={t.status} locked={lockedFor(t)} />
                 <span className="text-xs text-text-muted">
                   {DEPARTMENT_LABELS[t.department]}
                 </span>
@@ -116,20 +115,24 @@ export function TicketTable({
                 />
               </div>
               <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
-                <ClaimButton
-                  ticketId={t.id}
-                  status={t.status}
-                  assigneeId={t.assignedToId}
-                  currentUserId={currentUser.id}
-                  isAdmin={currentUser.role === "MIS_ADMIN"}
-                />
-                <AssigneeControl
-                  ticketId={t.id}
-                  assigneeId={t.assignedToId}
-                  assigneeName={t.assignedToName}
-                  assigneeImage={t.assignedToImage}
-                  users={users}
-                />
+                {t.assignedToId ? (
+                  <div className="flex items-center gap-2">
+                    <UserAvatar
+                      name={t.assignedToName}
+                      image={t.assignedToImage}
+                    />
+                    <span className="max-w-[9rem] truncate text-sm">
+                      {t.assignedToName ?? "—"}
+                    </span>
+                  </div>
+                ) : (
+                  <ClaimButton
+                    ticketId={t.id}
+                    status={t.status}
+                    assigneeId={t.assignedToId}
+                    currentUserId={currentUser.id}
+                  />
+                )}
               </div>
             </div>
           ))}
@@ -210,28 +213,30 @@ export function TicketTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
+                  {t.assignedToId ? (
+                    <div className="flex items-center gap-2">
+                      <UserAvatar
+                        name={t.assignedToName}
+                        image={t.assignedToImage}
+                      />
+                      <span className="max-w-[8rem] truncate text-sm">
+                        {t.assignedToName ?? "—"}
+                      </span>
+                    </div>
+                  ) : (
                     <ClaimButton
                       ticketId={t.id}
                       status={t.status}
                       assigneeId={t.assignedToId}
                       currentUserId={currentUser.id}
-                      isAdmin={currentUser.role === "MIS_ADMIN"}
                     />
-                    <AssigneeControl
-                      ticketId={t.id}
-                      assigneeId={t.assignedToId}
-                      assigneeName={t.assignedToName}
-                      assigneeImage={t.assignedToImage}
-                      users={users}
-                    />
-                  </div>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <StatusControl ticketId={t.id} status={t.status} />
+                  <StatusControl ticketId={t.id} status={t.status} locked={lockedFor(t)} />
                 </TableCell>
                 <TableCell>
-                  <PriorityControl ticketId={t.id} priority={t.priority} />
+                  <PriorityControl ticketId={t.id} priority={t.priority} locked={lockedFor(t)} />
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-sm tabular-nums">
                   {formatDueDate(t.deadline) ?? (

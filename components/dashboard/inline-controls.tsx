@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
-import { assignTicket, setPriority, updateStatus } from "@/lib/actions/tickets";
-import type { AssignableUser } from "@/lib/db/queries";
+import { setPriority, updateStatus } from "@/lib/actions/tickets";
 import type { Priority, Status } from "@/lib/db/schema";
 import { humanizeEnum } from "@/lib/format";
 import { STATUS_TRANSITIONS } from "@/lib/ticket-state";
@@ -19,16 +18,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
-import { UserAvatar } from "@/components/user-avatar";
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 export function StatusControl({
   ticketId,
   status,
+  locked = false,
 }: {
   ticketId: string;
   status: Status;
+  /** True when the ticket is claimed by someone else — render read-only (§6). */
+  locked?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -50,7 +51,8 @@ export function StatusControl({
     });
   }
 
-  if (targets.length === 0) return <StatusChip status={status} />;
+  // Read-only when locked (claimed by someone else) or terminal (no transitions).
+  if (locked || targets.length === 0) return <StatusChip status={status} />;
 
   return (
     <>
@@ -89,9 +91,12 @@ export function StatusControl({
 export function PriorityControl({
   ticketId,
   priority,
+  locked = false,
 }: {
   ticketId: string;
   priority: Priority | null;
+  /** True when the ticket is claimed by someone else — render read-only (§6). */
+  locked?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -105,6 +110,9 @@ export function PriorityControl({
       router.refresh();
     });
   }
+
+  // Read-only when locked (only the assignee re-prioritises their claimed ticket).
+  if (locked) return <PriorityChip priority={priority} />;
 
   return (
     <DropdownMenu>
@@ -131,68 +139,6 @@ export function PriorityControl({
   );
 }
 
-export function AssigneeControl({
-  ticketId,
-  assigneeId,
-  assigneeName,
-  assigneeImage,
-  users,
-}: {
-  ticketId: string;
-  assigneeId: string | null;
-  assigneeName: string | null;
-  assigneeImage: string | null;
-  users: AssignableUser[];
-}) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-
-  function change(userId: string | null) {
-    if (userId === assigneeId) return;
-    startTransition(async () => {
-      const res = await assignTicket(ticketId, userId);
-      if (!res.ok) return void toast.error(res.error);
-      toast.success(userId ? "Assigned" : "Unassigned");
-      router.refresh();
-    });
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={stop}
-          aria-label="Change assignee"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius-input)] px-1 py-0.5 text-sm transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        >
-          {assigneeId ? (
-            <>
-              <UserAvatar name={assigneeName} image={assigneeImage} />
-              <span className="max-w-[7rem] truncate">{assigneeName ?? "—"}</span>
-            </>
-          ) : (
-            <span className="text-text-muted">Unassigned</span>
-          )}
-          <ChevronDown className="size-3 text-text-muted" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="max-h-64 overflow-y-auto"
-        onClick={stop}
-      >
-        <DropdownMenuItem onSelect={() => change(null)}>
-          Unassigned
-        </DropdownMenuItem>
-        {users.map((u) => (
-          <DropdownMenuItem key={u.id} onSelect={() => change(u.id)}>
-            <UserAvatar name={u.name} email={u.email} image={u.image} />
-            {u.name ?? u.email}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+// NOTE: there is intentionally no AssigneeControl. Assignment happens only by
+// claiming an unassigned ticket, and a claimed ticket can't be reassigned or
+// unassigned by anyone — the assignee owns it end-to-end (§6 ownership lock).

@@ -389,10 +389,11 @@ export async function setTicketAssignee(args: {
 
 /**
  * Claim a ticket: assign it to the actor and — when it's OPEN/REOPENED — start
- * work (→ IN_PROGRESS), in one batch. Writes an ASSIGNED activity row only when
- * ownership actually changes (writeAssigned), recording the prior owner
- * (fromAssigneeName) so an admin take-over keeps a complete audit trail; writes
- * STATUS_CHANGED only when work starts. The caller enforces staff/claimability.
+ * work (→ IN_PROGRESS), in one batch. Writes a CLAIMED activity row only when
+ * ownership actually changes (writeAssigned) — i.e. the first self-claim — and a
+ * STATUS_CHANGED only when work starts. The caller enforces staff/claimability
+ * and the §6 ownership lock, so a claim only ever lands on an unassigned ticket
+ * or one already the actor's (fromAssigneeName is null).
  */
 export async function claimTicketRow(args: {
   ticketId: string;
@@ -418,7 +419,7 @@ export async function claimTicketRow(args: {
     // A claim is always a self-assignment, so record it as CLAIMED (not ASSIGNED)
     // — the timeline then reads "claimed the ticket" instead of "assigned it to
     // <self>". Store the deadline in toValue so it shows on the same line;
-    // fromValue keeps the prior owner on an admin take-over.
+    // fromValue (prior owner) is always null under the §6 ownership lock.
     events.push(
       db.insert(ticketActivity).values({
         ticketId: args.ticketId,

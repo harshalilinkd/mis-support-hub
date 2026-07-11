@@ -8,7 +8,6 @@ import * as q from "@/lib/db/queries";
 import type { TicketDetail } from "@/lib/db/queries";
 import type { Priority, Status } from "@/lib/db/schema";
 import {
-  sendAssignmentNotification,
   sendClaimNotification,
   sendClosureNotification,
   sendEditNotification,
@@ -19,7 +18,6 @@ import {
 import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { canTransition } from "@/lib/ticket-state";
 import {
-  assignTicketSchema,
   bulkClaimSchema,
   claimTicketSchema,
   createTicketSchema,
@@ -79,6 +77,15 @@ export async function updateStatus(
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
 
+  // Ownership lock (§6): a claimed ticket is the assignee's end-to-end — only
+  // they change its status. No one else, not even another admin.
+  if (ticket.assignedTo && ticket.assignedTo !== user.id) {
+    const owner = await q.getUserById(ticket.assignedTo);
+    return fail(
+      `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can update it.`
+    );
+  }
+
   const from = ticket.status;
   const to = parsed.data.status;
   if (from === to) return fail(`Ticket is already ${to}.`);
@@ -106,70 +113,17 @@ export async function updateStatus(
   return ok(undefined);
 }
 
-/** Assign/unassign — MIS only. */
-export async function assignTicket(
-  ticketId: string,
-  assigneeId: string | null
-): Promise<ActionResult> {
-  const user = await getCurrentUser();
-  if (!user) return fail("You must be signed in.");
-  if (!STAFF_ROLES.includes(user.role)) {
-    return fail("Only MIS staff can assign tickets.");
-  }
-
-  const parsed = assignTicketSchema.safeParse({ ticketId, assigneeId });
-  if (!parsed.success) return fail(firstIssue(parsed.error));
-
-  const ticket = await q.getTicketById(parsed.data.ticketId);
-  if (!ticket) return fail("Ticket not found.");
-
-  // No-op guard (mirrors updateStatus/setPriority): don't write a spurious
-  // ASSIGNED activity row or re-fire the notification when nothing changes.
-  if ((ticket.assignedTo ?? null) === (parsed.data.assigneeId ?? null)) {
-    return fail(
-      parsed.data.assigneeId
-        ? "Ticket is already assigned to that person."
-        : "Ticket is already unassigned."
-    );
-  }
-
-  let toName: string | null = null;
-  if (parsed.data.assigneeId) {
-    const assignee = await q.getUserById(parsed.data.assigneeId);
-    if (!assignee || !assignee.isActive) {
-      return fail("That assignee doesn't exist or is inactive.");
-    }
-    if (!STAFF_ROLES.includes(assignee.role)) {
-      return fail("Tickets can only be assigned to MIS staff.");
-    }
-    toName = assignee.name ?? assignee.email;
-  }
-
-  const fromUser = ticket.assignedTo
-    ? await q.getUserById(ticket.assignedTo)
-    : null;
-
-  await q.setTicketAssignee({
-    ticketId: ticket.id,
-    actorId: user.id,
-    assigneeId: parsed.data.assigneeId,
-    fromName: fromUser?.name ?? fromUser?.email ?? null,
-    toName,
-  });
-
-  if (parsed.data.assigneeId) {
-    await sendAssignmentNotification(ticket.id);
-  }
-
-  revalidateTicketRoutes(ticket.number);
-  return ok(undefined);
-}
+// There is intentionally NO assignTicket action. Assignment happens only by
+// self-claiming an unassigned ticket (claimTicket / bulkClaimTickets), and a
+// claimed ticket is locked to its assignee (§6) — manual assign / reassign /
+// unassign is deliberately not a feature (it was a way to plant a lock on a
+// colleague's behalf or to override the ownership rule).
 
 /**
  * Claim a ticket — a staff member takes ownership, sets the priority + an
  * estimated resolution date, and starts work (§5: OPEN/REOPENED → IN_PROGRESS).
- * Won't steal a ticket already claimed by someone else (an MIS_ADMIN may take it
- * over). Notifies the reporter that work has started.
+ * Won't steal a ticket already claimed by someone else — once claimed, it stays
+ * with its assignee (§6 ownership lock). Notifies the reporter work has started.
  */
 /**
  * Core claim logic for a single ticket, shared by claimTicket and
@@ -191,11 +145,9 @@ async function claimOne(
   if (ticket.status === "RESOLVED" || ticket.status === "CLOSED") {
     return { ok: false, error: `${ticket.number} is already resolved.` };
   }
-  if (
-    ticket.assignedTo &&
-    ticket.assignedTo !== user.id &&
-    user.role !== "MIS_ADMIN"
-  ) {
+  // Ownership lock (§6): never steal a ticket already claimed by someone else —
+  // not even as an admin. Once claimed, the assignee owns it end-to-end.
+  if (ticket.assignedTo && ticket.assignedTo !== user.id) {
     const current = await q.getUserById(ticket.assignedTo);
     return {
       ok: false,
@@ -209,14 +161,13 @@ async function claimOne(
     return { ok: false, error: `You're already working on ${ticket.number}.` };
   }
 
-  // Only log an ASSIGNED event when ownership actually changes; for an admin
-  // take-over, capture the prior owner so the audit trail stays complete.
+  // A claim only ever lands on an unassigned ticket or one already mine (the
+  // ownership guard above rejects anyone else's), so there is never a prior
+  // owner to record. writeAssigned is true only for the first self-claim — it
+  // gates the CLAIMED event so re-claiming my own ticket (e.g. after a reopen)
+  // doesn't re-log it.
   const writeAssigned = ticket.assignedTo !== user.id;
-  let fromAssigneeName: string | null = null;
-  if (writeAssigned && ticket.assignedTo) {
-    const prev = await q.getUserById(ticket.assignedTo);
-    fromAssigneeName = prev?.name ?? prev?.email ?? null;
-  }
+  const fromAssigneeName: string | null = null;
 
   const startWork = ticket.status === "OPEN" || ticket.status === "REOPENED";
   await q.claimTicketRow({
@@ -334,6 +285,15 @@ export async function setPriority(
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+
+  // Ownership lock (§6): only the assignee re-prioritises their claimed ticket.
+  if (ticket.assignedTo && ticket.assignedTo !== user.id) {
+    const owner = await q.getUserById(ticket.assignedTo);
+    return fail(
+      `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can change it.`
+    );
+  }
+
   if (ticket.priority === parsed.data.priority) {
     return fail(`Priority is already ${parsed.data.priority}.`);
   }

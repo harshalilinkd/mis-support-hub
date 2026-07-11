@@ -117,6 +117,14 @@ export function BoardView({
     const card = cardById.get(ticketId);
     if (!targetCol || !sourceCol || !card || sourceCol === targetCol.id) return;
 
+    // Ownership lock (§6): only the assignee moves a claimed ticket. Unassigned
+    // tickets (assignedToId null) fall through — dropping one into In Progress
+    // claims it below.
+    if (card.assignedToId && card.assignedToId !== currentUser.id) {
+      toast.error("This ticket is claimed by someone else — only they can move it.");
+      return;
+    }
+
     // Open → In Progress = claim: open the priority/deadline dialog, which
     // assigns the ticket to the current member (not a bare status change).
     if (sourceCol === "OPEN" && targetCol.id === "IN_PROGRESS") {

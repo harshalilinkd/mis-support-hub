@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button";
 import { ClaimDialog } from "./claim-dialog";
 
 /**
- * MIS-only action bar on the ticket detail: one-click Claim (assign to me +
- * start work) and, once you're the assignee working on it, Mark resolved.
- * Reassignment to a specific person still lives in the dashboard Assignee menu.
+ * MIS-only action bar on the ticket detail: one-click Claim (assign to me + start
+ * work) and, once you're the assignee working on it, Mark resolved. A ticket
+ * claimed by someone else is read-only here — that person owns it end-to-end
+ * (§6 ownership lock); there is no take-over or reassignment.
  */
 export function StaffTicketActions({
   ticketId,
@@ -21,7 +22,6 @@ export function StaffTicketActions({
   assignedToId,
   assignedToName,
   currentUserId,
-  isAdmin,
   onMutate,
 }: {
   ticketId: string;
@@ -29,7 +29,6 @@ export function StaffTicketActions({
   assignedToId: string | null;
   assignedToName: string | null;
   currentUserId: string;
-  isAdmin: boolean;
   onMutate?: () => void;
 }) {
   const router = useRouter();
@@ -39,7 +38,6 @@ export function StaffTicketActions({
   const mine = assignedToId === currentUserId;
   const working = mine && (status === "IN_PROGRESS" || status === "REOPENED");
   const claimedByOther = !!assignedToId && !mine;
-  const canClaim = !done && !working && (!assignedToId || mine || isAdmin);
 
   function act(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -78,19 +76,18 @@ export function StaffTicketActions({
             <CheckCircle2 className="size-4" /> Mark resolved
           </Button>
         </>
-      ) : claimedByOther && !isAdmin ? (
+      ) : claimedByOther ? (
         <span className="text-sm text-text-muted">
           {assignedToName ?? "Another staff member"}{" "}
           {status === "IN_PROGRESS" || status === "REOPENED"
             ? "is working on this ticket."
-            : "is assigned to this ticket."}
+            : "is assigned to this ticket."}{" "}
+          Only they can resolve it.
         </span>
-      ) : canClaim ? (
+      ) : (
         <>
           <span className="text-sm text-text-muted">
-            {claimedByOther
-              ? `Assigned to ${assignedToName ?? "someone"} — take it over?`
-              : "Pick this up to start working on it."}
+            Pick this up to start working on it — it becomes yours to resolve.
           </span>
           <ClaimDialog
             ticketId={ticketId}
@@ -102,7 +99,7 @@ export function StaffTicketActions({
             }
           />
         </>
-      ) : null}
+      )}
     </div>
   );
 }
