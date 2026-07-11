@@ -39,8 +39,13 @@ function revalidateTicketRoutes(number?: string) {
   revalidatePath("/dashboard");
   revalidatePath("/tickets");
   revalidatePath("/board");
-  revalidatePath("/settings/recycle-bin");
   if (number) revalidatePath(`/tickets/${number}`);
+}
+
+// The recycle bin only changes on delete/restore/purge — those actions call this
+// on top of revalidateTicketRoutes, so ordinary mutations don't refetch it.
+function revalidateRecycleBin() {
+  revalidatePath("/settings/recycle-bin");
 }
 
 /** Raise a ticket — any authenticated user (§6). */
@@ -261,10 +266,8 @@ export async function bulkClaimTickets(input: {
     }
   }
 
-  // Notify each reporter (best-effort; §8) after the writes land.
-  for (const id of claimedIds) {
-    await sendClaimNotification(id);
-  }
+  // Notify each reporter (best-effort; §8) — in parallel, after the writes land.
+  await Promise.all(claimedIds.map((id) => sendClaimNotification(id)));
 
   if (claimedIds.length > 0) revalidateTicketRoutes();
   return ok({ claimed: claimedIds.length, failed });
@@ -463,6 +466,7 @@ export async function deleteTicket(ticketId: string): Promise<ActionResult> {
 
   await q.softDeleteTicketById(ticket.id, user.id);
   revalidateTicketRoutes(ticket.number);
+  revalidateRecycleBin();
   return ok(undefined);
 }
 
@@ -483,31 +487,22 @@ export async function bulkDeleteTickets(input: {
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
   const isAdmin = user.role === "MIS_ADMIN";
-  let deleted = 0;
-  let failed = 0;
-  for (const id of parsed.data.ticketIds) {
-    try {
-      const ticket = await q.getTicketById(id);
-      if (!ticket) {
-        failed++;
-        continue;
-      }
-      const isReporter = ticket.createdBy === user.id;
-      const canDelete = isAdmin || (isReporter && ticket.status === "OPEN");
-      if (!canDelete) {
-        failed++;
-        continue;
-      }
-      await q.softDeleteTicketById(ticket.id, user.id);
-      deleted++;
-    } catch (e) {
-      console.error("[bulkDeleteTickets] failed to delete", id, e);
-      failed++;
-    }
-  }
+  // One set-based soft-delete honouring the same rule as deleteTicket (§6): an
+  // admin deletes any; a reporter only their own still-OPEN ticket. Anything not
+  // matched (someone else's, not OPEN, already deleted, or not found) is counted
+  // as failed — no per-ticket round-trips.
+  const deletedIds = await q.bulkSoftDeleteTickets({
+    ids: parsed.data.ticketIds,
+    deletedBy: user.id,
+    reporterId: isAdmin ? undefined : user.id,
+  });
+  const deleted = deletedIds.length;
 
-  if (deleted > 0) revalidateTicketRoutes();
-  return ok({ deleted, failed });
+  if (deleted > 0) {
+    revalidateTicketRoutes();
+    revalidateRecycleBin();
+  }
+  return ok({ deleted, failed: parsed.data.ticketIds.length - deleted });
 }
 
 /** Restore a ticket from the recycle bin — MIS_ADMIN only. */
@@ -526,6 +521,7 @@ export async function restoreTicket(ticketId: string): Promise<ActionResult> {
 
   await q.restoreTicketById(ticket.id);
   revalidateTicketRoutes(ticket.number);
+  revalidateRecycleBin();
   return ok(undefined);
 }
 
@@ -551,6 +547,7 @@ export async function permanentlyDeleteTicket(
 
   await q.deleteTicketById(ticket.id);
   revalidateTicketRoutes(ticket.number);
+  revalidateRecycleBin();
   return ok(undefined);
 }
 

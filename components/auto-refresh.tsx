@@ -20,20 +20,26 @@ export function AutoRefresh({ intervalMs = 15000 }: { intervalMs?: number }) {
   const router = useRouter();
 
   useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
-    }, intervalMs);
-
-    const onVisible = () => {
-      if (document.visibilityState === "visible") router.refresh();
+    // Switching back to a tab fires BOTH `focus` and `visibilitychange`, and can
+    // coincide with an interval tick — coalesce all triggers to at most one
+    // refresh per 2s so a single tab-switch doesn't refetch the page 2-3×.
+    let last = 0;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - last < 2000) return;
+      last = now;
+      router.refresh();
     };
-    window.addEventListener("focus", onVisible);
-    document.addEventListener("visibilitychange", onVisible);
+
+    const id = setInterval(refresh, intervalMs);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
 
     return () => {
       clearInterval(id);
-      window.removeEventListener("focus", onVisible);
-      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [router, intervalMs]);
 

@@ -8,7 +8,7 @@ import { MessageSquare, Paperclip } from "lucide-react";
 import { RelativeTime } from "@/components/relative-time";
 import { PriorityChip } from "@/components/tickets/chips";
 import { UserAvatar } from "@/components/user-avatar";
-import type { TicketListRow } from "@/lib/db/queries";
+import type { BoardTicketRow } from "@/lib/db/queries";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ export const DRAG_ACTIVATION_DISTANCE = 8;
 /** Pure card visual — used for both the in-column card and the drag overlay. */
 export const BoardCardContent = forwardRef<
   HTMLDivElement,
-  { ticket: TicketListRow } & React.HTMLAttributes<HTMLDivElement>
+  { ticket: BoardTicketRow } & React.HTMLAttributes<HTMLDivElement>
 >(function BoardCardContent({ ticket, className, ...rest }, ref) {
   return (
     <div
@@ -77,7 +77,7 @@ export function BoardCard({
   ticket,
   onOpen,
 }: {
-  ticket: TicketListRow;
+  ticket: BoardTicketRow;
   onOpen: () => void;
 }) {
   // Terminal tickets (resolved/closed) sit in the Resolved column but can't move

@@ -607,6 +607,30 @@ export async function softDeleteTicketById(id: string, deletedBy: string) {
     .where(and(eq(tickets.id, id), isNull(tickets.deletedAt)));
 }
 
+/**
+ * Bulk soft-delete in ONE statement (row-level multi-select delete). Returns the
+ * ids actually deleted, so the caller derives `failed = requested - deleted`.
+ * `reporterId` set (non-admin path) restricts to that reporter's own still-OPEN
+ * tickets — mirrors deleteTicket's rule (§6) purely in SQL, no per-row reads.
+ */
+export async function bulkSoftDeleteTickets(args: {
+  ids: string[];
+  deletedBy: string;
+  reporterId?: string;
+}): Promise<string[]> {
+  if (args.ids.length === 0) return [];
+  const conds = [inArray(tickets.id, args.ids), isNull(tickets.deletedAt)];
+  if (args.reporterId) {
+    conds.push(eq(tickets.createdBy, args.reporterId), eq(tickets.status, "OPEN"));
+  }
+  const rows = await db
+    .update(tickets)
+    .set({ deletedAt: new Date(), deletedBy: args.deletedBy })
+    .where(and(...conds))
+    .returning({ id: tickets.id });
+  return rows.map((r) => r.id);
+}
+
 /** Restore a ticket from the recycle bin (clears the soft-delete marks). */
 export async function restoreTicketById(id: string) {
   await db
@@ -721,11 +745,14 @@ export type TicketAttachmentThumb = {
   contentType: string;
 };
 
-const ticketListSelect = {
+// Layered projections so each list fetches only what it renders (perf): the
+// board needs just the two counts; My Tickets adds the attachment thumbnails;
+// only All Tickets needs the full `description` body (its bulk-claim modal reads
+// it). Each layer extends the one above.
+const ticketBoardSelect = {
   id: tickets.id,
   number: tickets.number,
   title: tickets.title,
-  description: tickets.description,
   department: tickets.department,
   status: tickets.status,
   priority: tickets.priority,
@@ -748,8 +775,11 @@ const ticketListSelect = {
     sql<number>`(select count(*) from ${ticketAttachments} where ${ticketAttachments.ticketId} = ${tickets.id})`.mapWith(
       Number
     ),
-  // Attachment metadata for inline thumbnails/links. Correlates on the outer
-  // tickets.id like the counts above (the list joins force qualification).
+};
+
+// + attachment metadata for inline thumbnails/links (My Tickets, All Tickets).
+const ticketListSelectLite = {
+  ...ticketBoardSelect,
   attachments: sql<TicketAttachmentThumb[]>`(
     select coalesce(
       json_agg(json_build_object(
@@ -763,6 +793,12 @@ const ticketListSelect = {
     from ${ticketAttachments}
     where ${ticketAttachments.ticketId} = ${tickets.id}
   )`,
+};
+
+// + the full ticket body — only All Tickets (the bulk-claim modal shows it).
+const ticketListSelect = {
+  ...ticketListSelectLite,
+  description: tickets.description,
 };
 
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
@@ -797,7 +833,7 @@ function ticketFilterConditions(filters: TicketFilters): SQL[] {
 export async function listMyTickets(userId: string, filters: TicketFilters = {}) {
   const conds = [eq(tickets.createdBy, userId), ...ticketFilterConditions(filters)];
   return db
-    .select(ticketListSelect)
+    .select(ticketListSelectLite)
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
@@ -813,7 +849,7 @@ export async function listMyTickets(userId: string, filters: TicketFilters = {})
  */
 export async function listAssignedToMe(userId: string) {
   return db
-    .select(ticketListSelect)
+    .select(ticketListSelectLite)
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
@@ -832,7 +868,7 @@ export async function countMyActiveTickets(userId: string): Promise<number> {
       and(
         eq(tickets.createdBy, userId),
         isNull(tickets.deletedAt),
-        sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
+        inArray(tickets.status, ["OPEN", "IN_PROGRESS", "REOPENED"])
       )
     );
   return row?.count ?? 0;
@@ -847,7 +883,7 @@ export async function countAssignedActive(userId: string): Promise<number> {
       and(
         eq(tickets.assignedTo, userId),
         isNull(tickets.deletedAt),
-        sql`${tickets.status}::text in ('OPEN','IN_PROGRESS','REOPENED')`
+        inArray(tickets.status, ["OPEN", "IN_PROGRESS", "REOPENED"])
       )
     );
   return row?.count ?? 0;
@@ -866,6 +902,45 @@ export async function listAllTickets(filters: TicketFilters = {}) {
 }
 
 export type TicketListRow = Awaited<ReturnType<typeof listAllTickets>>[number];
+
+/**
+ * Board: every active ticket (all statuses; RESOLVED/CLOSED live in the Resolved
+ * column). Light projection — the cards show only the two counts, so this skips
+ * the `description` body and the `attachments` json_agg entirely.
+ */
+export async function listBoardTickets() {
+  return db
+    .select(ticketBoardSelect)
+    .from(tickets)
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
+    .where(isNull(tickets.deletedAt))
+    .orderBy(desc(tickets.createdAt));
+}
+
+export type BoardTicketRow = Awaited<ReturnType<typeof listBoardTickets>>[number];
+
+/**
+ * Settings → Bulk Delete list: the 8 columns the view renders, with a single
+ * creator join and NO correlated subqueries or body — the leanest ticket read.
+ */
+export async function listTicketsForBulkDelete() {
+  return db
+    .select({
+      id: tickets.id,
+      number: tickets.number,
+      title: tickets.title,
+      department: tickets.department,
+      status: tickets.status,
+      priority: tickets.priority,
+      createdByName: creatorUser.name,
+      createdAt: tickets.createdAt,
+    })
+    .from(tickets)
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .where(isNull(tickets.deletedAt))
+    .orderBy(desc(tickets.createdAt));
+}
 
 /**
  * Per-tab ticket counts for the All Tickets tabs. Honors the facet filters
@@ -1124,6 +1199,33 @@ export async function unreadNotificationCount(userId: string): Promise<number> {
     .from(notifications)
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
   return row?.count ?? 0;
+}
+
+/**
+ * The topbar bell's data in ONE round-trip: the latest N notifications plus the
+ * user's total unread count (a non-correlated scalar subquery Postgres evaluates
+ * once, not per row). Replaces a separate listNotifications +
+ * unreadNotificationCount pair — the layout runs this on every request/poll.
+ */
+export async function listNotificationsWithUnread(userId: string, limit = 20) {
+  const rows = await db
+    .select({
+      id: notifications.id,
+      ticketNumber: notifications.ticketNumber,
+      title: notifications.title,
+      body: notifications.body,
+      readAt: notifications.readAt,
+      createdAt: notifications.createdAt,
+      unread:
+        sql<number>`(select count(*) from notifications where user_id = ${userId} and read_at is null)`.mapWith(
+          Number
+        ),
+    })
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+  return { rows, unread: rows[0]?.unread ?? 0 };
 }
 
 export async function markAllNotificationsRead(userId: string) {

@@ -21,6 +21,11 @@ const TIME_FMT = new Intl.DateTimeFormat("en-US", {
   hour12: true,
 });
 
+// Hoisted (was rebuilt every render, called 2×/component). Collapses whitespace
+// so the SSR + client output is byte-identical (see the note in AbsoluteTime).
+const WS = /\s+/g;
+const normalizeWs = (s: string) => s.replace(WS, " ");
+
 /**
  * Absolute date + time in IST, e.g. "09 Jul 2026, 8:30 PM". Use this (instead of
  * RelativeTime) wherever the exact timestamp matters — the tickets table, the
@@ -43,9 +48,8 @@ export function AbsoluteTime({
   // on the server and the client regardless of their ICU build — so the two
   // stacked <span>s (which suppressHydrationWarning on the parent <time> does
   // NOT cover) can never trigger a hydration mismatch.
-  const norm = (s: string) => s.replace(/\s+/g, " ");
-  const day = norm(DATE_FMT.format(d));
-  const time = norm(TIME_FMT.format(d));
+  const day = normalizeWs(DATE_FMT.format(d));
+  const time = normalizeWs(TIME_FMT.format(d));
 
   if (stacked) {
     return (

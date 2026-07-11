@@ -3,6 +3,10 @@ export function toIso(value: Date | string): string {
   return typeof value === "string" ? value : new Date(value).toISOString();
 }
 
+// Hoisted to module scope — Intl constructors are expensive (locale resolution)
+// and this ran on every formatRelative call (per notification, per 60s tick).
+const RELATIVE_FMT = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
 /** "just now", "2h ago", "3 days ago" (CLAUDE.md §9 — relative time in lists). */
 export function formatRelative(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -12,15 +16,14 @@ export function formatRelative(value: Date | string): string {
   const min = Math.round(sec / 60);
   const hr = Math.round(min / 60);
   const day = Math.round(hr / 24);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
   if (sec < 45) return "just now";
-  if (min < 60) return rtf.format(sign * min, "minute");
-  if (hr < 24) return rtf.format(sign * hr, "hour");
-  if (day < 30) return rtf.format(sign * day, "day");
+  if (min < 60) return RELATIVE_FMT.format(sign * min, "minute");
+  if (hr < 24) return RELATIVE_FMT.format(sign * hr, "hour");
+  if (day < 30) return RELATIVE_FMT.format(sign * day, "day");
   const month = Math.round(day / 30);
-  if (month < 12) return rtf.format(sign * month, "month");
-  return rtf.format(sign * Math.round(month / 12), "year");
+  if (month < 12) return RELATIVE_FMT.format(sign * month, "month");
+  return RELATIVE_FMT.format(sign * Math.round(month / 12), "year");
 }
 
 /** Absolute, locale-formatted date-time (for tooltips). */

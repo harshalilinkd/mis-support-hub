@@ -3,8 +3,7 @@ import { redirect } from "next/navigation";
 import {
   countAssignedActive,
   countMyActiveTickets,
-  listNotifications,
-  unreadNotificationCount,
+  listNotificationsWithUnread,
 } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
 import { getCurrentUser } from "@/lib/session";
@@ -20,12 +19,12 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   const isStaff = user.role === "MIS_STAFF" || user.role === "MIS_ADMIN";
-  const [rows, unreadCount, myActiveCount] = await Promise.all([
-    listNotifications(user.id),
-    unreadNotificationCount(user.id),
+  const [notif, myActiveCount] = await Promise.all([
+    listNotificationsWithUnread(user.id),
     isStaff ? countAssignedActive(user.id) : countMyActiveTickets(user.id),
   ]);
-  const notifications = rows.map((n) => ({
+  const unreadCount = notif.unread;
+  const notifications = notif.rows.map((n) => ({
     id: n.id,
     ticketNumber: n.ticketNumber,
     title: n.title,

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -184,6 +185,24 @@ export const tickets = pgTable("tickets", {
   index("tickets_status_idx").on(t.status),
   index("tickets_assigned_to_idx").on(t.assignedTo),
   index("tickets_created_by_idx").on(t.createdBy),
+  // Active-ticket access paths. Every list/count/analytics query filters
+  // `deleted_at IS NULL`, so these are partial indexes over just the live rows,
+  // ordered to match each query's ORDER BY (avoids sort + seq-scan at scale).
+  index("tickets_active_created_idx")
+    .on(t.createdAt.desc())
+    .where(sql`${t.deletedAt} is null`), // listAllTickets
+  index("tickets_active_creator_idx")
+    .on(t.createdBy, t.createdAt.desc())
+    .where(sql`${t.deletedAt} is null`), // listMyTickets
+  index("tickets_active_assignee_idx")
+    .on(t.assignedTo, t.updatedAt.desc())
+    .where(sql`${t.deletedAt} is null`), // listAssignedToMe
+  index("tickets_active_resolved_idx")
+    .on(t.resolvedAt)
+    .where(sql`${t.deletedAt} is null`), // dashboard/analytics resolved metrics
+  index("tickets_deleted_idx")
+    .on(t.deletedAt)
+    .where(sql`${t.deletedAt} is not null`), // recycle bin
 ]);
 
 export const ticketComments = pgTable("ticket_comments", {
@@ -218,7 +237,11 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => [
+  // The attachment count + json_agg subqueries in ticketListSelect filter on
+  // ticket_id once per ticket row — without this they seq-scan the whole table.
+  index("ticket_attachments_ticket_id_idx").on(t.ticketId),
+]);
 
 /** Audit trail — write a row on EVERY mutation (CLAUDE.md §4, §9). */
 export const ticketActivity = pgTable("ticket_activity", {

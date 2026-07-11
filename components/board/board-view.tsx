@@ -19,7 +19,7 @@ import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shell/empty-state";
 import { updateStatus } from "@/lib/actions/tickets";
-import type { TicketListRow } from "@/lib/db/queries";
+import type { BoardTicketRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
 import { humanizeEnum } from "@/lib/format";
 import type { SessionUser } from "@/lib/session";
@@ -50,8 +50,8 @@ function columnFor(status: Status): ColId {
   return "RESOLVED";
 }
 
-function group(tickets: TicketListRow[]): Record<ColId, TicketListRow[]> {
-  const cols: Record<ColId, TicketListRow[]> = {
+function group(tickets: BoardTicketRow[]): Record<ColId, BoardTicketRow[]> {
+  const cols: Record<ColId, BoardTicketRow[]> = {
     OPEN: [],
     IN_PROGRESS: [],
     RESOLVED: [],
@@ -66,7 +66,7 @@ export function BoardView({
   tickets,
   currentUser,
 }: {
-  tickets: TicketListRow[];
+  tickets: BoardTicketRow[];
   currentUser: SessionUser;
 }) {
   const router = useRouter();
@@ -92,7 +92,7 @@ export function BoardView({
   );
 
   const cardById = useMemo(() => {
-    const map = new Map<string, TicketListRow>();
+    const map = new Map<string, BoardTicketRow>();
     for (const list of Object.values(columns)) {
       for (const t of list) map.set(t.id, t);
     }
@@ -149,7 +149,7 @@ export function BoardView({
     // Optimistic move.
     const previous = columns;
     setColumns((cols) => {
-      const next: Record<ColId, TicketListRow[]> = {
+      const next: Record<ColId, BoardTicketRow[]> = {
         OPEN: [...cols.OPEN],
         IN_PROGRESS: [...cols.IN_PROGRESS],
         RESOLVED: [...cols.RESOLVED],

@@ -319,17 +319,21 @@ export async function sendNewTicketNotification(ticketId: string): Promise<void>
     const reporter = await loadUser(ticket.createdBy);
     const who = reporter?.name ?? "Someone";
     const staff = await listAssignableUsers();
-    for (const s of staff) {
-      if (s.id === ticket.createdBy) continue;
-      await createInApp({
-        userId: s.id,
-        type: "NEW_TICKET",
-        ticketId: ticket.id,
-        ticketNumber: ticket.number,
-        title: `New ticket ${ticket.number}`,
-        body: `${ticket.title}\nRaised by ${who} — needs triage.`,
-      });
-    }
+    // Fan out to the whole MIS team in parallel (best-effort; §8).
+    await Promise.all(
+      staff
+        .filter((s) => s.id !== ticket.createdBy)
+        .map((s) =>
+          createInApp({
+            userId: s.id,
+            type: "NEW_TICKET",
+            ticketId: ticket.id,
+            ticketNumber: ticket.number,
+            title: `New ticket ${ticket.number}`,
+            body: `${ticket.title}\nRaised by ${who} — needs triage.`,
+          })
+        )
+    );
   } catch (e) {
     console.error("[sendNewTicketNotification]", e);
   }
