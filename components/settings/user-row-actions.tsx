@@ -37,7 +37,16 @@ export function UserRowActions({
         toast.error(res.error);
         return;
       }
-      toast.success(user.isActive ? "User deactivated" : "User activated");
+      if (user.isActive) {
+        const n = res.data.released;
+        toast.success(
+          n > 0
+            ? `User deactivated — ${n} ticket${n === 1 ? "" : "s"} released to the pool`
+            : "User deactivated"
+        );
+      } else {
+        toast.success("User activated");
+      }
       router.refresh();
     });
   }

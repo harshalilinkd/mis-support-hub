@@ -191,6 +191,71 @@ export async function setUserActiveStatus(id: string, isActive: boolean) {
   await db.update(users).set({ isActive }).where(eq(users.id, id));
 }
 
+/**
+ * Auto-release a member's in-flight tickets when they're deactivated. Because a
+ * claimed ticket is locked to its assignee (§6) and a deactivated user can no
+ * longer sign in, their tickets would otherwise be frozen. So: unassign every
+ * non-closed ticket assigned to them, and return the active ones (OPEN /
+ * IN_PROGRESS / REOPENED) to the unclaimed pool — status → OPEN, priority +
+ * deadline cleared — so anyone can re-claim. RESOLVED tickets are only
+ * unassigned (kept resolved for the reporter to confirm; a later reopen lands
+ * unassigned and claimable). Writes an audit row per change. Returns the count.
+ */
+export async function releaseTicketsOfUser(
+  userId: string,
+  actorId: string
+): Promise<number> {
+  const rows = await db
+    .select({ id: tickets.id, status: tickets.status })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.assignedTo, userId),
+        isNull(tickets.deletedAt),
+        sql`${tickets.status}::text <> 'CLOSED'`
+      )
+    );
+  if (rows.length === 0) return 0;
+
+  const stmts = [];
+  for (const t of rows) {
+    // Return active work to the pool; leave a RESOLVED ticket resolved.
+    const reset = t.status !== "RESOLVED";
+    const set: Partial<typeof tickets.$inferInsert> = { assignedTo: null };
+    if (reset) {
+      set.status = "OPEN";
+      set.priority = null;
+      set.deadline = null;
+    }
+    stmts.push(db.update(tickets).set(set).where(eq(tickets.id, t.id)));
+    // Audit: the unassignment (timeline reads "unassigned it").
+    stmts.push(
+      db.insert(ticketActivity).values({
+        ticketId: t.id,
+        actorId,
+        type: "ASSIGNED",
+        fromValue: null,
+        toValue: null,
+      })
+    );
+    // Audit: the status reset, only when it actually changed.
+    if (reset && t.status !== "OPEN") {
+      stmts.push(
+        db.insert(ticketActivity).values({
+          ticketId: t.id,
+          actorId,
+          type: "STATUS_CHANGED",
+          fromValue: t.status,
+          toValue: "OPEN",
+        })
+      );
+    }
+  }
+
+  await db.batch(stmts as unknown as Parameters<typeof db.batch>[0]);
+  return rows.length;
+}
+
 /** Update a user's editable profile fields (admin). Caller must enforce MIS_ADMIN. */
 export async function updateUserProfile(args: {
   id: string;

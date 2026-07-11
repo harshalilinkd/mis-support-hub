@@ -9,6 +9,7 @@ import {
   getUserById,
   insertUserWithRole,
   reassignReferencesAndDeleteUser,
+  releaseTicketsOfUser,
   setUserActiveStatus,
   setUserPasswordHash,
   setUserProfile,
@@ -280,7 +281,7 @@ export async function adminBulkCreateUsers(input: {
 export async function setUserActive(
   userId: string,
   isActive: boolean
-): Promise<ActionResult> {
+): Promise<ActionResult<{ released: number }>> {
   const admin = await getCurrentUser();
   if (!admin || admin.role !== "MIS_ADMIN") {
     return fail("Only MIS admins can manage users.");
@@ -293,9 +294,32 @@ export async function setUserActive(
     return fail("You can't deactivate your own account.");
   }
 
+  // Deactivating locks the door, so FIRST release the member's in-flight tickets
+  // back to the pool — otherwise the ownership lock (§6) would freeze them once
+  // they can no longer sign in. Release before deactivating: if it fails we don't
+  // deactivate, so the admin can retry cleanly and a ticket is never stranded.
+  let released = 0;
+  if (!parsed.data.isActive) {
+    try {
+      released = await releaseTicketsOfUser(parsed.data.userId, admin.id);
+    } catch (e) {
+      console.error("[setUserActive] failed to release tickets", e);
+      return fail(
+        "Couldn't release this member's tickets, so they weren't deactivated. Please try again."
+      );
+    }
+  }
+
   await setUserActiveStatus(parsed.data.userId, parsed.data.isActive);
+
   revalidatePath("/settings/users");
-  return ok(undefined);
+  if (released > 0) {
+    revalidatePath("/tickets");
+    revalidatePath("/dashboard");
+    revalidatePath("/board");
+    revalidatePath("/my");
+  }
+  return ok({ released });
 }
 
 /**
