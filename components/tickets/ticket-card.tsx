@@ -16,6 +16,7 @@ const STATUS_BAR: Record<Status, string> = {
 };
 
 export type TicketCardData = {
+  id: string;
   number: string;
   title: string;
   department: Department;

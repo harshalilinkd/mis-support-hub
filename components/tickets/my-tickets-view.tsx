@@ -23,6 +23,7 @@ import {
 } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
+import { PriorityControl, StatusControl } from "@/components/dashboard/inline-controls";
 import { PriorityChip, StatusChip } from "./chips";
 import type { TicketCardData } from "./ticket-card";
 import { TicketLinkFiles } from "./ticket-link-files";
@@ -58,6 +59,9 @@ export function MyTicketsView({
   const [selected, setSelected] = useState<string | null>(null);
 
   const showAssignee = variant === "raised";
+  // MIS staff working their own queue get inline status/priority controls (same
+  // as All Tickets); employees viewing tickets they raised see read-only chips.
+  const canControl = variant === "assigned";
 
   // Search-filtered set — shared by the table and the per-tab counts, so the
   // counts reflect the current search (like the admin All Tickets tabs).
@@ -87,6 +91,9 @@ export function MyTicketsView({
 
   const open = (number: string) => setSelected(number);
   const onKeyOpen = (number: string) => (e: React.KeyboardEvent) => {
+    // Only when the row/card itself is focused — not when the keystroke bubbles
+    // up from an inner control (the status/priority dropdown) or a link.
+    if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       open(number);
@@ -190,11 +197,21 @@ export function MyTicketsView({
                       <span className="font-mono text-xs text-text-muted">
                         {t.number}
                       </span>
-                      <StatusChip status={t.status} />
+                      {canControl ? (
+                        <StatusControl ticketId={t.id} status={t.status} />
+                      ) : (
+                        <StatusChip status={t.status} />
+                      )}
                     </div>
                     <h3 className="mt-1 truncate font-medium">{t.title}</h3>
                   </div>
-                  <PriorityChip priority={t.priority} className="shrink-0" />
+                  {canControl ? (
+                    <div className="shrink-0">
+                      <PriorityControl ticketId={t.id} priority={t.priority} />
+                    </div>
+                  ) : (
+                    <PriorityChip priority={t.priority} className="shrink-0" />
+                  )}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                   <span>{DEPARTMENT_LABELS[t.department]}</span>
@@ -285,10 +302,18 @@ export function MyTicketsView({
                       />
                     </TableCell>
                     <TableCell>
-                      <StatusChip status={t.status} />
+                      {canControl ? (
+                        <StatusControl ticketId={t.id} status={t.status} />
+                      ) : (
+                        <StatusChip status={t.status} />
+                      )}
                     </TableCell>
                     <TableCell>
-                      <PriorityChip priority={t.priority} />
+                      {canControl ? (
+                        <PriorityControl ticketId={t.id} priority={t.priority} />
+                      ) : (
+                        <PriorityChip priority={t.priority} />
+                      )}
                     </TableCell>
                     {showAssignee ? (
                       <TableCell className="max-w-[9rem] text-sm text-text-muted">

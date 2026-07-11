@@ -18,6 +18,7 @@ export default async function MyTicketsPage() {
     : await listMyTickets(user.id);
 
   const tickets = rows.map((r) => ({
+    id: r.id,
     number: r.number,
     title: r.title,
     department: r.department,
