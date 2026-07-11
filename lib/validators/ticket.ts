@@ -98,6 +98,12 @@ export const deleteTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });
 
+/** Soft-delete several tickets at once (row-level multi-select on the table). */
+export const bulkDeleteSchema = z.object({
+  ticketIds: z.array(z.string().uuid()).min(1, "Select at least one ticket"),
+});
+export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>;
+
 /** Editable fields for a ticket (reporter/admin). Priority stays MIS-only (§6). */
 export const editTicketSchema = z.object({
   title: z

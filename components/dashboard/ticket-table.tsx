@@ -28,14 +28,14 @@ export function TicketTable({
   tickets,
   currentUser,
   selectedIds,
-  claimableIds,
+  selectableIds,
   onToggleSelect,
   onToggleSelectAll,
 }: {
   tickets: TicketListRow[];
   currentUser: SessionUser;
   selectedIds?: Set<string>;
-  claimableIds?: Set<string>;
+  selectableIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onToggleSelectAll?: () => void;
 }) {
@@ -47,14 +47,15 @@ export function TicketTable({
     !!(t.assignedToId && t.assignedToId !== currentUser.id);
 
   // Bulk-select column (desktop only): rendered when the parent wires selection
-  // in. A row is checkable only if the current user can actually claim it.
-  const selectable = !!(selectedIds && claimableIds && onToggleSelect);
-  const claimableArr = claimableIds ? [...claimableIds] : [];
+  // in. A row is checkable only when the current user can act on it (claim or
+  // delete); the parent decides which rows those are.
+  const selectable = !!(selectedIds && selectableIds && onToggleSelect);
+  const selectableArr = selectableIds ? [...selectableIds] : [];
   const headerChecked: boolean | "indeterminate" =
-    selectable && claimableArr.length > 0
-      ? claimableArr.every((id) => selectedIds!.has(id))
+    selectable && selectableArr.length > 0
+      ? selectableArr.every((id) => selectedIds!.has(id))
         ? true
-        : claimableArr.some((id) => selectedIds!.has(id))
+        : selectableArr.some((id) => selectedIds!.has(id))
           ? "indeterminate"
           : false
       : false;
@@ -148,8 +149,8 @@ export function TicketTable({
                   <Checkbox
                     checked={headerChecked}
                     onCheckedChange={() => onToggleSelectAll?.()}
-                    disabled={claimableArr.length === 0}
-                    aria-label="Select all claimable tickets"
+                    disabled={selectableArr.length === 0}
+                    aria-label="Select all selectable tickets"
                   />
                 </TableHead>
               ) : null}
@@ -178,7 +179,7 @@ export function TicketTable({
                     className="w-9 pl-4"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {claimableIds!.has(t.id) ? (
+                    {selectableIds!.has(t.id) ? (
                       <Checkbox
                         checked={selectedIds!.has(t.id)}
                         onCheckedChange={() => onToggleSelect!(t.id)}

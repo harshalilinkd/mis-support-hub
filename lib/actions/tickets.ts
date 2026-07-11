@@ -19,6 +19,7 @@ import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { canTransition } from "@/lib/ticket-state";
 import {
   bulkClaimSchema,
+  bulkDeleteSchema,
   claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
@@ -463,6 +464,50 @@ export async function deleteTicket(ticketId: string): Promise<ActionResult> {
   await q.softDeleteTicketById(ticket.id, user.id);
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);
+}
+
+/**
+ * Soft-delete several tickets at once (row-level multi-select on the table).
+ * Best-effort per ticket, applying the same rule as deleteTicket (§6): an
+ * MIS_ADMIN can delete any; a reporter only their own still-OPEN ticket. Anything
+ * the caller may not delete is skipped and counted as failed. Moves them to the
+ * recycle bin (restorable).
+ */
+export async function bulkDeleteTickets(input: {
+  ticketIds: string[];
+}): Promise<ActionResult<{ deleted: number; failed: number }>> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+
+  const parsed = bulkDeleteSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const isAdmin = user.role === "MIS_ADMIN";
+  let deleted = 0;
+  let failed = 0;
+  for (const id of parsed.data.ticketIds) {
+    try {
+      const ticket = await q.getTicketById(id);
+      if (!ticket) {
+        failed++;
+        continue;
+      }
+      const isReporter = ticket.createdBy === user.id;
+      const canDelete = isAdmin || (isReporter && ticket.status === "OPEN");
+      if (!canDelete) {
+        failed++;
+        continue;
+      }
+      await q.softDeleteTicketById(ticket.id, user.id);
+      deleted++;
+    } catch (e) {
+      console.error("[bulkDeleteTickets] failed to delete", id, e);
+      failed++;
+    }
+  }
+
+  if (deleted > 0) revalidateTicketRoutes();
+  return ok({ deleted, failed });
 }
 
 /** Restore a ticket from the recycle bin — MIS_ADMIN only. */
