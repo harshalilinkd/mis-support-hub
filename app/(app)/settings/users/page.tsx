@@ -23,6 +23,8 @@ export default async function UsersSettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/settings"
+        backLabel="Settings"
         title="Users"
         description="Manage who can access the hub, their role, and their access."
       >

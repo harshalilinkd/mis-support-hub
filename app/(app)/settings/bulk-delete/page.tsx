@@ -27,6 +27,8 @@ export default async function BulkDeletePage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/settings"
+        backLabel="Settings"
         title="Bulk Delete"
         description="Select multiple tickets and move them to the recycle bin at once. Deleted tickets can be restored from the Recycle Bin."
       />

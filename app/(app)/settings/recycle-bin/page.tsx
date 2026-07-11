@@ -28,6 +28,8 @@ export default async function RecycleBinPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/settings"
+        backLabel="Settings"
         title="Recycle Bin"
         description="Deleted tickets are kept here. Restore one, or delete it permanently to remove it for good."
       />
