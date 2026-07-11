@@ -154,7 +154,7 @@ export function AppShell({
           dense && "justify-center lg:justify-start",
           active
             ? "bg-accent-soft text-primary"
-            : "text-text-muted hover:bg-surface-muted hover:text-foreground"
+            : "text-foreground hover:bg-surface-muted"
         )}
       >
         <item.icon className="size-[18px] shrink-0" />
