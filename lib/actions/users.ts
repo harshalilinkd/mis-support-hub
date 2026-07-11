@@ -13,9 +13,10 @@ import {
   setUserRole,
   updateUserProfile,
 } from "@/lib/db/queries";
+import type { Department, Role } from "@/lib/db/schema";
 import { isEmailDomainAllowed } from "@/lib/email-domains";
 import { getCurrentUser } from "@/lib/session";
-import { DEPARTMENTS } from "@/lib/validators/ticket";
+import { DEPARTMENT_LABELS, DEPARTMENTS } from "@/lib/validators/ticket";
 import {
   createUserSchema,
   deleteUserSchema,
@@ -116,6 +117,127 @@ export async function adminCreateUser(input: {
 
   revalidatePath("/settings/users");
   return ok(undefined);
+}
+
+/** "employee"/"user" → USER; "admin"/"mis admin" → MIS_ADMIN; blank → USER. */
+function normalizeRole(input: string): Role | null {
+  const v = (input ?? "").trim().toLowerCase().replace(/[\s_]+/g, "");
+  if (!v) return "USER";
+  if (["user", "employee", "emp"].includes(v)) return "USER";
+  if (["misadmin", "admin"].includes(v)) return "MIS_ADMIN";
+  if (["misstaff", "staff"].includes(v)) return "MIS_STAFF";
+  return null; // unrecognized
+}
+
+/** Accepts the code ("LD_SILK_MILLS") or label ("LD Silk Mills"); blank → null. */
+function normalizeDepartment(input: string): Department | null | undefined {
+  const v = (input ?? "").trim();
+  if (!v) return null;
+  const code = v.toUpperCase().replace(/[\s-]+/g, "_");
+  if ((DEPARTMENTS as readonly string[]).includes(code)) return code as Department;
+  const byLabel = DEPARTMENTS.find(
+    (d) => DEPARTMENT_LABELS[d].toLowerCase() === v.toLowerCase()
+  );
+  return byLabel ?? undefined; // undefined = unrecognized
+}
+
+/**
+ * Bulk "add users" — one row per user (name, department, email, role, password).
+ * Each row is validated independently; good rows are created, bad rows are
+ * skipped with a reason. MIS_ADMIN only (CLAUDE.md §6).
+ */
+export async function adminBulkCreateUsers(input: {
+  rows: {
+    name: string;
+    department: string;
+    email: string;
+    role: string;
+    password: string;
+  }[];
+}): Promise<
+  ActionResult<{
+    created: number;
+    skipped: { row: number; email: string; error: string }[];
+  }>
+> {
+  const admin = await getCurrentUser();
+  if (!admin || admin.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can add users.");
+  }
+  const rows = input?.rows ?? [];
+  if (!rows.length) return fail("Nothing to import — paste at least one row.");
+  if (rows.length > 100) return fail("Import up to 100 users at a time.");
+
+  let created = 0;
+  const skipped: { row: number; email: string; error: string }[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i];
+    const at = i + 1;
+    const label = raw.email?.trim() || raw.name?.trim() || `row ${at}`;
+
+    const role = normalizeRole(raw.role);
+    if (!role) {
+      skipped.push({ row: at, email: label, error: `Unknown role "${raw.role}"` });
+      continue;
+    }
+    const department = normalizeDepartment(raw.department);
+    if (department === undefined) {
+      skipped.push({
+        row: at,
+        email: label,
+        error: `Unknown department "${raw.department}"`,
+      });
+      continue;
+    }
+
+    const parsed = createUserSchema.safeParse({
+      name: raw.name,
+      email: raw.email,
+      password: raw.password,
+      role,
+      department,
+    });
+    if (!parsed.success) {
+      skipped.push({
+        row: at,
+        email: label,
+        error: parsed.error.issues[0]?.message ?? "Invalid row",
+      });
+      continue;
+    }
+    const email = parsed.data.email;
+    if (seen.has(email)) {
+      skipped.push({ row: at, email, error: "Duplicate in this list" });
+      continue;
+    }
+    seen.add(email);
+    if (!isEmailDomainAllowed(email)) {
+      skipped.push({ row: at, email, error: "Email domain not allowed" });
+      continue;
+    }
+    if (await getUserByEmail(email)) {
+      skipped.push({ row: at, email, error: "Already exists" });
+      continue;
+    }
+    try {
+      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+      await insertUserWithRole({
+        name: parsed.data.name,
+        email,
+        passwordHash,
+        role: parsed.data.role,
+        department: parsed.data.department,
+      });
+      created++;
+    } catch {
+      skipped.push({ row: at, email, error: "Could not create" });
+    }
+  }
+
+  revalidatePath("/settings/users");
+  return ok({ created, skipped });
 }
 
 /** Activate/deactivate a user. Admins can't deactivate themselves. */
