@@ -6,9 +6,11 @@ import { z } from "zod";
 
 import {
   getUserByEmail,
+  getUserById,
   insertUserWithRole,
   reassignReferencesAndDeleteUser,
   setUserActiveStatus,
+  setUserPasswordHash,
   setUserProfile,
   setUserRole,
   updateUserProfile,
@@ -46,6 +48,40 @@ export async function updateMyProfile(
 
   await setUserProfile(user.id, parsed.data.name, parsed.data.department);
   revalidatePath("/", "layout");
+  return ok(undefined);
+}
+
+/**
+ * Change (or, for a Google-only account, set) the current user's own password.
+ * If they already have one, the correct current password is required.
+ */
+export async function changeMyPassword(input: {
+  currentPassword?: string;
+  newPassword: string;
+}): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+
+  const newPassword = input?.newPassword ?? "";
+  if (newPassword.length < 8) {
+    return fail("New password must be at least 8 characters.");
+  }
+  if (newPassword.length > 200) return fail("Keep it under 200 characters.");
+
+  const full = await getUserById(user.id);
+  if (!full) return fail("Account not found.");
+
+  // Existing password → the correct current one is required. Google-only accounts
+  // (no password yet) may set one without a current password.
+  if (full.passwordHash) {
+    const current = input?.currentPassword ?? "";
+    if (!current) return fail("Enter your current password.");
+    const okCurrent = await bcrypt.compare(current, full.passwordHash);
+    if (!okCurrent) return fail("Current password is incorrect.");
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await setUserPasswordHash(user.id, hash);
   return ok(undefined);
 }
 

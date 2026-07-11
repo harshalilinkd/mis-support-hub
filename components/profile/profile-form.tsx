@@ -8,6 +8,7 @@ import { updateMyProfile } from "@/lib/actions/users";
 import type { Department, Role } from "@/lib/db/schema";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { UserAvatar } from "@/components/user-avatar";
+import { ChangePasswordCard } from "./change-password-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -159,10 +160,12 @@ export function ProfileForm({
         <InfoRow label="Member since" value={memberSince} />
         <p className="mt-2 border-t border-border pt-3 text-xs text-text-muted">
           {hasPassword
-            ? "You can sign in with Google or your email + password. To reset your password, ask an MIS admin to update your account."
-            : "You sign in with Google — your email and photo come from your Google account, so there's no password to manage here."}
+            ? "You can sign in with Google or your email + password."
+            : "You sign in with Google. Set a password below to also sign in with email + password."}
         </p>
       </Card>
+
+      <ChangePasswordCard hasPassword={hasPassword} />
     </div>
   );
 }

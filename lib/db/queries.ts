@@ -65,6 +65,11 @@ export async function setUserProfile(
   await db.update(users).set({ name, department }).where(eq(users.id, userId));
 }
 
+/** Set/replace a user's password hash (email+password sign-in). */
+export async function setUserPasswordHash(id: string, passwordHash: string) {
+  await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+}
+
 /**
  * Dev-only: make sure a users row exists for the given id so foreign keys that
  * point at it (e.g. tickets.created_by) are satisfiable. Idempotent and
