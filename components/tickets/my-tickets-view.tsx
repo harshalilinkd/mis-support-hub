@@ -21,6 +21,7 @@ import {
   statusesForTab,
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
+import { formatDueDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityControl, StatusControl } from "@/components/dashboard/inline-controls";
@@ -217,6 +218,12 @@ export function MyTicketsView({
                   <span>{DEPARTMENT_LABELS[t.department]}</span>
                   <span aria-hidden>·</span>
                   <AbsoluteTime date={t.updatedAt} />
+                  {formatDueDate(t.deadline) ? (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span>Due {formatDueDate(t.deadline)}</span>
+                    </>
+                  ) : null}
                   {t.commentCount > 0 ? (
                     <>
                       <span aria-hidden>·</span>
@@ -246,7 +253,7 @@ export function MyTicketsView({
           {/* Desktop (md+): compact data table. */}
           <div className="hidden max-h-[calc(100vh-17rem)] overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
             <Table>
-              <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-text-muted">
+              <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="pl-4">Ticket</TableHead>
                   <TableHead>Title</TableHead>
@@ -254,6 +261,7 @@ export function MyTicketsView({
                   <TableHead>Link / Files</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Priority</TableHead>
+                  <TableHead>Deadline</TableHead>
                   {showAssignee ? <TableHead>Assignee</TableHead> : null}
                   <TableHead className="pr-4 text-right">Updated</TableHead>
                 </TableRow>
@@ -274,7 +282,7 @@ export function MyTicketsView({
                           className="size-1.5 shrink-0 rounded-full"
                           style={{ backgroundColor: STATUS_BAR[t.status] }}
                         />
-                        <span className="font-mono text-xs text-text-muted">
+                        <span className="font-mono text-xs text-foreground">
                           {t.number}
                         </span>
                       </div>
@@ -292,7 +300,7 @@ export function MyTicketsView({
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-text-muted">
+                    <TableCell className="whitespace-nowrap text-sm text-foreground">
                       {DEPARTMENT_LABELS[t.department]}
                     </TableCell>
                     <TableCell>
@@ -315,8 +323,13 @@ export function MyTicketsView({
                         <PriorityChip priority={t.priority} />
                       )}
                     </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                      {formatDueDate(t.deadline) ?? (
+                        <span className="text-text-muted">—</span>
+                      )}
+                    </TableCell>
                     {showAssignee ? (
-                      <TableCell className="max-w-[9rem] text-sm text-text-muted">
+                      <TableCell className="max-w-[9rem] text-sm text-foreground">
                         <span className="block truncate">
                           {t.assignedToName ?? "Unassigned"}
                         </span>
@@ -326,7 +339,7 @@ export function MyTicketsView({
                       <AbsoluteTime
                         date={t.updatedAt}
                         stacked
-                        className="font-mono text-xs leading-tight tabular-nums text-text-muted"
+                        className="font-mono text-xs leading-tight tabular-nums text-foreground"
                       />
                     </TableCell>
                   </TableRow>

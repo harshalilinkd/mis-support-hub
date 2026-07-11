@@ -29,6 +29,25 @@ export function formatDateTime(value: Date | string): string {
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/**
+ * A ticket deadline (due date) as a plain IST calendar date, e.g. "13 Jul 2026".
+ * Fixed timezone → deterministic on server and client (no hydration mismatch).
+ * Returns null when there is no deadline yet (not claimed).
+ */
+const DUE_DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+export function formatDueDate(
+  value: Date | string | null | undefined
+): string | null {
+  if (!value) return null;
+  const d = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(d.getTime()) ? null : DUE_DATE_FMT.format(d);
+}
+
 /** "IN_PROGRESS" → "In progress"; passes through non-enum strings (names). */
 export function humanizeEnum(value: string | null): string {
   if (!value) return "";

@@ -663,6 +663,7 @@ const ticketListSelect = {
   status: tickets.status,
   priority: tickets.priority,
   sheetLink: tickets.sheetLink,
+  deadline: tickets.deadline,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
   resolvedAt: tickets.resolvedAt,

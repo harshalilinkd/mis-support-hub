@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { formatDueDate } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import {
   AssigneeControl,
@@ -76,6 +77,11 @@ export function TicketTable({
                 <span className="text-xs text-text-muted">
                   {DEPARTMENT_LABELS[t.department]}
                 </span>
+                {formatDueDate(t.deadline) ? (
+                  <span className="text-xs text-text-muted">
+                    Due {formatDueDate(t.deadline)}
+                  </span>
+                ) : null}
                 <AbsoluteTime
                   date={t.createdAt}
                   className="ml-auto font-mono text-xs text-text-muted"
@@ -110,7 +116,7 @@ export function TicketTable({
         {/* Desktop (md+): full data table. */}
         <div className="hidden max-h-[calc(100vh-19rem)] overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-text-muted">
+          <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>
               <TableHead>Number</TableHead>
               <TableHead>Title</TableHead>
@@ -120,6 +126,7 @@ export function TicketTable({
               <TableHead>Assignee</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
+              <TableHead>Deadline</TableHead>
               <TableHead className="text-right">Created</TableHead>
               <TableHead className="text-right">Updated</TableHead>
             </TableRow>
@@ -131,7 +138,7 @@ export function TicketTable({
                 onClick={() => setSelected(t.number)}
                 className="cursor-pointer transition-colors hover:bg-surface-muted/50 [&>td]:py-2.5 [&>td]:align-top"
               >
-                <TableCell className="whitespace-nowrap font-mono text-xs text-text-muted">
+                <TableCell className="whitespace-nowrap font-mono text-xs text-foreground">
                   {t.number}
                 </TableCell>
                 <TableCell>
@@ -139,7 +146,7 @@ export function TicketTable({
                     {t.title}
                   </div>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm text-text-muted">
+                <TableCell className="whitespace-nowrap text-sm text-foreground">
                   {DEPARTMENT_LABELS[t.department]}
                 </TableCell>
                 <TableCell>
@@ -180,18 +187,23 @@ export function TicketTable({
                 <TableCell>
                   <PriorityControl ticketId={t.id} priority={t.priority} />
                 </TableCell>
+                <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                  {formatDueDate(t.deadline) ?? (
+                    <span className="text-text-muted">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="whitespace-nowrap text-right">
                   <AbsoluteTime
                     date={t.createdAt}
                     stacked
-                    className="font-mono text-xs leading-tight tabular-nums text-text-muted"
+                    className="font-mono text-xs leading-tight tabular-nums text-foreground"
                   />
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right">
                   <AbsoluteTime
                     date={t.updatedAt}
                     stacked
-                    className="font-mono text-xs leading-tight tabular-nums text-text-muted"
+                    className="font-mono text-xs leading-tight tabular-nums text-foreground"
                   />
                 </TableCell>
               </TableRow>

@@ -22,6 +22,7 @@ export type TicketCardData = {
   department: Department;
   status: Status;
   priority: Priority | null;
+  deadline: string | null;
   updatedAt: string | Date;
   assignedToName: string | null;
   commentCount: number;

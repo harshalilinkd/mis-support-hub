@@ -77,7 +77,7 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
     <>
       <div className="overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
         <Table>
-          <TableHeader className="[&_th]:h-11 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-text-muted">
+          <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>
               <TableHead className="pl-4">Number</TableHead>
               <TableHead>Title</TableHead>
@@ -92,7 +92,7 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
           <TableBody>
             {tickets.map((t) => (
               <TableRow key={t.id} className="[&>td]:py-2.5 [&>td]:align-top">
-                <TableCell className="whitespace-nowrap pl-4 font-mono text-xs text-text-muted">
+                <TableCell className="whitespace-nowrap pl-4 font-mono text-xs text-foreground">
                   {t.number}
                 </TableCell>
                 <TableCell>
@@ -100,7 +100,7 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
                     {t.title}
                   </div>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm text-text-muted">
+                <TableCell className="whitespace-nowrap text-sm text-foreground">
                   {DEPARTMENT_LABELS[t.department]}
                 </TableCell>
                 <TableCell>
@@ -109,14 +109,14 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
                 <TableCell>
                   <PriorityChip priority={t.priority} />
                 </TableCell>
-                <TableCell className="max-w-[9rem] truncate text-sm text-text-muted">
+                <TableCell className="max-w-[9rem] truncate text-sm text-foreground">
                   {t.createdByName ?? "—"}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   <AbsoluteTime
                     date={t.deletedAt}
                     stacked
-                    className="font-mono text-xs leading-tight tabular-nums text-text-muted"
+                    className="font-mono text-xs leading-tight tabular-nums text-foreground"
                   />
                   {t.deletedByName ? (
                     <div className="text-[11px] text-text-muted">

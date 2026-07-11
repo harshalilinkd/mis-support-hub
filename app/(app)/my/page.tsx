@@ -24,6 +24,7 @@ export default async function MyTicketsPage() {
     department: r.department,
     status: r.status,
     priority: r.priority,
+    deadline: r.deadline ? toIso(r.deadline) : null,
     updatedAt: toIso(r.updatedAt),
     assignedToName: r.assignedToName,
     commentCount: r.commentCount,

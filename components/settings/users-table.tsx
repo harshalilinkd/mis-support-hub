@@ -70,7 +70,7 @@ export function UsersTable({
   return (
     <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
       <Table>
-        <TableHeader>
+        <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
           <TableRow className="hover:bg-transparent">
             <TableHead className="pl-4">User</TableHead>
             <TableHead>Role</TableHead>
@@ -160,19 +160,19 @@ export function UsersTable({
                   )}
                 </TableCell>
 
-                <TableCell className="hidden md:table-cell text-xs text-text-muted">
+                <TableCell className="hidden md:table-cell text-xs text-foreground">
                   {u.hasPassword ? "Email + password" : "Google"}
                 </TableCell>
 
-                <TableCell className="hidden lg:table-cell text-xs text-text-muted">
+                <TableCell className="hidden lg:table-cell text-xs text-foreground">
                   {u.department ? DEPARTMENT_LABELS[u.department] : "—"}
                 </TableCell>
 
-                <TableCell className="hidden lg:table-cell text-right text-sm tabular-nums text-text-muted">
+                <TableCell className="hidden lg:table-cell text-right text-sm tabular-nums text-foreground">
                   {u.ticketCount}
                 </TableCell>
 
-                <TableCell className="hidden sm:table-cell text-xs text-text-muted">
+                <TableCell className="hidden sm:table-cell text-xs text-foreground">
                   <RelativeTime date={u.createdAt} />
                 </TableCell>
 
