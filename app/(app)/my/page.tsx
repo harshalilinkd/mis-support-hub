@@ -37,7 +37,7 @@ export default async function MyTicketsPage() {
         title={isStaff ? "Assigned to Me" : "My Tickets"}
         description={
           isStaff
-            ? "Tickets assigned to you — the ones you're actively working on."
+            ? "Tickets assigned to you, grouped by status — active work and your closed history."
             : "Tickets you've raised, most recent first."
         }
       />

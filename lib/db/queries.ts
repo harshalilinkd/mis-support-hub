@@ -738,8 +738,10 @@ export async function listMyTickets(userId: string, filters: TicketFilters = {})
 }
 
 /**
- * MIS "work queue" (§6): tickets currently assigned to me that aren't closed —
- * i.e. the ones I'm actively working on. Most-recently-updated first.
+ * MIS "work queue" (§6): every ticket assigned to me across its lifecycle —
+ * active work plus my resolved/closed history, grouped into status tabs in the
+ * UI. Most-recently-updated first. (The nav badge counts only active ones via
+ * countAssignedActive.)
  */
 export async function listAssignedToMe(userId: string) {
   return db
@@ -748,11 +750,7 @@ export async function listAssignedToMe(userId: string) {
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
     .where(
-      and(
-        eq(tickets.assignedTo, userId),
-        isNull(tickets.deletedAt),
-        sql`${tickets.status}::text <> 'CLOSED'`
-      )
+      and(eq(tickets.assignedTo, userId), isNull(tickets.deletedAt))
     )
     .orderBy(desc(tickets.updatedAt));
 }
