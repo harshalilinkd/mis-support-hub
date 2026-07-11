@@ -39,6 +39,7 @@ Do NOT use Prisma, do NOT use an ORM other than Drizzle, do NOT store files in t
   /(app)/dashboard/page.tsx         # MIS: KPI cards + charts
   /(app)/board/page.tsx             # MIS: Kanban
   /(app)/profile/page.tsx           # edit name/department + set/change password
+  /(app)/settings/page.tsx          # admin: Settings landing (cards → the 3 tools below)
   /(app)/settings/users/page.tsx    # admin: user management + bulk add
   /(app)/settings/bulk-delete/page.tsx # admin: multi-select active tickets → soft-delete
   /(app)/settings/recycle-bin/page.tsx # admin: soft-deleted tickets (restore / purge)

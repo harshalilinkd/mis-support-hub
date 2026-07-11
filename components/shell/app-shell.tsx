@@ -8,16 +8,13 @@ import {
   KanbanSquare,
   LayoutDashboard,
   ListChecks,
-  ListX,
   LogOut,
   Menu,
   PlusCircle,
   Search,
   Settings,
   Ticket,
-  Trash2,
   User as UserIcon,
-  Users,
 } from "lucide-react";
 
 import { signOutAction } from "@/lib/actions/auth";
@@ -76,20 +73,10 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Administration",
     adminOnly: true,
+    // Users / Bulk Delete / Recycle Bin now live inside the Settings screen
+    // rather than as separate sidebar entries.
     items: [
-      { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
-      {
-        href: "/settings/bulk-delete",
-        label: "Bulk Delete",
-        icon: ListX,
-        adminOnly: true,
-      },
-      {
-        href: "/settings/recycle-bin",
-        label: "Recycle Bin",
-        icon: Trash2,
-        adminOnly: true,
-      },
+      { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
     ],
   },
 ];
@@ -335,7 +322,7 @@ export function AppShell({
                 </DropdownMenuItem>
                 {user.role === "MIS_ADMIN" ? (
                   <DropdownMenuItem asChild>
-                    <Link href="/settings/users">
+                    <Link href="/settings">
                       <Settings className="size-4" /> Settings
                     </Link>
                   </DropdownMenuItem>
