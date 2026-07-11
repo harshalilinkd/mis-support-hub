@@ -264,9 +264,15 @@ export function BulkClaimDialog({
                 <span className="text-xs text-text-muted">
                   {remaining === 0
                     ? "All deadlines set"
-                    : `${remaining} deadline${remaining === 1 ? "" : "s"} left`}
+                    : `Set a deadline for ${remaining} more ticket${remaining === 1 ? "" : "s"} to continue`}
                 </span>
-                <Button type="button" onClick={submit} disabled={pending}>
+                {/* Blocked until every selected ticket has a deadline (priority
+                    defaults to Medium, so deadlines are the gating input). */}
+                <Button
+                  type="button"
+                  onClick={submit}
+                  disabled={pending || remaining > 0}
+                >
                   <Hand className="size-4" />
                   {pending ? "Claiming…" : `Claim all ${total}`}
                 </Button>
