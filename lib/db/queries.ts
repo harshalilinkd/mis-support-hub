@@ -659,6 +659,7 @@ const ticketListSelect = {
   id: tickets.id,
   number: tickets.number,
   title: tickets.title,
+  description: tickets.description,
   department: tickets.department,
   status: tickets.status,
   priority: tickets.priority,

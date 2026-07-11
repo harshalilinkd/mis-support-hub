@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Hand } from "lucide-react";
 
 import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
@@ -10,15 +11,18 @@ import {
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
+import { BulkClaimDialog } from "@/components/tickets/bulk-claim-dialog";
+import { Button } from "@/components/ui/button";
 import { TableToolbar } from "./table-toolbar";
 import { TicketTable } from "./ticket-table";
 
 /**
  * All Tickets with instant, client-side status tabs. The server sends every
  * ticket matching the facet filters (department / priority / assignee / search
- * from the URL); switching Open / In Progress / Resolved just re-filters in
- * memory — no navigation or refetch — so it's immediate even on rapid clicks.
- * Facets stay server-driven (the toolbar reflects them into the URL).
+ * from the URL); switching Open / In Progress / Resolved / Closed just re-filters
+ * in memory — no navigation or refetch. Facets stay server-driven (the toolbar
+ * reflects them into the URL). MIS can also bulk-select claimable tickets and
+ * claim them together via the selection bar.
  */
 export function AllTicketsView({
   tickets,
@@ -32,6 +36,8 @@ export function AllTicketsView({
   initialTab: TicketTabKey;
 }) {
   const [tab, setTab] = useState<TicketTabKey>(initialTab);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
@@ -47,6 +53,62 @@ export function AllTicketsView({
     return tickets.filter((t) => set.includes(t.status));
   }, [tickets, tab]);
 
+  // Which of the currently-visible tickets this user can actually claim (same
+  // rule as the per-row Claim button): not resolved/closed, and unassigned, or
+  // mine, or I'm an admin (take-over). Only these get a checkbox.
+  const claimableIds = useMemo(() => {
+    const isAdmin = currentUser.role === "MIS_ADMIN";
+    const ids = new Set<string>();
+    for (const t of filtered) {
+      const done = t.status === "RESOLVED" || t.status === "CLOSED";
+      const mine = t.assignedToId === currentUser.id;
+      const working =
+        mine && (t.status === "IN_PROGRESS" || t.status === "REOPENED");
+      if (!done && !working && (!t.assignedToId || mine || isAdmin)) {
+        ids.add(t.id);
+      }
+    }
+    return ids;
+  }, [filtered, currentUser.id, currentUser.role]);
+
+  const selectedTickets = useMemo(
+    () => filtered.filter((t) => selectedIds.has(t.id)),
+    [filtered, selectedIds]
+  );
+
+  // Keep the selection in sync with what's actually visible/claimable. `filtered`
+  // (and thus `claimableIds`) is re-derived whenever a facet/search changes the
+  // server result or the 15s auto-refresh re-fetches — drop any selected id that
+  // is no longer claimable so the "N selected" count never lies or dead-ends.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => claimableIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [claimableIds]);
+
+  // Selection is scoped to the visible set — switching tabs clears it.
+  function switchTab(key: TicketTabKey) {
+    setTab(key);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const allSelected =
+      claimableIds.size > 0 &&
+      [...claimableIds].every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(claimableIds));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -61,7 +123,7 @@ export function AllTicketsView({
                 key={t.key}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setTab(t.key)}
+                onClick={() => switchTab(t.key)}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active
@@ -88,7 +150,44 @@ export function AllTicketsView({
           <TableToolbar users={users} />
         </div>
       </div>
-      <TicketTable tickets={filtered} users={users} currentUser={currentUser} />
+
+      {selectedIds.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-primary/30 bg-accent-soft px-3 py-2">
+          <span className="text-sm font-medium">
+            {selectedIds.size} selected
+          </span>
+          <Button size="sm" onClick={() => setBulkOpen(true)}>
+            <Hand className="size-4" /> Claim selected
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
+      ) : null}
+
+      <TicketTable
+        tickets={filtered}
+        users={users}
+        currentUser={currentUser}
+        selectedIds={selectedIds}
+        claimableIds={claimableIds}
+        onToggleSelect={toggleSelect}
+        onToggleSelectAll={toggleSelectAll}
+      />
+
+      <BulkClaimDialog
+        tickets={selectedTickets}
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onDone={() => {
+          setBulkOpen(false);
+          setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

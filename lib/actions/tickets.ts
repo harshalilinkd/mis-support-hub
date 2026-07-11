@@ -16,10 +16,11 @@ import {
   sendReopenNotification,
   sendResolutionNotification,
 } from "@/lib/notifications";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { canTransition } from "@/lib/ticket-state";
 import {
   assignTicketSchema,
+  bulkClaimSchema,
   claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
@@ -170,25 +171,25 @@ export async function assignTicket(
  * Won't steal a ticket already claimed by someone else (an MIS_ADMIN may take it
  * over). Notifies the reporter that work has started.
  */
-export async function claimTicket(input: {
-  ticketId: string;
-  priority: string;
-  deadline: string;
-}): Promise<ActionResult> {
-  const user = await getCurrentUser();
-  if (!user) return fail("You must be signed in.");
-  if (!STAFF_ROLES.includes(user.role)) {
-    return fail("Only MIS staff can claim tickets.");
-  }
-
-  const parsed = claimTicketSchema.safeParse(input);
-  if (!parsed.success) return fail(firstIssue(parsed.error));
-
-  const ticket = await q.getTicketById(parsed.data.ticketId);
-  if (!ticket) return fail("Ticket not found.");
+/**
+ * Core claim logic for a single ticket, shared by claimTicket and
+ * bulkClaimTickets. Runs the §5/§6 checks and writes the claim, but does NOT
+ * send notifications or revalidate — the caller does that (once, for bulk).
+ */
+async function claimOne(
+  user: SessionUser,
+  ticketId: string,
+  priority: Priority,
+  deadline: string
+): Promise<
+  | { ok: true; ticketId: string; ticketNumber: string }
+  | { ok: false; error: string }
+> {
+  const ticket = await q.getTicketById(ticketId);
+  if (!ticket) return { ok: false, error: "Ticket not found." };
 
   if (ticket.status === "RESOLVED" || ticket.status === "CLOSED") {
-    return fail("This ticket is already resolved — there's nothing to claim.");
+    return { ok: false, error: `${ticket.number} is already resolved.` };
   }
   if (
     ticket.assignedTo &&
@@ -196,15 +197,16 @@ export async function claimTicket(input: {
     user.role !== "MIS_ADMIN"
   ) {
     const current = await q.getUserById(ticket.assignedTo);
-    return fail(
-      `Already claimed by ${current?.name ?? current?.email ?? "another staff member"}.`
-    );
+    return {
+      ok: false,
+      error: `${ticket.number} is already claimed by ${current?.name ?? current?.email ?? "another staff member"}.`,
+    };
   }
   if (
     ticket.assignedTo === user.id &&
     (ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED")
   ) {
-    return fail("You're already working on this ticket.");
+    return { ok: false, error: `You're already working on ${ticket.number}.` };
   }
 
   // Only log an ASSIGNED event when ownership actually changes; for an admin
@@ -224,17 +226,96 @@ export async function claimTicket(input: {
     fromAssigneeName,
     fromStatus: ticket.status,
     fromPriority: ticket.priority,
-    priority: parsed.data.priority,
-    deadline: new Date(parsed.data.deadline),
+    priority,
+    deadline: new Date(deadline),
     writeAssigned,
     startWork,
   });
 
-  // Tell the reporter their ticket is now being worked on (priority + ETA; §8).
-  await sendClaimNotification(ticket.id);
+  return { ok: true, ticketId: ticket.id, ticketNumber: ticket.number };
+}
 
-  revalidateTicketRoutes(ticket.number);
+export async function claimTicket(input: {
+  ticketId: string;
+  priority: string;
+  deadline: string;
+}): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can claim tickets.");
+  }
+
+  const parsed = claimTicketSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const res = await claimOne(
+    user,
+    parsed.data.ticketId,
+    parsed.data.priority,
+    parsed.data.deadline
+  );
+  if (!res.ok) return fail(res.error);
+
+  // Tell the reporter their ticket is now being worked on (priority + ETA; §8).
+  await sendClaimNotification(res.ticketId);
+
+  revalidateTicketRoutes(res.ticketNumber);
   return ok(undefined);
+}
+
+/**
+ * Claim several tickets at once — each with its own priority + deadline (bulk
+ * triage). Best-effort per ticket: one that fails its checks (already claimed,
+ * resolved, …) is reported back without blocking the others (§6).
+ */
+export async function bulkClaimTickets(input: {
+  items: { ticketId: string; priority: string; deadline: string }[];
+}): Promise<
+  ActionResult<{
+    claimed: number;
+    failed: { ticketId: string; error: string }[];
+  }>
+> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can claim tickets.");
+  }
+
+  const parsed = bulkClaimSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const claimedIds: string[] = [];
+  const failed: { ticketId: string; error: string }[] = [];
+  for (const item of parsed.data.items) {
+    // Truly best-effort: a transient DB/infra throw on one ticket must not abort
+    // the rest (there is no cross-ticket transaction under neon-http anyway).
+    try {
+      const res = await claimOne(
+        user,
+        item.ticketId,
+        item.priority,
+        item.deadline
+      );
+      if (res.ok) claimedIds.push(res.ticketId);
+      else failed.push({ ticketId: item.ticketId, error: res.error });
+    } catch (e) {
+      console.error("[bulkClaimTickets] failed to claim", item.ticketId, e);
+      failed.push({
+        ticketId: item.ticketId,
+        error: "Something went wrong claiming this ticket.",
+      });
+    }
+  }
+
+  // Notify each reporter (best-effort; §8) after the writes land.
+  for (const id of claimedIds) {
+    await sendClaimNotification(id);
+  }
+
+  if (claimedIds.length > 0) revalidateTicketRoutes();
+  return ok({ claimed: claimedIds.length, failed });
 }
 
 /** Change priority — MIS only. */

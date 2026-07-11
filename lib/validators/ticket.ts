@@ -88,6 +88,12 @@ export const claimTicketSchema = z.object({
 });
 export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
 
+/** Claim several tickets in one go — each carries its own priority + deadline. */
+export const bulkClaimSchema = z.object({
+  items: z.array(claimTicketSchema).min(1, "Select at least one ticket"),
+});
+export type BulkClaimInput = z.infer<typeof bulkClaimSchema>;
+
 export const deleteTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });

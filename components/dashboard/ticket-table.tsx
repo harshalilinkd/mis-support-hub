@@ -9,6 +9,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { ClaimButton } from "@/components/tickets/claim-button";
 import { TicketLinkFiles } from "@/components/tickets/ticket-link-files";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -31,12 +32,33 @@ export function TicketTable({
   tickets,
   users,
   currentUser,
+  selectedIds,
+  claimableIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   tickets: TicketListRow[];
   users: AssignableUser[];
   currentUser: SessionUser;
+  selectedIds?: Set<string>;
+  claimableIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+
+  // Bulk-select column (desktop only): rendered when the parent wires selection
+  // in. A row is checkable only if the current user can actually claim it.
+  const selectable = !!(selectedIds && claimableIds && onToggleSelect);
+  const claimableArr = claimableIds ? [...claimableIds] : [];
+  const headerChecked: boolean | "indeterminate" =
+    selectable && claimableArr.length > 0
+      ? claimableArr.every((id) => selectedIds!.has(id))
+        ? true
+        : claimableArr.some((id) => selectedIds!.has(id))
+          ? "indeterminate"
+          : false
+      : false;
 
   return (
     <>
@@ -118,6 +140,16 @@ export function TicketTable({
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>
+              {selectable ? (
+                <TableHead className="w-9 pl-4">
+                  <Checkbox
+                    checked={headerChecked}
+                    onCheckedChange={() => onToggleSelectAll?.()}
+                    disabled={claimableArr.length === 0}
+                    aria-label="Select all claimable tickets"
+                  />
+                </TableHead>
+              ) : null}
               <TableHead>Number</TableHead>
               <TableHead>Title</TableHead>
               <TableHead>Dept</TableHead>
@@ -138,6 +170,20 @@ export function TicketTable({
                 onClick={() => setSelected(t.number)}
                 className="cursor-pointer transition-colors hover:bg-surface-muted/50 [&>td]:py-2.5 [&>td]:align-top"
               >
+                {selectable ? (
+                  <TableCell
+                    className="w-9 pl-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {claimableIds!.has(t.id) ? (
+                      <Checkbox
+                        checked={selectedIds!.has(t.id)}
+                        onCheckedChange={() => onToggleSelect!(t.id)}
+                        aria-label={`Select ${t.number}`}
+                      />
+                    ) : null}
+                  </TableCell>
+                ) : null}
                 <TableCell className="whitespace-nowrap font-mono text-xs text-foreground">
                   {t.number}
                 </TableCell>
