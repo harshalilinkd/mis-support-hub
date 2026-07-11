@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -37,23 +37,48 @@ const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
  * "Claim & start" dialog — the MIS member sets the priority + an estimated
  * resolution date before taking the ticket; the reporter is then notified that
  * work has started (with the priority and expected date).
+ *
+ * Works two ways: pass a `trigger` for a button, OR drive it with `open` /
+ * `onOpenChange` to open it programmatically (e.g. after dragging a card to
+ * "In Progress" on the board, or the status dropdown). `ticketId` may be null
+ * while nothing is selected in the controlled case.
  */
 export function ClaimDialog({
   ticketId,
   trigger,
   onDone,
+  open: openProp,
+  onOpenChange,
 }: {
-  ticketId: string;
-  trigger: React.ReactNode;
+  ticketId: string | null;
+  trigger?: React.ReactNode;
   onDone?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : internalOpen;
+  const setOpen = (o: boolean) => {
+    if (controlled) onOpenChange?.(o);
+    else setInternalOpen(o);
+  };
+
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [deadline, setDeadline] = useState("");
   const [pending, startTransition] = useTransition();
 
+  // Reset the fields each time it opens so every claim starts fresh.
+  useEffect(() => {
+    if (open) {
+      setPriority("MEDIUM");
+      setDeadline("");
+    }
+  }, [open]);
+
   function submit() {
+    if (!ticketId) return;
     if (!deadline) {
       toast.error("Pick an estimated resolution date.");
       return;
@@ -73,7 +98,7 @@ export function ClaimDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       {/* React portals bubble events through the component tree, not the DOM, so
           a click/keydown on the Priority select or date field would otherwise
           bubble to an ancestor row/card onClick (which opens the ticket-detail
@@ -86,8 +111,8 @@ export function ClaimDialog({
         <DialogHeader>
           <DialogTitle>Claim &amp; start work</DialogTitle>
           <DialogDescription>
-            Set the priority and when you expect to resolve it. The reporter is
-            notified that work has started.
+            Set the priority and when you expect to resolve it. The ticket is
+            assigned to you and the reporter is notified that work has started.
           </DialogDescription>
         </DialogHeader>
 

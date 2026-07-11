@@ -26,6 +26,7 @@ import type { SessionUser } from "@/lib/session";
 import { canTransition } from "@/lib/ticket-state";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import { cn } from "@/lib/utils";
+import { ClaimDialog } from "@/components/tickets/claim-dialog";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import {
   BoardCard,
@@ -73,6 +74,7 @@ export function BoardView({
   const [columns, setColumns] = useState(() => group(tickets));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [claimTarget, setClaimTarget] = useState<string | null>(null);
 
   // Re-sync to server truth when the underlying data changes (after refresh).
   const signature = tickets.map((t) => `${t.id}:${t.status}`).join(",");
@@ -114,6 +116,13 @@ export function BoardView({
     const sourceCol = findColumn(ticketId);
     const card = cardById.get(ticketId);
     if (!targetCol || !sourceCol || !card || sourceCol === targetCol.id) return;
+
+    // Open → In Progress = claim: open the priority/deadline dialog, which
+    // assigns the ticket to the current member (not a bare status change).
+    if (sourceCol === "OPEN" && targetCol.id === "IN_PROGRESS") {
+      setClaimTarget(ticketId);
+      return;
+    }
 
     const to = targetCol.target;
 
@@ -206,6 +215,18 @@ export function BoardView({
         </DragOverlay>
       </DndContext>
       )}
+
+      <ClaimDialog
+        ticketId={claimTarget}
+        open={!!claimTarget}
+        onOpenChange={(o) => {
+          if (!o) setClaimTarget(null);
+        }}
+        onDone={() => {
+          setClaimTarget(null);
+          router.refresh();
+        }}
+      />
 
       <TicketSheet
         number={selected}

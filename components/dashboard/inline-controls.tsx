@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ClaimDialog } from "@/components/tickets/claim-dialog";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -31,9 +32,16 @@ export function StatusControl({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [claimOpen, setClaimOpen] = useState(false);
   const targets = STATUS_TRANSITIONS[status];
 
   function change(to: Status) {
+    // Open → In Progress = claim: open the priority/deadline dialog so the ticket
+    // is assigned to this member (mirrors the Claim button + board drag).
+    if (status === "OPEN" && to === "IN_PROGRESS") {
+      setClaimOpen(true);
+      return;
+    }
     startTransition(async () => {
       const res = await updateStatus(ticketId, to);
       if (!res.ok) return void toast.error(res.error);
@@ -45,27 +53,36 @@ export function StatusControl({
   if (targets.length === 0) return <StatusChip status={status} />;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={stop}
-          aria-label="Change status"
-          className="inline-flex items-center gap-1 rounded-[6px] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        >
-          <StatusChip status={status} />
-          <ChevronDown className="size-3 text-text-muted" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onClick={stop}>
-        {targets.map((s) => (
-          <DropdownMenuItem key={s} onSelect={() => change(s)}>
-            Move to {humanizeEnum(s)}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={stop}
+            aria-label="Change status"
+            className="inline-flex items-center gap-1 rounded-[6px] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          >
+            <StatusChip status={status} />
+            <ChevronDown className="size-3 text-text-muted" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" onClick={stop}>
+          {targets.map((s) => (
+            <DropdownMenuItem key={s} onSelect={() => change(s)}>
+              Move to {humanizeEnum(s)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ClaimDialog
+        ticketId={ticketId}
+        open={claimOpen}
+        onOpenChange={setClaimOpen}
+        onDone={() => setClaimOpen(false)}
+      />
+    </>
   );
 }
 
