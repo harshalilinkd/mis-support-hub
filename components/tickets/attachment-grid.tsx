@@ -77,7 +77,14 @@ export function AttachmentGrid({
       )}
 
       <Dialog open={!!active} onOpenChange={(open) => !open && setActive(null)}>
-        <DialogContent className="max-w-3xl p-2">
+        <DialogContent
+          className="max-w-3xl p-2"
+          // Lightbox: clicking the backdrop or pressing Escape should dismiss
+          // the image (nothing to lose) — opt out of the app-wide
+          // close-only-via-X default by allowing the default dismiss.
+          onInteractOutside={() => {}}
+          onEscapeKeyDown={() => {}}
+        >
           <DialogTitle className="sr-only">
             {active?.filename ?? "Attachment"}
           </DialogTitle>
