@@ -72,8 +72,6 @@ export function NewTicketForm({
       title: "",
       description: "",
       sheetLink: "",
-      // Priority is set by the MIS team when they claim the ticket, not here.
-      priority: "MEDIUM",
       department: requester.department ?? undefined,
     },
   });

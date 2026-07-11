@@ -41,7 +41,7 @@ export const createTicketSchema = z.object({
     .min(10, "Describe the issue (min 10 characters)")
     .max(5000),
   department: z.enum(DEPARTMENTS),
-  priority: z.enum(PRIORITIES).default("MEDIUM"),
+  // No priority here — a raised ticket is unprioritized; MIS sets it on claim.
   // Required, but not necessarily a URL — a sheet/app link OR just the system
   // name (e.g. "Data entry Interface") is accepted.
   sheetLink: z

@@ -307,7 +307,8 @@ export async function createTicket(args: CreateTicketArgs) {
         title: args.title,
         description: args.description,
         department: args.department,
-        priority: args.priority ?? "MEDIUM",
+        // Unset on raise — the MIS team sets priority when they claim.
+        priority: args.priority ?? null,
         sheetLink: args.sheetLink ?? null,
         createdBy: args.createdBy,
       })
@@ -399,7 +400,7 @@ export async function claimTicketRow(args: {
   actorName: string | null;
   fromAssigneeName: string | null;
   fromStatus: Status;
-  fromPriority: Priority;
+  fromPriority: Priority | null;
   priority: Priority;
   deadline: Date;
   writeAssigned: boolean;
@@ -460,7 +461,7 @@ export async function claimTicketRow(args: {
 export async function setTicketPriority(args: {
   ticketId: string;
   actorId: string;
-  from: Priority;
+  from: Priority | null;
   to: Priority;
 }) {
   await db.batch([

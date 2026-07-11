@@ -36,7 +36,7 @@ type Row = {
   title: string;
   department: Department;
   status: Status;
-  priority: Priority;
+  priority: Priority | null;
   createdByName: string | null;
   deletedByName: string | null;
   deletedAt: string;

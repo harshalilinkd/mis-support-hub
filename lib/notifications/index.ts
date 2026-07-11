@@ -175,7 +175,7 @@ export async function sendClaimNotification(ticketId: string): Promise<void> {
     if (!reporter) return;
     const worker = await loadUser(ticket.assignedTo);
     const workerName = worker?.name ?? "The MIS team";
-    const prio = priorityLabel(ticket.priority);
+    const prio = ticket.priority ? priorityLabel(ticket.priority) : "Unset";
     const eta = ticket.deadline ? formatDeadline(ticket.deadline) : null;
 
     await createInApp({

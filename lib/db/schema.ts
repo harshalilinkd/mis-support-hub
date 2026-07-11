@@ -158,7 +158,9 @@ export const tickets = pgTable("tickets", {
   department: departmentEnum("department").notNull(),
   sheetLink: text("sheet_link"),
   status: statusEnum("status").notNull().default("OPEN"),
-  priority: priorityEnum("priority").notNull().default("MEDIUM"),
+  // Nullable: a raised ticket has NO priority — the MIS team sets it when they
+  // claim it. null = "not triaged yet" (shown as "Unset").
+  priority: priorityEnum("priority"),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),

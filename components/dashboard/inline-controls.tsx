@@ -74,7 +74,7 @@ export function PriorityControl({
   priority,
 }: {
   ticketId: string;
-  priority: Priority;
+  priority: Priority | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();

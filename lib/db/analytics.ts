@@ -78,11 +78,12 @@ export async function createdByDepartment(
 export async function createdByPriority(
   days: number,
   department?: Department
-): Promise<{ priority: Priority; count: number }[]> {
+): Promise<{ priority: Priority | null; count: number }[]> {
   return db
     .select({ priority: tickets.priority, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt), deptEq(department)))
+    // Unset (null) priority = not triaged yet — excluded from the breakdown.
+    .where(and(gte(tickets.createdAt, startOfRange(days)), isNotNull(tickets.priority), isNull(tickets.deletedAt), deptEq(department)))
     .groupBy(tickets.priority);
 }
 

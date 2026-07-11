@@ -57,6 +57,13 @@
       "when": 1783742751158,
       "tag": "0007_cool_alex_wilder",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783747195605,
+      "tag": "0008_brave_harry_osborn",
+      "breakpoints": true
     }
   ]
 }

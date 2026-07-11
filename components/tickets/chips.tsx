@@ -58,9 +58,19 @@ export function PriorityChip({
   priority,
   className,
 }: {
-  priority: Priority;
+  priority: Priority | null;
   className?: string;
 }) {
+  // null = not triaged yet (MIS sets priority on claim).
+  if (!priority) {
+    return (
+      <Chip
+        label="Unset"
+        color="var(--text-muted)"
+        className={cn("text-text-muted", className)}
+      />
+    );
+  }
   const meta = PRIORITY_META[priority];
   return <Chip label={meta.label} color={meta.color} className={className} />;
 }
