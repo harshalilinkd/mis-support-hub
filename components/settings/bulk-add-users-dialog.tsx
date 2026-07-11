@@ -97,7 +97,7 @@ export function BulkAddUsersDialog() {
           <Upload className="size-4" /> Bulk add
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Bulk add users</DialogTitle>
           <DialogDescription>
@@ -112,11 +112,10 @@ export function BulkAddUsersDialog() {
         </DialogHeader>
 
         <Textarea
-          rows={8}
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={pending}
-          className="font-mono text-xs"
+          className="max-h-56 min-h-32 shrink-0 resize-y overflow-y-auto font-mono text-xs"
           placeholder={
             "Nikita Dhawde, LINKD, nikita@company.com, Employee, secret123\n" +
             "Aman Khan, LD Silk Mills, aman@company.com, MIS Admin, secret123"
