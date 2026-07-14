@@ -368,7 +368,8 @@ export async function createTicket(args: CreateTicketArgs) {
       .values({
         id,
         // Number from the sequence in the insert path — never a row count (§9).
-        number: sql`'MIS-' || nextval('ticket_seq')`,
+        // Zero-padded to 3 digits: MIS-003, MIS-042, MIS-100, … (MIS-1000+ grows).
+        number: sql`'MIS-' || lpad(nextval('ticket_seq')::text, 3, '0')`,
         title: args.title,
         description: args.description,
         department: args.department,
