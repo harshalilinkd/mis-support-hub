@@ -39,8 +39,8 @@ export function DashboardFilters() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
+    <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-initial">
+      <div className="inline-flex shrink-0 rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
         {RANGES.map((r) => (
           <button
             key={r.v}
@@ -62,7 +62,7 @@ export function DashboardFilters() {
         value={department}
         onValueChange={(v) => setParam("department", v)}
       >
-        <SelectTrigger className="h-9 w-[168px]">
+        <SelectTrigger className="h-9 min-w-0 flex-1 sm:w-[168px] sm:flex-none">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -36,10 +36,13 @@ export function AbsoluteTime({
   date,
   className,
   stacked = false,
+  dateOnly = false,
 }: {
   date: string | Date;
   className?: string;
   stacked?: boolean;
+  /** Render just the date (no time) — for compact mobile cards. */
+  dateOnly?: boolean;
 }) {
   const iso = toIso(date);
   const d = new Date(iso);
@@ -50,6 +53,14 @@ export function AbsoluteTime({
   // NOT cover) can never trigger a hydration mismatch.
   const day = normalizeWs(DATE_FMT.format(d));
   const time = normalizeWs(TIME_FMT.format(d));
+
+  if (dateOnly) {
+    return (
+      <time dateTime={iso} className={className} suppressHydrationWarning>
+        {day}
+      </time>
+    );
+  }
 
   if (stacked) {
     return (

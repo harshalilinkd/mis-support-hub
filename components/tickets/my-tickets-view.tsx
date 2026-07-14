@@ -105,7 +105,7 @@ export function MyTicketsView({
     <div className="space-y-4">
       {/* Toolbar: status tabs (with counts) + search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
+        <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
           {TICKET_TABS.map((t) => {
             const active = tab === t.key;
             return (
@@ -115,7 +115,7 @@ export function MyTicketsView({
                 aria-pressed={active}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
                   active
                     ? "bg-accent-soft text-primary"
                     : "text-foreground hover:bg-surface-muted"
@@ -176,78 +176,74 @@ export function MyTicketsView({
         )
       ) : (
         <>
-          {/* Mobile (< md): compact tap-to-open cards. */}
-          <div className="space-y-3 md:hidden">
-            {filtered.map((t) => (
-              <div
-                key={t.number}
-                role="button"
-                tabIndex={0}
-                onClick={() => open(t.number)}
-                onKeyDown={onKeyOpen(t.number)}
-                className="relative cursor-pointer overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface py-4 pl-5 pr-4 shadow-[var(--shadow-elevation)] transition-shadow hover:shadow-[var(--shadow-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                <span
-                  aria-hidden
-                  className="absolute inset-y-0 left-0 w-1"
-                  style={{ backgroundColor: STATUS_BAR[t.status] }}
-                />
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-text-muted">
-                        {t.number}
-                      </span>
+          {/* Mobile (< md): compact, table-row-style cards. The title gets its own
+              line so the status/priority controls don't squeeze it; the coloured
+              left bar shows status at a glance. Tap opens the full detail. */}
+          <div className="space-y-2 md:hidden">
+            {filtered.map((t) => {
+              const due = formatDueDate(t.deadline);
+              return (
+                <div
+                  key={t.number}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${t.number}: ${t.title}`}
+                  onClick={() => open(t.number)}
+                  onKeyDown={onKeyOpen(t.number)}
+                  className="relative cursor-pointer overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface py-2.5 pl-4 pr-3 shadow-[var(--shadow-elevation)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:shadow-[var(--shadow-hover)]"
+                >
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-1"
+                    style={{ backgroundColor: STATUS_BAR[t.status] }}
+                  />
+                  {/* Line 1: number + title + status */}
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 font-mono text-xs font-semibold text-foreground">
+                      {t.number}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {t.title}
+                    </span>
+                    <span className="shrink-0">
                       {canControl ? (
                         <StatusControl ticketId={t.id} status={t.status} />
                       ) : (
                         <StatusChip status={t.status} />
                       )}
-                    </div>
-                    <h3 className="mt-1 truncate font-medium">{t.title}</h3>
+                    </span>
                   </div>
-                  {canControl ? (
-                    <div className="shrink-0">
-                      <PriorityControl ticketId={t.id} priority={t.priority} />
-                    </div>
-                  ) : (
-                    <PriorityChip priority={t.priority} className="shrink-0" />
-                  )}
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-                  <span>{DEPARTMENT_LABELS[t.department]}</span>
-                  <span aria-hidden>·</span>
-                  <AbsoluteTime date={t.updatedAt} />
-                  {formatDueDate(t.deadline) ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>Due {formatDueDate(t.deadline)}</span>
-                    </>
-                  ) : null}
-                  {t.commentCount > 0 ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="inline-flex items-center gap-1">
+                  {/* Line 2: priority + dept · due · assignee, then comments + date */}
+                  <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
+                    <span className="shrink-0">
+                      {canControl ? (
+                        <PriorityControl ticketId={t.id} priority={t.priority} />
+                      ) : (
+                        <PriorityChip priority={t.priority} />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {DEPARTMENT_LABELS[t.department]}
+                      {due ? ` · Due ${due}` : ""}
+                      {showAssignee && t.assignedToName
+                        ? ` · ${t.assignedToName}`
+                        : ""}
+                    </span>
+                    {t.commentCount > 0 ? (
+                      <span className="inline-flex shrink-0 items-center gap-0.5">
                         <MessageSquare className="size-3" />
                         {t.commentCount}
                       </span>
-                    </>
-                  ) : null}
-                  {showAssignee && t.assignedToName ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="truncate">{t.assignedToName}</span>
-                    </>
-                  ) : null}
+                    ) : null}
+                    <AbsoluteTime
+                      date={t.updatedAt}
+                      dateOnly
+                      className="shrink-0 font-mono"
+                    />
+                  </div>
                 </div>
-                <div className="mt-2">
-                  <TicketLinkFiles
-                    sheetLink={t.sheetLink}
-                    attachments={t.attachments}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Desktop (md+): compact data table. */}

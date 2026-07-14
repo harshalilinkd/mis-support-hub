@@ -140,12 +140,15 @@ export default async function DashboardPage({
         title="Dashboard"
         description="Insights across the group — volumes, status mix, and workload."
       >
-        <DashboardFilters />
-        <Button asChild variant="outline" size="sm">
-          <Link href="/tickets">
-            View all tickets <ArrowRight className="size-4" />
-          </Link>
-        </Button>
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <DashboardFilters />
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href="/tickets" aria-label="View all tickets">
+              <span className="hidden sm:inline">View all tickets</span>
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </div>
       </PageHeader>
 
       <KpiCards stats={stats} />

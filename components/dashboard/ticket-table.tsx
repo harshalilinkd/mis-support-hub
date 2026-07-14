@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { AbsoluteTime } from "@/components/absolute-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { ClaimButton } from "@/components/tickets/claim-button";
+import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 import { TicketLinkFiles } from "@/components/tickets/ticket-link-files";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,72 +72,74 @@ export function TicketTable({
         />
       ) : (
         <>
-        {/* Mobile (< md): tap-to-open cards; triage controls stay inline. */}
-        <div className="space-y-3 md:hidden">
-          {tickets.map((t) => (
-            <div
-              key={t.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelected(t.number)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSelected(t.number);
-                }
-              }}
-              className="cursor-pointer rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:shadow-[var(--shadow-hover)]"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-mono text-xs text-text-muted">
-                  {t.number}
-                </span>
-                <PriorityControl ticketId={t.id} priority={t.priority} locked={lockedFor(t)} />
-              </div>
-              <p className="mt-1 font-medium">{t.title}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <StatusControl ticketId={t.id} status={t.status} locked={lockedFor(t)} />
-                <span className="text-xs text-text-muted">
-                  {DEPARTMENT_LABELS[t.department]}
-                </span>
-                {formatDueDate(t.deadline) ? (
-                  <span className="text-xs text-text-muted">
-                    Due {formatDueDate(t.deadline)}
+        {/* Mobile (< md): compact, table-row-style cards. Two tight lines with the
+            key fields; tap anywhere opens the full detail (claim / change status &
+            priority there) — so there's no wide table to scroll sideways. */}
+        <div className="space-y-2 md:hidden">
+          {tickets.map((t) => {
+            const done = t.status === "RESOLVED" || t.status === "CLOSED";
+            const mine = t.assignedToId === currentUser.id;
+            const working =
+              mine && (t.status === "IN_PROGRESS" || t.status === "REOPENED");
+            const canClaim = !done && !working && (!t.assignedToId || mine);
+            return (
+              <div
+                key={t.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${t.number}: ${t.title}`}
+                onClick={() => setSelected(t.number)}
+                onKeyDown={(e) => {
+                  // Only when the card itself is focused — not when Enter/Space
+                  // bubbles up from the inner Claim button.
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelected(t.number);
+                  }
+                }}
+                className="cursor-pointer rounded-[var(--radius-card)] border border-border bg-surface px-3 py-2.5 shadow-[var(--shadow-elevation)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:shadow-[var(--shadow-hover)]"
+              >
+                {/* Line 1: number + title + status */}
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-mono text-xs font-semibold text-foreground">
+                    {t.number}
                   </span>
-                ) : null}
-                <AbsoluteTime
-                  date={t.createdAt}
-                  className="ml-auto font-mono text-xs text-text-muted"
-                />
-              </div>
-              <div className="mt-2">
-                <TicketLinkFiles
-                  sheetLink={t.sheetLink}
-                  attachments={t.attachments}
-                />
-              </div>
-              <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
-                {t.assignedToId ? (
-                  <div className="flex items-center gap-2">
-                    <UserAvatar
-                      name={t.assignedToName}
-                      image={t.assignedToImage}
-                    />
-                    <span className="max-w-[9rem] truncate text-sm">
-                      {t.assignedToName ?? "—"}
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {t.title}
+                  </span>
+                  <StatusChip status={t.status} className="shrink-0" />
+                </div>
+
+                {/* Line 2: priority · dept · assignee, then a quick claim or the date */}
+                <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
+                  <PriorityChip priority={t.priority} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {DEPARTMENT_LABELS[t.department]}
+                    {" · "}
+                    {t.assignedToName ?? "Unassigned"}
+                  </span>
+                  {canClaim ? (
+                    <span className="shrink-0">
+                      <ClaimButton
+                        ticketId={t.id}
+                        status={t.status}
+                        assigneeId={t.assignedToId}
+                        currentUserId={currentUser.id}
+                        className="h-7 gap-1 px-2 text-xs"
+                      />
                     </span>
-                  </div>
-                ) : (
-                  <ClaimButton
-                    ticketId={t.id}
-                    status={t.status}
-                    assigneeId={t.assignedToId}
-                    currentUserId={currentUser.id}
-                  />
-                )}
+                  ) : (
+                    <AbsoluteTime
+                      date={t.createdAt}
+                      dateOnly
+                      className="shrink-0 font-mono"
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Desktop (md+): full data table. */}

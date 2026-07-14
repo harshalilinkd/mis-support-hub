@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { updateUserRole } from "@/lib/actions/users";
 import type { Department, Role } from "@/lib/db/schema";
 import { ROLE_LABELS, ROLES } from "@/lib/roles";
+import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
@@ -67,9 +68,112 @@ export function UsersTable({
     });
   }
 
+  // Shared status pill (mobile card + desktop table).
+  const statusPill = (active: boolean) =>
+    active ? (
+      <Badge variant="secondary" className="shrink-0 gap-1.5">
+        <span className="size-1.5 rounded-full bg-emerald-500" />
+        Active
+      </Badge>
+    ) : (
+      <Badge variant="outline" className="shrink-0 gap-1.5 text-text-muted">
+        <span className="size-1.5 rounded-full bg-text-muted" />
+        Inactive
+      </Badge>
+    );
+
   return (
-    <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
-      <Table>
+    <>
+      {/* Mobile (< md): user cards — the wide table is clipped on phones. */}
+      <div className="space-y-2 md:hidden">
+        {users.length === 0 ? (
+          <div className="rounded-[var(--radius-card)] border border-border bg-surface p-6 text-center text-sm text-text-muted shadow-[var(--shadow-elevation)]">
+            No users yet — use “Add user” to create the first account.
+          </div>
+        ) : (
+          users.map((u) => {
+            const isSelf = u.id === currentUserId;
+            const rowBusy = busyId === u.id && isPending;
+            return (
+              <div
+                key={u.id}
+                className={cn(
+                  "rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-elevation)]",
+                  !u.isActive && "opacity-60"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <UserAvatar
+                    name={u.name}
+                    email={u.email}
+                    image={u.image}
+                    className="size-9"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">
+                        {u.name ?? "Unnamed"}
+                      </span>
+                      {isSelf ? (
+                        <Badge
+                          variant="outline"
+                          className="px-1.5 py-0 text-[10px]"
+                        >
+                          You
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="truncate text-xs text-text-muted">
+                      {u.email}
+                    </div>
+                  </div>
+                  {statusPill(u.isActive)}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <Select
+                    value={u.role}
+                    onValueChange={(v) =>
+                      run(u.id, () => updateUserRole(u.id, v), "Role updated")
+                    }
+                    disabled={isSelf || rowBusy}
+                  >
+                    <SelectTrigger size="sm" className="w-[150px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <UserRowActions user={u} isSelf={isSelf} />
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-text-muted">
+                  <span>
+                    {u.department ? DEPARTMENT_LABELS[u.department] : "No dept"}
+                  </span>
+                  <span aria-hidden>·</span>
+                  <span>{u.hasPassword ? "Email + password" : "Google"}</span>
+                  <span aria-hidden>·</span>
+                  <span>
+                    {u.ticketCount} ticket{u.ticketCount === 1 ? "" : "s"}
+                  </span>
+                  <span aria-hidden>·</span>
+                  <RelativeTime date={u.createdAt} />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop (md+): full table. */}
+      <div className="hidden overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
+        <Table>
         <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
           <TableRow className="hover:bg-transparent">
             <TableHead className="pl-4">User</TableHead>
@@ -186,6 +290,7 @@ export function UsersTable({
           })}
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }

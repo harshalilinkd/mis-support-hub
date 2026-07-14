@@ -1,4 +1,11 @@
-import { CircleDot, Clock, Loader2, UserX, CircleCheck } from "lucide-react";
+import {
+  CheckCheck,
+  CircleDot,
+  Clock,
+  Loader2,
+  UserX,
+  CircleCheck,
+} from "lucide-react";
 
 import type { DashboardStats } from "@/lib/db/queries";
 import { CountUp } from "./count-up";
@@ -28,12 +35,14 @@ function Kpi({
   return (
     <div
       style={{ animationDelay: `${delay}ms` }}
-      className="enter-up group rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)]"
+      className="enter-up group rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)] sm:p-5"
     >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-text-muted">{label}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-sm font-medium text-text-muted">
+          {label}
+        </span>
         <div
-          className="grid size-8 place-items-center rounded-[10px] transition-transform duration-200 group-hover:scale-110"
+          className="grid size-8 shrink-0 place-items-center rounded-[10px] transition-transform duration-200 group-hover:scale-110"
           style={{
             backgroundColor: `color-mix(in srgb, ${tint} 14%, transparent)`,
             color: tint,
@@ -42,10 +51,10 @@ function Kpi({
           <Icon className="size-4" />
         </div>
       </div>
-      <div className="mt-3 font-mono text-[28px] font-semibold leading-none tabular-nums">
+      <div className="mt-3 font-mono text-2xl font-semibold leading-none tabular-nums sm:text-[28px]">
         {value}
       </div>
-      <div className="mt-2 text-xs text-text-muted">{sub}</div>
+      <div className="mt-2 truncate text-xs text-text-muted">{sub}</div>
     </div>
   );
 }
@@ -81,6 +90,13 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       tint: "var(--status-resolved)",
     },
     {
+      label: "Closed",
+      value: <CountUp value={stats.closed} />,
+      sub: "confirmed & done",
+      icon: CheckCheck,
+      tint: "var(--status-closed)",
+    },
+    {
       label: "Avg resolution",
       value: formatHours(stats.avgResolutionHours),
       sub: "created → resolved",
@@ -90,7 +106,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
       {cards.map((c, i) => (
         <Kpi key={c.label} {...c} delay={i * 70} />
       ))}

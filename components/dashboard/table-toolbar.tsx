@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import type { AssignableUser } from "@/lib/db/queries";
 import { humanizeEnum } from "@/lib/format";
@@ -12,7 +11,6 @@ import {
   PRIORITIES,
 } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -20,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TicketSearch } from "./ticket-search";
 
 const ALL = "__all__";
 
@@ -38,7 +37,11 @@ function Facet({
 }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-auto min-w-[8.5rem]" size="sm">
+      {/* Full width on mobile (3 fit in one grid row); natural width on desktop. */}
+      <SelectTrigger
+        className="w-full min-w-0 sm:w-auto sm:min-w-[8.5rem]"
+        size="sm"
+      >
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
@@ -53,39 +56,24 @@ function Facet({
   );
 }
 
-/** Search + faceted filters that reflect into the URL query (shareable views). */
+/**
+ * Faceted filters (department / priority / assignee) that reflect into the URL
+ * query. Search lives separately in <TicketSearch> (up by the Table/Board
+ * toggle); the Clear here still removes `q` too, so one button resets everything.
+ * On mobile the three dropdowns sit in one 3-column row.
+ */
 export function TableToolbar({ users }: { users: AssignableUser[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get("q") ?? "");
-
-  function apply(params: URLSearchParams) {
-    const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
-  }
 
   function setParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== ALL) params.set(key, value);
     else params.delete(key);
-    apply(params);
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
   }
-
-  // Debounced search → URL. Read the LIVE url at fire time (not the captured
-  // snapshot) so a facet change or Clear during the debounce isn't reverted.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      const q = search.trim();
-      if (q === (params.get("q") ?? "")) return;
-      if (q) params.set("q", q);
-      else params.delete("q");
-      apply(params);
-    }, 300);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
 
   const dept = searchParams.get("department") ?? ALL;
   const priority = searchParams.get("priority") ?? ALL;
@@ -95,22 +83,15 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
     !!searchParams.get("q");
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full min-w-[200px] sm:w-auto sm:flex-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search tickets…"
-          className="pl-9"
-          aria-label="Search tickets"
-        />
-      </div>
+    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
       <Facet
         label="Department"
         value={dept}
         onValueChange={(v) => setParam("department", v)}
-        options={DEPARTMENTS.map((d) => ({ value: d, label: DEPARTMENT_LABELS[d] }))}
+        options={DEPARTMENTS.map((d) => ({
+          value: d,
+          label: DEPARTMENT_LABELS[d],
+        }))}
       />
       <Facet
         label="Priority"
@@ -127,13 +108,16 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
           ...users.map((u) => ({ value: u.id, label: u.name ?? u.email ?? "—" })),
         ]}
       />
+      {/* Desktop: search sits next to the dropdowns (on mobile it's up in the
+          header instead, so it's hidden here). */}
+      <TicketSearch className="hidden sm:block sm:w-60" />
       {hasFilters ? (
         <Button
           variant="ghost"
           size="sm"
+          className="col-span-3 justify-self-start sm:col-auto"
           onClick={() => {
-            setSearch("");
-            // Clear the filters but keep the active status tab (`tab`).
+            // Clear the facets AND the search, but keep the active status tab.
             const params = new URLSearchParams(searchParams.toString());
             for (const key of ["department", "priority", "assignee", "q"]) {
               params.delete(key);

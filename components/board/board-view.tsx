@@ -34,6 +34,7 @@ import {
   DRAG_ACTIVATION_DISTANCE,
 } from "./board-card";
 import { BoardColumn } from "./board-column";
+import { BoardMoveControl } from "./board-move-control";
 
 type ColId = "OPEN" | "IN_PROGRESS" | "RESOLVED";
 
@@ -185,43 +186,102 @@ export function BoardView({
           seed={3}
         />
       ) : (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={pointerWithin}
-        onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
-        onDragCancel={() => setActiveId(null)}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scroll-padding-left:1rem] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:[scroll-padding-left:0]">
+      <>
+        {/* Mobile (< sm): the columns stack vertically (Open → In Progress →
+            Resolved), so there's no sideways scrolling. Dragging is unreliable on
+            touch, so each card carries a "Move" control that runs the same claim /
+            status-change flow. Tap the card body to open the full detail. */}
+        <div className="space-y-5 sm:hidden">
           {COLUMNS.map((col) => (
-            <BoardColumn
-              key={col.id}
-              id={col.id}
-              label={col.label}
-              count={columns[col.id].length}
-            >
-              {columns[col.id].map((t) => (
-                <BoardCard
-                  key={t.id}
-                  ticket={t}
-                  onOpen={() => setSelected(t.number)}
-                />
-              ))}
-            </BoardColumn>
+            <section key={col.id}>
+              <div className="mb-2 flex items-center justify-between px-0.5">
+                <span className="text-sm font-semibold">{col.label}</span>
+                <span className="font-mono text-xs tabular-nums text-text-muted">
+                  {columns[col.id].length}
+                </span>
+              </div>
+              {columns[col.id].length === 0 ? (
+                <div className="rounded-[var(--radius-input)] border border-dashed border-border p-4 text-center text-xs text-text-muted">
+                  Nothing here
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {columns[col.id].map((t) => (
+                    <BoardCardContent
+                      key={t.id}
+                      ticket={t}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open ${t.number}: ${t.title}`}
+                      onClick={() => setSelected(t.number)}
+                      onKeyDown={(e) => {
+                        // Only when the card itself is focused — not when the
+                        // keystroke bubbles up from the Move button.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelected(t.number);
+                        }
+                      }}
+                      className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    >
+                      <div
+                        className="mt-3 border-t border-border pt-2.5"
+                        // The move button is interactive — its taps must not also
+                        // open the detail sheet.
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <BoardMoveControl ticket={t} currentUser={currentUser} />
+                      </div>
+                    </BoardCardContent>
+                  ))}
+                </div>
+              )}
+            </section>
           ))}
         </div>
-        <DragOverlay dropAnimation={reducedMotion ? null : undefined}>
-          {activeCard ? (
-            <BoardCardContent
-              ticket={activeCard}
-              className={cn(
-                "cursor-grabbing",
-                !reducedMotion && "rotate-2 shadow-[var(--shadow-popover)]"
-              )}
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+
+        {/* Desktop (sm+): the drag-and-drop board. */}
+        <div className="hidden sm:block">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
+            onDragCancel={() => setActiveId(null)}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-3 gap-4">
+              {COLUMNS.map((col) => (
+                <BoardColumn
+                  key={col.id}
+                  id={col.id}
+                  label={col.label}
+                  count={columns[col.id].length}
+                >
+                  {columns[col.id].map((t) => (
+                    <BoardCard
+                      key={t.id}
+                      ticket={t}
+                      onOpen={() => setSelected(t.number)}
+                    />
+                  ))}
+                </BoardColumn>
+              ))}
+            </div>
+            <DragOverlay dropAnimation={reducedMotion ? null : undefined}>
+              {activeCard ? (
+                <BoardCardContent
+                  ticket={activeCard}
+                  className={cn(
+                    "cursor-grabbing",
+                    !reducedMotion && "rotate-2 shadow-[var(--shadow-popover)]"
+                  )}
+                />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+      </>
       )}
 
       <ClaimDialog

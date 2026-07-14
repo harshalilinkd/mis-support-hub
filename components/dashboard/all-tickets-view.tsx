@@ -107,10 +107,12 @@ export function AllTicketsView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {/* Status tabs: on mobile a full-width, no-wrap strip that scrolls if the
+            four labels don't fit (so "In Progress" never breaks onto two lines). */}
         <div
           aria-label="Filter tickets by status"
-          className="inline-flex rounded-[var(--radius-input)] border border-border bg-surface p-0.5"
+          className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden"
         >
           {TICKET_TABS.map((t) => {
             const active = tab === t.key;
@@ -121,7 +123,7 @@ export function AllTicketsView({
                 aria-pressed={active}
                 onClick={() => switchTab(t.key)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
                   active
                     ? "bg-accent-soft text-primary"
                     : "text-foreground hover:bg-surface-muted"
@@ -142,7 +144,7 @@ export function AllTicketsView({
             );
           })}
         </div>
-        <div className="min-w-[240px] flex-1">
+        <div className="w-full sm:min-w-[240px] sm:flex-1">
           <TableToolbar users={users} />
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
 import { ticketTabFromParam } from "@/lib/ticket-tabs";
 import { DEPARTMENTS, PRIORITIES } from "@/lib/validators/ticket";
 import { AllTicketsView } from "@/components/dashboard/all-tickets-view";
+import { TicketSearch } from "@/components/dashboard/ticket-search";
 import { ViewToggle } from "@/components/dashboard/view-toggle";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -58,11 +59,13 @@ export default async function TicketsPage({
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="All Tickets"
-        description="Every ticket across the group. Claim one to start working on it."
-      >
-        <ViewToggle />
+      <PageHeader title="All Tickets">
+        {/* On mobile the search sits next to the Table/Board toggle; on desktop it
+            moves down next to the filter dropdowns (rendered in the toolbar). */}
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <ViewToggle />
+          <TicketSearch className="min-w-0 flex-1 sm:hidden" />
+        </div>
       </PageHeader>
       <AllTicketsView
         tickets={tickets}

@@ -16,11 +16,12 @@ import { cn } from "@/lib/utils";
 // activation distance (used in board-view.tsx).
 export const DRAG_ACTIVATION_DISTANCE = 8;
 
-/** Pure card visual — used for both the in-column card and the drag overlay. */
+/** Pure card visual — used for the in-column card, the drag overlay, and (with a
+ * `children` footer) the mobile move control. */
 export const BoardCardContent = forwardRef<
   HTMLDivElement,
   { ticket: BoardTicketRow } & React.HTMLAttributes<HTMLDivElement>
->(function BoardCardContent({ ticket, className, ...rest }, ref) {
+>(function BoardCardContent({ ticket, className, children, ...rest }, ref) {
   return (
     <div
       ref={ref}
@@ -68,6 +69,7 @@ export const BoardCardContent = forwardRef<
           ) : null}
         </div>
       </div>
+      {children}
     </div>
   );
 });

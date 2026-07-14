@@ -135,50 +135,40 @@ export function NewTicketForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]"
+      className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
     >
-      {/* Who's raising this — name (locked to the account) + department */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="requesterName">Your name</Label>
-          <Input
-            id="requesterName"
-            value={requester.name}
-            readOnly
-            aria-readonly
-            tabIndex={-1}
-            className="cursor-not-allowed bg-surface-muted text-text-muted"
-          />
-          <p className="mt-1 truncate text-xs text-text-muted">
-            Signed in as {requester.email}
-          </p>
-        </div>
-        <div>
-          <Label>Department</Label>
-          <Controller
-            control={control}
-            name="department"
-            render={({ field }) => (
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                disabled={pending}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DEPARTMENTS.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {DEPARTMENT_LABELS[d]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <FieldError message={errors.department?.message} />
-        </div>
+      {/* Who's raising this — a compact locked banner (name is fixed to the
+          signed-in account) + the department field. */}
+      <div className="truncate rounded-[var(--radius-input)] border border-border bg-surface-muted px-3 py-2 text-xs text-text-muted">
+        Raising as{" "}
+        <span className="font-medium text-foreground">{requester.name}</span> ·{" "}
+        {requester.email}
+      </div>
+      <div>
+        <Label>Department</Label>
+        <Controller
+          control={control}
+          name="department"
+          render={({ field }) => (
+            <Select
+              value={field.value}
+              onValueChange={field.onChange}
+              disabled={pending}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select department" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {DEPARTMENT_LABELS[d]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <FieldError message={errors.department?.message} />
       </div>
 
       <div>
@@ -198,13 +188,12 @@ export function NewTicketForm({
         </Label>
         <Input
           id="sheetLink"
-          placeholder="Sheet URL, web app URL, or the system name (e.g. Data entry Interface)"
+          placeholder="Sheet/app URL, or just the system name"
           disabled={pending}
           {...register("sheetLink")}
         />
         <p className="mt-1 text-xs text-text-muted">
-          The sheet, app, or system the issue is about — paste a link or just type
-          its name.
+          Paste a link, or just type the system’s name.
         </p>
         <FieldError message={errors.sheetLink?.message} />
       </div>
@@ -213,8 +202,8 @@ export function NewTicketForm({
         <Label htmlFor="description">Describe the problem / Summary</Label>
         <Textarea
           id="description"
-          rows={4}
-          placeholder="Explain the issue in detail — what's happening, what you expected, and any steps to reproduce."
+          rows={3}
+          placeholder="What's happening, what you expected, and any steps to reproduce."
           disabled={pending}
           {...register("description")}
         />
@@ -238,13 +227,12 @@ export function NewTicketForm({
         />
         {attachments.length === 0 ? (
           <p className="mt-1 text-xs text-text-muted">
-            Add a screenshot or PDF of the issue — or skip this and record a voice
-            note above instead.
+            Screenshot or PDF — or record a voice note above instead.
           </p>
         ) : null}
       </div>
 
-      <div className="-mx-5 flex justify-end gap-2 border-t border-border px-5 pt-4">
+      <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">
         <Button
           type="button"
           variant="ghost"
