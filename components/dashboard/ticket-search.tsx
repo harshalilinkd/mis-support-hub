@@ -19,18 +19,16 @@ export function TicketSearch({ className }: { className?: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const urlQ = searchParams.get("q") ?? "";
-  const spString = searchParams.toString();
   const [search, setSearch] = useState(urlQ);
   const focusedRef = useRef(false);
 
-  // Adopt the URL's `q` on ANY external navigation (keyed on the whole query
-  // string, not just `q`) — so "Clear" resets the box even when the typed query
-  // hadn't yet reached the URL. Skipped while the user is mid-type so their
-  // keystrokes are never overwritten.
+  // Reflect the URL's `q` when it changes externally (e.g. Clear after a query
+  // was committed), unless the user is mid-type. NOTE: keyed on the `q` value —
+  // NOT the whole query string — on purpose: changing a facet mid-type leaves
+  // `q` unchanged, so this must NOT run, or it would wipe the text being typed.
   useEffect(() => {
-    if (!focusedRef.current) setSearch(searchParams.get("q") ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spString]);
+    if (!focusedRef.current) setSearch(urlQ);
+  }, [urlQ]);
 
   // Debounce the typed value into the URL. Read the LIVE url at fire time so a
   // facet change during the debounce isn't reverted.
