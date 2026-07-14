@@ -4,10 +4,16 @@
  */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB
 
-/** Content types accepted by the upload token flow (wildcards supported by Blob). */
-export const ACCEPTED_CONTENT_TYPES = ["image/*", "application/pdf"] as const;
+/** Content types accepted by the upload token flow (wildcards supported by Blob).
+ * `audio/*` covers voice notes recorded in the browser (webm/mp4/ogg). */
+export const ACCEPTED_CONTENT_TYPES = [
+  "image/*",
+  "application/pdf",
+  "audio/*",
+] as const;
 
-/** For the <input accept> attribute. */
+/** For the file <input accept> attribute — screenshots/PDFs (voice notes have
+ * their own recorder, not the file picker). */
 export const ACCEPT_ATTR = "image/*,application/pdf";
 
 export interface AttachmentMeta {
@@ -21,8 +27,16 @@ export function isImageType(contentType: string): boolean {
   return contentType.startsWith("image/");
 }
 
+export function isAudioType(contentType: string): boolean {
+  return contentType.startsWith("audio/");
+}
+
 export function isAcceptedType(contentType: string): boolean {
-  return isImageType(contentType) || contentType === "application/pdf";
+  return (
+    isImageType(contentType) ||
+    contentType === "application/pdf" ||
+    isAudioType(contentType)
+  );
 }
 
 export function formatBytes(bytes: number): string {

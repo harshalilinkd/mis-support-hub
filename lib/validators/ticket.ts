@@ -35,11 +35,9 @@ export const createTicketSchema = z.object({
     .trim()
     .min(4, "Give it a short subject (min 4 characters)")
     .max(160, "Keep the subject under 160 characters"),
-  description: z
-    .string()
-    .trim()
-    .min(10, "Describe the issue (min 10 characters)")
-    .max(5000),
+  // Optional — the raise form accepts a voice note instead of typed text, so a
+  // voice-only ticket has no description and must stay valid/editable.
+  description: z.string().trim().max(5000),
   department: z.enum(DEPARTMENTS),
   // No priority here — a raised ticket is unprioritized; MIS sets it on claim.
   // Required, but not necessarily a URL — a sheet/app link OR just the system
@@ -111,11 +109,9 @@ export const editTicketSchema = z.object({
     .trim()
     .min(4, "Give it a short subject (min 4 characters)")
     .max(160, "Keep the subject under 160 characters"),
-  description: z
-    .string()
-    .trim()
-    .min(10, "Describe the issue (min 10 characters)")
-    .max(5000),
+  // Optional — the raise form accepts a voice note instead of typed text, so a
+  // voice-only ticket has no description and must stay valid/editable.
+  description: z.string().trim().max(5000),
   department: z.enum(DEPARTMENTS),
   // Not necessarily a URL — a sheet/app link OR just the system name is fine
   // (mirrors the raise form, so a ticket saved with a system name stays editable).

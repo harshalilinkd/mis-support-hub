@@ -32,7 +32,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
   if (!isAcceptedType(file.type)) {
     return NextResponse.json(
-      { error: "Only images and PDFs are allowed." },
+      { error: "This file type isn't supported." },
       { status: 400 }
     );
   }

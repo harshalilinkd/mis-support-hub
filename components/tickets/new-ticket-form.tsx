@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FileDropzone } from "./file-dropzone";
+import { VoiceRecorder } from "./voice-recorder";
 
 type FormValues = z.input<typeof createTicketSchema>;
 
@@ -58,8 +59,13 @@ export function NewTicketForm({
 }) {
   const router = useRouter();
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
+  const [voiceNote, setVoiceNote] = useState<AttachmentMeta | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // Either an upload path can be in flight; block submit until both are idle.
+  const busy = uploading || voiceBusy;
 
   const {
     register,
@@ -77,20 +83,31 @@ export function NewTicketForm({
   });
 
   const onSubmit = (values: CreateTicketInput) => {
-    if (uploading) {
-      toast.error("Please wait for uploads to finish.");
+    if (busy) {
+      toast.error("Please wait for the recording/uploads to finish.");
       return;
     }
-    if (attachments.length === 0) {
-      toast.error("Please attach at least one file (a screenshot, sheet, or PDF).");
+    // The voice note is a normal attachment; it counts toward the requirement.
+    const allAttachments = voiceNote ? [...attachments, voiceNote] : attachments;
+    const hasText = values.description.trim().length > 0;
+    if (!hasText && !voiceNote) {
+      toast.error("Describe the problem — type it in, or record a voice note.");
       return;
     }
+    if (allAttachments.length === 0) {
+      toast.error("Attach a screenshot or PDF, or record a voice note.");
+      return;
+    }
+    // A voice-only ticket has no typed body — give MIS a hint to play the audio.
+    const description = hasText
+      ? values.description
+      : "🎤 Voice note attached — please listen to the recording below.";
     startTransition(async () => {
       // Remember the requester's department for next time (name is fixed to the
       // signed-in account). Best-effort.
       await updateMyProfile(requester.name, values.department);
 
-      const res = await createTicket(values);
+      const res = await createTicket({ ...values, description });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -98,7 +115,7 @@ export function NewTicketForm({
       const { id, number } = res.data;
 
       const results = await Promise.allSettled(
-        attachments.map((m) => attachTo(id, null, m))
+        allAttachments.map((m) => attachTo(id, null, m))
       );
       const failed = results.filter(
         (r) => r.status === "rejected" || !r.value.ok
@@ -106,7 +123,7 @@ export function NewTicketForm({
 
       if (failed > 0) {
         toast.warning(
-          `Ticket ${number} created, but ${failed} attachment(s) couldn't be attached — reattach them on the ticket.`
+          `Ticket ${number} created, but ${failed} attachment(s) couldn't be saved. Open the ticket to check — you may need to raise it again if the recording is missing.`
         );
       } else {
         toast.success(`Ticket ${number} created`);
@@ -202,12 +219,17 @@ export function NewTicketForm({
           {...register("description")}
         />
         <FieldError message={errors.description?.message} />
+        {/* Accessibility: not everyone is comfortable typing — record the issue
+            as a voice note instead. A voice note can stand in for the text. */}
+        <VoiceRecorder
+          onChange={setVoiceNote}
+          onBusyChange={setVoiceBusy}
+          disabled={pending}
+        />
       </div>
 
       <div>
-        <Label>
-          Attachments <span className="text-destructive">*</span>
-        </Label>
+        <Label>Attachments</Label>
         <FileDropzone
           onChange={setAttachments}
           onBusyChange={setUploading}
@@ -216,7 +238,8 @@ export function NewTicketForm({
         />
         {attachments.length === 0 ? (
           <p className="mt-1 text-xs text-text-muted">
-            At least one image or PDF is required — e.g. a screenshot of the issue.
+            Add a screenshot or PDF of the issue — or skip this and record a voice
+            note above instead.
           </p>
         ) : null}
       </div>
@@ -230,8 +253,8 @@ export function NewTicketForm({
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={pending || uploading}>
-          {pending ? "Creating…" : uploading ? "Uploading…" : "Raise ticket"}
+        <Button type="submit" disabled={pending || busy}>
+          {pending ? "Creating…" : busy ? "Uploading…" : "Raise ticket"}
         </Button>
       </div>
     </form>

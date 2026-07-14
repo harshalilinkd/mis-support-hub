@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileText } from "lucide-react";
+import { AudioLines, Download, FileText } from "lucide-react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { formatBytes, isImageType } from "@/lib/attachments";
+import { formatBytes, isAudioType, isImageType } from "@/lib/attachments";
+import { AudioPlayer } from "./audio-player";
 
 export type AttachmentView = {
   id: string;
@@ -27,7 +28,10 @@ export function AttachmentGrid({
   }
 
   const images = attachments.filter((a) => isImageType(a.contentType));
-  const files = attachments.filter((a) => !isImageType(a.contentType));
+  const audios = attachments.filter((a) => isAudioType(a.contentType));
+  const files = attachments.filter(
+    (a) => !isImageType(a.contentType) && !isAudioType(a.contentType)
+  );
 
   return (
     <div className="space-y-3">
@@ -51,6 +55,40 @@ export function AttachmentGrid({
             </button>
           ))}
         </div>
+      )}
+
+      {audios.length > 0 && (
+        <ul className="space-y-2">
+          {audios.map((a) => (
+            <li
+              key={a.id}
+              className="rounded-[var(--radius-input)] border border-border bg-surface p-3"
+            >
+              <div className="mb-2 flex items-center gap-2 text-sm">
+                <AudioLines className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  Voice note
+                </span>
+                <span className="shrink-0 font-mono text-xs text-text-muted">
+                  {formatBytes(a.sizeBytes)}
+                </span>
+                {/* Fallback for browsers that can't play the recorded container
+                    inline (e.g. some Safari/iOS builds with WebM) — download it. */}
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={a.filename}
+                  title="Download voice note"
+                  className="shrink-0 rounded-[6px] p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
+                >
+                  <Download className="size-4" />
+                </a>
+              </div>
+              <AudioPlayer src={a.url} className="w-full" />
+            </li>
+          ))}
+        </ul>
       )}
 
       {files.length > 0 && (

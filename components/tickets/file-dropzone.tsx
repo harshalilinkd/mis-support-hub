@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import { AlertCircle, FileText, Loader2, UploadCloud, X } from "lucide-react";
 
 import {
   ACCEPT_ATTR,
   formatBytes,
-  isAcceptedType,
   isImageType,
   MAX_ATTACHMENT_BYTES,
   type AttachmentMeta,
 } from "@/lib/attachments";
+import { uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
 
 type Item = {
@@ -23,35 +22,6 @@ type Item = {
   error?: string;
   meta?: AttachmentMeta;
 };
-
-// Local dev has no Vercel Blob token, so uploads go to a local route that stores
-// under public/uploads; production (Vercel) uploads straight to Blob. Either path
-// returns the URL that becomes the AttachmentMeta.
-const UPLOAD_LOCAL = process.env.NODE_ENV !== "production";
-
-async function uploadFile(
-  file: File,
-  onProgress: (pct: number) => void
-): Promise<string> {
-  if (UPLOAD_LOCAL) {
-    const body = new FormData();
-    body.append("file", file);
-    const res = await fetch("/api/upload/local", { method: "POST", body });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(data?.error ?? "Upload failed.");
-    }
-    onProgress(100);
-    return ((await res.json()) as { url: string }).url;
-  }
-  const result = await upload(file.name, file, {
-    access: "public",
-    handleUploadUrl: "/api/upload",
-    contentType: file.type,
-    onUploadProgress: (p) => onProgress(Math.round(p.percentage)),
-  });
-  return result.url;
-}
 
 /**
  * Drag-drop uploader (design-system styled). Uploads to Vercel Blob in production
@@ -113,7 +83,9 @@ export function FileDropzone({
     for (const file of files.slice(0, room)) {
       const id = crypto.randomUUID();
 
-      if (!isAcceptedType(file.type)) {
+      // This dropzone is only for screenshots/PDFs — voice notes have their own
+      // recorder — so reject anything else (drag-drop bypasses the accept attr).
+      if (!isImageType(file.type) && file.type !== "application/pdf") {
         setItems((prev) => [
           ...prev,
           { id, file, status: "error", progress: 0, error: "Only images and PDFs are allowed." },

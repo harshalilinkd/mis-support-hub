@@ -112,9 +112,15 @@ export function TicketDetail({
 
       {/* Description */}
       <section className="rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)]">
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-          {ticket.description}
-        </p>
+        {ticket.description?.trim() ? (
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+            {ticket.description}
+          </p>
+        ) : (
+          <p className="text-sm italic text-text-muted">
+            No description provided.
+          </p>
+        )}
         {ticket.sheetLink ? (
           /^https?:\/\//i.test(ticket.sheetLink) ? (
             <a

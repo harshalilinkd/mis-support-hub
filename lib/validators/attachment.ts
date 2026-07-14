@@ -21,7 +21,10 @@ export const attachToSchema = z.object({
   contentType: z
     .string()
     .refine(
-      (c) => c.startsWith("image/") || c === "application/pdf",
+      (c) =>
+        c.startsWith("image/") ||
+        c === "application/pdf" ||
+        c.startsWith("audio/"),
       "Unsupported file type"
     ),
   sizeBytes: z

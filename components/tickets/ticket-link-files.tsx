@@ -1,8 +1,8 @@
 "use client";
 
-import { ExternalLink, FileText } from "lucide-react";
+import { AudioLines, ExternalLink, FileText } from "lucide-react";
 
-import { isImageType } from "@/lib/attachments";
+import { isAudioType, isImageType } from "@/lib/attachments";
 import type { TicketAttachmentThumb } from "@/lib/db/queries";
 import { cn } from "@/lib/utils";
 
@@ -86,10 +86,14 @@ export function TicketLinkFiles({
                 target="_blank"
                 rel="noreferrer"
                 onClick={stop}
-                title={a.filename}
+                title={isAudioType(a.contentType) ? "Voice note" : a.filename}
                 className="grid size-7 shrink-0 place-items-center rounded border border-border bg-surface-muted text-text-muted hover:bg-surface"
               >
-                <FileText className="size-4" />
+                {isAudioType(a.contentType) ? (
+                  <AudioLines className="size-4 text-primary" />
+                ) : (
+                  <FileText className="size-4" />
+                )}
               </a>
             )
           )}
