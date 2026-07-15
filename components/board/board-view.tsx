@@ -27,6 +27,7 @@ import { canTransition } from "@/lib/ticket-state";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import {
   BoardCard,
@@ -76,6 +77,7 @@ export function BoardView({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [claimTarget, setClaimTarget] = useState<string | null>(null);
+  const [startTarget, setStartTarget] = useState<string | null>(null);
 
   // Re-sync to server truth when the underlying data changes (after refresh).
   const signature = tickets.map((t) => `${t.id}:${t.status}`).join(",");
@@ -126,10 +128,12 @@ export function BoardView({
       return;
     }
 
-    // Open → In Progress = claim: open the priority/deadline dialog, which
-    // assigns the ticket to the current member (not a bare status change).
+    // Open → In Progress = start work (§5). If it's already mine (claimed), just
+    // ask for a deadline (Start task). If it's unassigned, this is the combined
+    // "claim & start" shortcut (priority + deadline). Never a bare status change.
     if (sourceCol === "OPEN" && targetCol.id === "IN_PROGRESS") {
-      setClaimTarget(ticketId);
+      if (card.assignedToId === currentUser.id) setStartTarget(ticketId);
+      else setClaimTarget(ticketId);
       return;
     }
 
@@ -284,6 +288,7 @@ export function BoardView({
       </>
       )}
 
+      {/* Unassigned card dragged to In Progress: combined claim & start. */}
       <ClaimDialog
         ticketId={claimTarget}
         open={!!claimTarget}
@@ -292,6 +297,20 @@ export function BoardView({
         }}
         onDone={() => {
           setClaimTarget(null);
+          router.refresh();
+        }}
+        withStart
+      />
+
+      {/* My already-claimed card dragged to In Progress: just set a deadline. */}
+      <StartTaskDialog
+        ticketId={startTarget}
+        open={!!startTarget}
+        onOpenChange={(o) => {
+          if (!o) setStartTarget(null);
+        }}
+        onDone={() => {
+          setStartTarget(null);
           router.refresh();
         }}
       />

@@ -22,6 +22,7 @@ import {
 import type { TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { formatDueDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityControl, StatusControl } from "./inline-controls";
 
@@ -78,10 +79,13 @@ export function TicketTable({
         <div className="space-y-2 md:hidden">
           {tickets.map((t) => {
             const done = t.status === "RESOLVED" || t.status === "CLOSED";
-            const mine = t.assignedToId === currentUser.id;
-            const working =
-              mine && (t.status === "IN_PROGRESS" || t.status === "REOPENED");
-            const canClaim = !done && !working && (!t.assignedToId || mine);
+            // Inline quick-claim only for still-unclaimed rows; a ticket already
+            // mine is started/managed from the detail or the status control.
+            const canClaim = !done && !t.assignedToId;
+            // A claimed-but-not-started ticket (still OPEN, but owned) is struck
+            // through here in All Tickets — it's spoken for, so it reads as pulled
+            // from the open pool. It stays normal in the owner's "Assigned to Me".
+            const claimedOpen = t.status === "OPEN" && !!t.assignedToId;
             return (
               <div
                 key={t.id}
@@ -105,7 +109,12 @@ export function TicketTable({
                   <span className="shrink-0 font-mono text-xs font-semibold text-foreground">
                     {t.number}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-sm font-medium",
+                      claimedOpen && "text-text-muted line-through decoration-text-muted/60"
+                    )}
+                  >
                     {t.title}
                   </span>
                   <StatusChip status={t.status} className="shrink-0" />
@@ -171,7 +180,12 @@ export function TicketTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tickets.map((t) => (
+            {tickets.map((t) => {
+              // Claimed but not yet started (still OPEN, but owned): struck through
+              // in All Tickets so it reads as pulled from the open pool. Unaffected
+              // in the owner's "Assigned to Me" view (a different component).
+              const claimedOpen = t.status === "OPEN" && !!t.assignedToId;
+              return (
               <TableRow
                 key={t.id}
                 onClick={() => setSelected(t.number)}
@@ -195,7 +209,12 @@ export function TicketTable({
                   {t.number}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-[16rem] truncate text-sm font-medium">
+                  <div
+                    className={cn(
+                      "max-w-[16rem] truncate text-sm font-medium",
+                      claimedOpen && "text-text-muted line-through decoration-text-muted/60"
+                    )}
+                  >
                     {t.title}
                   </div>
                 </TableCell>
@@ -237,7 +256,12 @@ export function TicketTable({
                   )}
                 </TableCell>
                 <TableCell>
-                  <StatusControl ticketId={t.id} status={t.status} locked={lockedFor(t)} />
+                  <StatusControl
+                    ticketId={t.id}
+                    status={t.status}
+                    locked={lockedFor(t)}
+                    mine={t.assignedToId === currentUser.id}
+                  />
                 </TableCell>
                 <TableCell>
                   <PriorityControl ticketId={t.id} priority={t.priority} locked={lockedFor(t)} />
@@ -262,7 +286,8 @@ export function TicketTable({
                   />
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
         </div>

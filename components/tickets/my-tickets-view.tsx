@@ -207,7 +207,7 @@ export function MyTicketsView({
                     </span>
                     <span className="shrink-0">
                       {canControl ? (
-                        <StatusControl ticketId={t.id} status={t.status} />
+                        <StatusControl ticketId={t.id} status={t.status} mine />
                       ) : (
                         <StatusChip status={t.status} />
                       )}
@@ -307,7 +307,7 @@ export function MyTicketsView({
                     </TableCell>
                     <TableCell>
                       {canControl ? (
-                        <StatusControl ticketId={t.id} status={t.status} />
+                        <StatusControl ticketId={t.id} status={t.status} mine />
                       ) : (
                         <StatusChip status={t.status} />
                       )}

@@ -8,12 +8,18 @@ import type { Status } from "@/lib/db/schema";
  * MIS via `updateStatus`; the RESOLVED → REOPENED move is handled separately by
  * `reopenTicket` (different permissions), so it is intentionally NOT listed here.
  *
+ * OPEN → IN_PROGRESS ("start work") is listed so the UI can offer it, but it is
+ * NEVER performed by `updateStatus` — starting a task requires an assignee + a
+ * deadline, so it goes through the dedicated `startTask` action (CLAUDE.md §5).
+ * REOPENED is already active work (it sits in the In Progress column), so it has
+ * no →IN_PROGRESS transition — it only moves on to RESOLVED.
+ *
  * This module is pure (type-only import) and safe to import from client UI.
  */
 export const STATUS_TRANSITIONS: Record<Status, Status[]> = {
   OPEN: ["IN_PROGRESS", "RESOLVED"],
   IN_PROGRESS: ["RESOLVED"],
-  REOPENED: ["IN_PROGRESS", "RESOLVED"],
+  REOPENED: ["RESOLVED"],
   RESOLVED: ["CLOSED"],
   CLOSED: [],
 };

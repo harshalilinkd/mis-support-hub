@@ -34,14 +34,17 @@ const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
 };
 
 /**
- * "Claim & start" dialog — the MIS member sets the priority + an estimated
- * resolution date before taking the ticket; the reporter is then notified that
- * work has started (with the priority and expected date).
+ * Claim dialog — the MIS member takes ownership of a ticket and sets its
+ * priority. By default this is a plain claim: the ticket is assigned to them and
+ * stays OPEN under "Assigned to Me"; work starts later via Start task (§5).
+ *
+ * Pass `withStart` for the combined "claim & start" shortcut (dragging/moving an
+ * unassigned ticket straight to In Progress): it also asks for an expected
+ * completion date and starts work in the same step, notifying the reporter.
  *
  * Works two ways: pass a `trigger` for a button, OR drive it with `open` /
- * `onOpenChange` to open it programmatically (e.g. after dragging a card to
- * "In Progress" on the board, or the status dropdown). `ticketId` may be null
- * while nothing is selected in the controlled case.
+ * `onOpenChange` to open it programmatically. `ticketId` may be null while
+ * nothing is selected in the controlled case.
  */
 export function ClaimDialog({
   ticketId,
@@ -49,12 +52,15 @@ export function ClaimDialog({
   onDone,
   open: openProp,
   onOpenChange,
+  withStart = false,
 }: {
   ticketId: string | null;
   trigger?: React.ReactNode;
   onDone?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Combined claim & start: also collect a deadline and move to In Progress. */
+  withStart?: boolean;
 }) {
   const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -79,17 +85,23 @@ export function ClaimDialog({
 
   function submit() {
     if (!ticketId) return;
-    if (!deadline) {
-      toast.error("Pick an estimated resolution date.");
+    if (withStart && !deadline) {
+      toast.error("Pick an expected completion date.");
       return;
     }
     startTransition(async () => {
-      const res = await claimTicket({ ticketId, priority, deadline });
+      const res = await claimTicket({
+        ticketId,
+        priority,
+        ...(withStart ? { deadline } : {}),
+      });
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success("Claimed — it's yours now");
+      toast.success(
+        withStart ? "Claimed & started — it's yours now" : "Claimed — it's yours now"
+      );
       setOpen(false);
       onDone?.();
       router.refresh();
@@ -109,10 +121,13 @@ export function ClaimDialog({
         onKeyDown={(e) => e.stopPropagation()}
       >
         <DialogHeader>
-          <DialogTitle>Claim &amp; start work</DialogTitle>
+          <DialogTitle>
+            {withStart ? "Claim & start work" : "Claim ticket"}
+          </DialogTitle>
           <DialogDescription>
-            Set the priority and when you expect to resolve it. The ticket is
-            assigned to you and the reporter is notified that work has started.
+            {withStart
+              ? "Set the priority and when you expect to complete it. The ticket is assigned to you, moved to In Progress, and the reporter is notified work has started."
+              : "Set the priority and take ownership. It's assigned to you and stays Open until you Start the task."}
           </DialogDescription>
         </DialogHeader>
 
@@ -137,21 +152,23 @@ export function ClaimDialog({
             </Select>
           </div>
 
-          <div>
-            <label
-              htmlFor="claim-deadline"
-              className="mb-1 block text-sm font-medium"
-            >
-              Estimated resolution date
-            </label>
-            <Input
-              id="claim-deadline"
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              disabled={pending}
-            />
-          </div>
+          {withStart ? (
+            <div>
+              <label
+                htmlFor="claim-deadline"
+                className="mb-1 block text-sm font-medium"
+              >
+                Expected completion date
+              </label>
+              <Input
+                id="claim-deadline"
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                disabled={pending}
+              />
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter>
@@ -160,8 +177,12 @@ export function ClaimDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button type="button" onClick={submit} disabled={pending || !deadline}>
-            {pending ? "Claiming…" : "Claim & start"}
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={pending || (withStart && !deadline)}
+          >
+            {pending ? "Claiming…" : withStart ? "Claim & start" : "Claim"}
           </Button>
         </DialogFooter>
       </DialogContent>

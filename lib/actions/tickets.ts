@@ -24,6 +24,7 @@ import {
   createTicketSchema,
   deleteTicketSchema,
   reopenTicketSchema,
+  startTaskSchema,
   updatePrioritySchema,
   updateStatusSchema,
   updateTicketSchema,
@@ -95,6 +96,11 @@ export async function updateStatus(
   const from = ticket.status;
   const to = parsed.data.status;
   if (from === to) return fail(`Ticket is already ${to}.`);
+  // Starting work is not a bare status change — it needs an assignee + a deadline,
+  // so it goes through the dedicated startTask action (§5). Never start here.
+  if (to === "IN_PROGRESS") {
+    return fail("Use “Start task” to begin work — it sets an expected completion date.");
+  }
   if (!canTransition(from, to)) {
     return fail(`Can't change status from ${from} to ${to}.`);
   }
@@ -126,23 +132,29 @@ export async function updateStatus(
 // colleague's behalf or to override the ownership rule).
 
 /**
- * Claim a ticket — a staff member takes ownership, sets the priority + an
- * estimated resolution date, and starts work (§5: OPEN/REOPENED → IN_PROGRESS).
- * Won't steal a ticket already claimed by someone else — once claimed, it stays
- * with its assignee (§6 ownership lock). Notifies the reporter work has started.
+ * Claim a ticket — a staff member takes ownership and sets the priority. The
+ * ticket stays OPEN and shows up under "Assigned to Me"; work starts later, via
+ * startTask (§5). Won't steal a ticket already claimed by someone else — once
+ * claimed, it stays with its assignee (§6 ownership lock).
+ *
+ * When `deadline` is supplied it's the combined "claim & start" shortcut (board
+ * drag / status dropdown on an unassigned ticket): the same call also starts work
+ * (→ IN_PROGRESS) and the reporter is notified.
  */
 /**
  * Core claim logic for a single ticket, shared by claimTicket and
  * bulkClaimTickets. Runs the §5/§6 checks and writes the claim, but does NOT
  * send notifications or revalidate — the caller does that (once, for bulk).
+ * Returns whether work was actually started (only the combined shortcut does),
+ * so the caller knows whether to notify the reporter.
  */
 async function claimOne(
   user: SessionUser,
   ticketId: string,
   priority: Priority,
-  deadline: string
+  deadline?: string
 ): Promise<
-  | { ok: true; ticketId: string; ticketNumber: string }
+  | { ok: true; ticketId: string; ticketNumber: string; started: boolean }
   | { ok: false; error: string }
 > {
   const ticket = await q.getTicketById(ticketId);
@@ -170,12 +182,14 @@ async function claimOne(
   // A claim only ever lands on an unassigned ticket or one already mine (the
   // ownership guard above rejects anyone else's), so there is never a prior
   // owner to record. writeAssigned is true only for the first self-claim — it
-  // gates the CLAIMED event so re-claiming my own ticket (e.g. after a reopen)
+  // gates the CLAIMED event so re-claiming my own ticket (e.g. to re-prioritise)
   // doesn't re-log it.
   const writeAssigned = ticket.assignedTo !== user.id;
   const fromAssigneeName: string | null = null;
 
-  const startWork = ticket.status === "OPEN" || ticket.status === "REOPENED";
+  // Only the combined "claim & start" shortcut carries a deadline → also start.
+  const startWork =
+    !!deadline && (ticket.status === "OPEN" || ticket.status === "REOPENED");
   await q.claimTicketRow({
     ticketId: ticket.id,
     actorId: user.id,
@@ -184,18 +198,23 @@ async function claimOne(
     fromStatus: ticket.status,
     fromPriority: ticket.priority,
     priority,
-    deadline: new Date(deadline),
+    deadline: deadline ? new Date(deadline) : null,
     writeAssigned,
     startWork,
   });
 
-  return { ok: true, ticketId: ticket.id, ticketNumber: ticket.number };
+  return {
+    ok: true,
+    ticketId: ticket.id,
+    ticketNumber: ticket.number,
+    started: startWork,
+  };
 }
 
 export async function claimTicket(input: {
   ticketId: string;
   priority: string;
-  deadline: string;
+  deadline?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -214,20 +233,71 @@ export async function claimTicket(input: {
   );
   if (!res.ok) return fail(res.error);
 
-  // Tell the reporter their ticket is now being worked on (priority + ETA; §8).
-  await sendClaimNotification(res.ticketId);
+  // The reporter is told only when work actually starts (§8) — a plain claim is
+  // quiet. That's just the combined "claim & start" shortcut here.
+  if (res.started) await sendClaimNotification(res.ticketId);
 
   revalidateTicketRoutes(res.ticketNumber);
   return ok(undefined);
 }
 
 /**
- * Claim several tickets at once — each with its own priority + deadline (bulk
- * triage). Best-effort per ticket: one that fails its checks (already claimed,
- * resolved, …) is reported back without blocking the others (§6).
+ * Start work on a ticket the caller has already claimed — set an expected
+ * completion date and move it OPEN/REOPENED → IN_PROGRESS (§5). This is when the
+ * ticket is "officially started"; the reporter is notified (priority + ETA; §8).
+ */
+export async function startTask(input: {
+  ticketId: string;
+  deadline: string;
+}): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can start work on a ticket.");
+  }
+
+  const parsed = startTaskSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+
+  // You start your OWN claimed ticket (§6): must be assigned, and to you.
+  if (!ticket.assignedTo) {
+    return fail("Claim the ticket before starting work on it.");
+  }
+  if (ticket.assignedTo !== user.id) {
+    const owner = await q.getUserById(ticket.assignedTo);
+    return fail(
+      `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can start it.`
+    );
+  }
+  if (ticket.status !== "OPEN" && ticket.status !== "REOPENED") {
+    return fail(`${ticket.number} has already been started.`);
+  }
+
+  await q.startTaskRow({
+    ticketId: ticket.id,
+    actorId: user.id,
+    fromStatus: ticket.status,
+    deadline: new Date(parsed.data.deadline),
+  });
+
+  // Work has actually started now — tell the reporter (priority + ETA; §8).
+  await sendClaimNotification(ticket.id);
+
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Claim several tickets at once — each with its own priority (bulk triage). They
+ * are assigned to the caller and stay OPEN under "Assigned to Me"; each is started
+ * separately later (§5). Best-effort per ticket: one that fails its checks
+ * (already claimed, resolved, …) is reported back without blocking the others (§6).
  */
 export async function bulkClaimTickets(input: {
-  items: { ticketId: string; priority: string; deadline: string }[];
+  items: { ticketId: string; priority: string }[];
 }): Promise<
   ActionResult<{
     claimed: number;
@@ -249,12 +319,8 @@ export async function bulkClaimTickets(input: {
     // Truly best-effort: a transient DB/infra throw on one ticket must not abort
     // the rest (there is no cross-ticket transaction under neon-http anyway).
     try {
-      const res = await claimOne(
-        user,
-        item.ticketId,
-        item.priority,
-        item.deadline
-      );
+      // Claim only (no deadline) — nothing is started, so no reporter notice (§8).
+      const res = await claimOne(user, item.ticketId, item.priority);
       if (res.ok) claimedIds.push(res.ticketId);
       else failed.push({ ticketId: item.ticketId, error: res.error });
     } catch (e) {
@@ -265,9 +331,6 @@ export async function bulkClaimTickets(input: {
       });
     }
   }
-
-  // Notify each reporter (best-effort; §8) — in parallel, after the writes land.
-  await Promise.all(claimedIds.map((id) => sendClaimNotification(id)));
 
   if (claimedIds.length > 0) revalidateTicketRoutes();
   return ok({ claimed: claimedIds.length, failed });

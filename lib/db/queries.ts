@@ -454,12 +454,14 @@ export async function setTicketAssignee(args: {
 }
 
 /**
- * Claim a ticket: assign it to the actor and — when it's OPEN/REOPENED — start
- * work (→ IN_PROGRESS), in one batch. Writes a CLAIMED activity row only when
- * ownership actually changes (writeAssigned) — i.e. the first self-claim — and a
- * STATUS_CHANGED only when work starts. The caller enforces staff/claimability
- * and the §6 ownership lock, so a claim only ever lands on an unassigned ticket
- * or one already the actor's (fromAssigneeName is null).
+ * Claim a ticket: assign it to the actor and set the priority, in one batch. The
+ * ticket stays OPEN — work starts later, via startTaskRow (§5). The one exception
+ * is the combined "claim & start" shortcut (board drag / status dropdown), where
+ * the caller passes a deadline + startWork, and this also moves it to IN_PROGRESS
+ * and writes the STARTED row. Writes a CLAIMED activity row only when ownership
+ * actually changes (writeAssigned) — i.e. the first self-claim. The caller
+ * enforces staff/claimability and the §6 ownership lock, so a claim only ever
+ * lands on an unassigned ticket or one already the actor's (fromAssigneeName null).
  */
 export async function claimTicketRow(args: {
   ticketId: string;
@@ -469,41 +471,34 @@ export async function claimTicketRow(args: {
   fromStatus: Status;
   fromPriority: Priority | null;
   priority: Priority;
-  deadline: Date;
+  /** Only set when starting work in the same action (combined shortcut). */
+  deadline: Date | null;
   writeAssigned: boolean;
   startWork: boolean;
 }) {
   const set: Partial<typeof tickets.$inferInsert> = {
     assignedTo: args.actorId,
     priority: args.priority,
-    deadline: args.deadline,
   };
-  if (args.startWork) set.status = "IN_PROGRESS";
+  // The deadline belongs to Start — only stamp it when we also start work here.
+  if (args.startWork && args.deadline) {
+    set.status = "IN_PROGRESS";
+    set.deadline = args.deadline;
+  }
 
   const events = [];
   if (args.writeAssigned) {
     // A claim is always a self-assignment, so record it as CLAIMED (not ASSIGNED)
     // — the timeline then reads "claimed the ticket" instead of "assigned it to
-    // <self>". Store the deadline in toValue so it shows on the same line;
-    // fromValue (prior owner) is always null under the §6 ownership lock.
+    // <self>". A claim no longer carries a deadline (that's on STARTED); fromValue
+    // (prior owner) is always null under the §6 ownership lock.
     events.push(
       db.insert(ticketActivity).values({
         ticketId: args.ticketId,
         actorId: args.actorId,
         type: "CLAIMED",
         fromValue: args.fromAssigneeName,
-        toValue: args.deadline.toISOString(),
-      })
-    );
-  }
-  if (args.startWork) {
-    events.push(
-      db.insert(ticketActivity).values({
-        ticketId: args.ticketId,
-        actorId: args.actorId,
-        type: "STATUS_CHANGED",
-        fromValue: args.fromStatus,
-        toValue: "IN_PROGRESS",
+        toValue: null,
       })
     );
   }
@@ -518,10 +513,50 @@ export async function claimTicketRow(args: {
       })
     );
   }
+  if (args.startWork && args.deadline) {
+    // The combined shortcut also starts work: one STARTED row carries the OPEN→
+    // IN_PROGRESS transition (in fromValue) and the deadline (in toValue).
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "STARTED",
+        fromValue: args.fromStatus,
+        toValue: args.deadline.toISOString(),
+      })
+    );
+  }
 
   await db.batch([
     db.update(tickets).set(set).where(eq(tickets.id, args.ticketId)),
     ...events,
+  ]);
+}
+
+/**
+ * Start work on a ticket the actor has already claimed: set the deadline and move
+ * it OPEN/REOPENED → IN_PROGRESS, in one batch. Writes a STARTED activity row (the
+ * OPEN→IN_PROGRESS transition in fromValue, the deadline in toValue). The caller
+ * enforces staff + the §6 ownership lock (only the assignee starts their ticket).
+ */
+export async function startTaskRow(args: {
+  ticketId: string;
+  actorId: string;
+  fromStatus: Status;
+  deadline: Date;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: "IN_PROGRESS", deadline: args.deadline })
+      .where(eq(tickets.id, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "STARTED",
+      fromValue: args.fromStatus,
+      toValue: args.deadline.toISOString(),
+    }),
   ]);
 }
 

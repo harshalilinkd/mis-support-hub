@@ -12,7 +12,7 @@ function humanize(value: string | null): string {
     : value;
 }
 
-// Deadlines are stored on the CLAIMED event as an ISO string; show them as a
+// Deadlines are stored on the STARTED event as an ISO string; show them as a
 // plain IST date (matches the AbsoluteTime date format used elsewhere).
 const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Kolkata",
@@ -32,9 +32,15 @@ function describe(a: ActivityRow): string {
     case "CREATED":
       return `${actor} raised the ticket`;
     case "CLAIMED": {
+      // A claim now only assigns + sets priority — no deadline (that's STARTED).
       const from = a.fromValue ? ` from ${a.fromValue}` : "";
+      return `${actor} claimed the ticket${from}`;
+    }
+    case "STARTED": {
+      // toValue holds the expected completion date (ISO); fromValue the prior
+      // status (OPEN/REOPENED), which the transition implies — so we omit it.
       const due = a.toValue ? ` · due by ${formatDue(a.toValue)}` : "";
-      return `${actor} claimed the ticket${from}${due}`;
+      return `${actor} started work${due}`;
     }
     case "ASSIGNED":
       if (!a.toValue) return `${actor} unassigned it`;

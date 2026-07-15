@@ -17,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -34,13 +33,13 @@ const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
   URGENT: "Urgent",
 };
 
-type Entry = { priority: string; deadline: string };
+type Entry = { priority: string };
 
 /**
  * Claim several tickets in one pass: step through each selected ticket with
- * Prev/Next, set its priority + deadline, then submit them all together. Each
- * ticket keeps its own entry as you navigate. (Opened from the All Tickets
- * selection bar.)
+ * Prev/Next, set its priority, then submit them all together. They're assigned to
+ * you and stay Open — you Start each one separately later (§5). Each ticket keeps
+ * its own entry as you navigate. (Opened from the All Tickets selection bar.)
  */
 export function BulkClaimDialog({
   tickets,
@@ -60,27 +59,21 @@ export function BulkClaimDialog({
 
   // Initialise fresh entries only when the modal OPENS — not when the selection
   // set changes underneath an already-open modal (e.g. a background auto-refresh
-  // drops a ticket), which would otherwise wipe priorities/deadlines already
-  // typed. Values are keyed by ticket id, so a shrunk set just leaves unused
-  // entries behind and the current index is clamped in render.
+  // drops a ticket), which would otherwise wipe priorities already picked. Values
+  // are keyed by ticket id, so a shrunk set just leaves unused entries behind and
+  // the current index is clamped in render.
   useEffect(() => {
     if (!open) return;
     setIndex(0);
     setValues(
-      Object.fromEntries(
-        tickets.map((t) => [t.id, { priority: "MEDIUM", deadline: "" }])
-      )
+      Object.fromEntries(tickets.map((t) => [t.id, { priority: "MEDIUM" }]))
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const total = tickets.length;
   const ticket = tickets[Math.min(index, total - 1)];
-  const entry: Entry = (ticket && values[ticket.id]) ?? {
-    priority: "MEDIUM",
-    deadline: "",
-  };
-  const remaining = tickets.filter((t) => !values[t.id]?.deadline).length;
+  const entry: Entry = (ticket && values[ticket.id]) ?? { priority: "MEDIUM" };
 
   function setEntry(patch: Partial<Entry>) {
     if (!ticket) return;
@@ -88,17 +81,10 @@ export function BulkClaimDialog({
   }
 
   function submit() {
-    // Every ticket needs a deadline — jump to the first one that's missing.
-    const missing = tickets.findIndex((t) => !values[t.id]?.deadline);
-    if (missing !== -1) {
-      setIndex(missing);
-      toast.error("Set a deadline for every selected ticket.");
-      return;
-    }
+    // Priority defaults to Medium for every ticket, so there's nothing to gate.
     const items = tickets.map((t) => ({
       ticketId: t.id,
       priority: values[t.id]?.priority ?? "MEDIUM",
-      deadline: values[t.id]!.deadline,
     }));
     startTransition(async () => {
       const res = await bulkClaimTickets({ items });
@@ -131,39 +117,34 @@ export function BulkClaimDialog({
             Claim {total} ticket{total === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Set a priority and deadline for each, then claim them all. They&apos;ll
-            be assigned to you and moved to In&nbsp;Progress.
+            Set a priority for each, then claim them all. They&apos;ll be assigned
+            to you and stay Open until you Start each one.
           </DialogDescription>
         </DialogHeader>
 
         {ticket ? (
           <>
-            {/* Progress: a dot per ticket (filled once its deadline is set). */}
+            {/* Progress: a dot per ticket; the current one is highlighted. */}
             <div className="flex items-center gap-1.5 border-b border-border px-6 py-3">
               <span className="mr-1 text-xs font-medium text-text-muted">
                 {index + 1} / {total}
               </span>
               <div className="flex flex-wrap gap-1.5">
-                {tickets.map((t, i) => {
-                  const filled = !!values[t.id]?.deadline;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setIndex(i)}
-                      aria-label={`Go to ${t.number}`}
-                      aria-current={i === index}
-                      className={cn(
-                        "size-2.5 rounded-full transition-colors",
-                        i === index
-                          ? "bg-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-background"
-                          : filled
-                            ? "bg-primary/60"
-                            : "bg-border hover:bg-text-muted"
-                      )}
-                    />
-                  );
-                })}
+                {tickets.map((t, i) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setIndex(i)}
+                    aria-label={`Go to ${t.number}`}
+                    aria-current={i === index}
+                    className={cn(
+                      "size-2.5 rounded-full transition-colors",
+                      i === index
+                        ? "bg-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-background"
+                        : "bg-primary/60 hover:bg-primary"
+                    )}
+                  />
+                ))}
               </div>
             </div>
 
@@ -199,44 +180,25 @@ export function BulkClaimDialog({
                 />
               </div>
 
-              {/* Priority + deadline for THIS ticket */}
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Priority
-                  </label>
-                  <Select
-                    value={entry.priority}
-                    onValueChange={(v) => setEntry({ priority: v })}
-                    disabled={pending}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRIORITIES.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {PRIORITY_LABELS[p]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="bulk-claim-deadline"
-                    className="mb-1 block text-sm font-medium"
-                  >
-                    Deadline
-                  </label>
-                  <Input
-                    id="bulk-claim-deadline"
-                    type="date"
-                    value={entry.deadline}
-                    onChange={(e) => setEntry({ deadline: e.target.value })}
-                    disabled={pending}
-                  />
-                </div>
+              {/* Priority for THIS ticket */}
+              <div className="mt-5 max-w-xs">
+                <label className="mb-1 block text-sm font-medium">Priority</label>
+                <Select
+                  value={entry.priority}
+                  onValueChange={(v) => setEntry({ priority: v })}
+                  disabled={pending}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PRIORITY_LABELS[p]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -262,17 +224,9 @@ export function BulkClaimDialog({
               </Button>
               <div className="ml-auto flex items-center gap-3">
                 <span className="text-xs text-text-muted">
-                  {remaining === 0
-                    ? "All deadlines set"
-                    : `Set a deadline for ${remaining} more ticket${remaining === 1 ? "" : "s"} to continue`}
+                  Priority defaults to Medium
                 </span>
-                {/* Blocked until every selected ticket has a deadline (priority
-                    defaults to Medium, so deadlines are the gating input). */}
-                <Button
-                  type="button"
-                  onClick={submit}
-                  disabled={pending || remaining > 0}
-                >
+                <Button type="button" onClick={submit} disabled={pending}>
                   <Hand className="size-4" />
                   {pending ? "Claiming…" : `Claim all ${total}`}
                 </Button>

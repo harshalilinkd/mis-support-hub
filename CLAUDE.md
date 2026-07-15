@@ -64,7 +64,7 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
 - `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT
 
 Tables:
@@ -77,12 +77,16 @@ Tables:
 
 ## 5. Ticket lifecycle (state machine)
 OPEN → IN_PROGRESS → RESOLVED → CLOSED. From RESOLVED the reporter may reopen →
-REOPENED (treated as active; behaves like IN_PROGRESS on the board).
-- **Claim** (OPEN/REOPENED → IN_PROGRESS): an MIS member "claims" a ticket, which in one action **assigns it to them, sets priority + a deadline, moves it to IN_PROGRESS**, writes a CLAIMED activity row, and notifies the reporter. Every path that moves a ticket Open → In Progress (per-row Claim button, board drag, All-Tickets status dropdown, and **bulk claim**) goes through this claim flow — a bare status change must never leave it unassigned.
+REOPENED (treated as active; behaves like IN_PROGRESS on the board). **Claiming
+and starting are two distinct steps** — a claimed ticket stays OPEN until it is
+explicitly started.
+- **Claim** (`claimTicket`): an MIS member takes ownership — **assigns the ticket to themselves and sets a priority**. It **stays OPEN** (NOT started/In Progress) and appears under "Assigned to Me". Writes a CLAIMED activity row. No deadline yet; the reporter is not notified (§8). The per-row Claim button, the detail action bar, and **bulk claim** all do this claim-only step. Never steals a ticket already claimed by someone else (§6).
+- **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date). This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
+- **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
 - Only the assignee/MIS may move to IN_PROGRESS/RESOLVED. Setting RESOLVED requires an assignee.
 - **Confirm resolved**: when the reporter confirms the fix, the ticket goes to **CLOSED permanently** (the "Did this resolve your issue?" prompt does not reappear).
 - Reopen is allowed only by the reporter or MIS_ADMIN. RESOLVED auto-CLOSES after 7 days if not reopened (spec'd; cron optional/stub).
-- Allowed transitions live in `lib/ticket-state.ts` (`STATUS_TRANSITIONS` / `canTransition`); enforce them server-side.
+- Allowed transitions live in `lib/ticket-state.ts` (`STATUS_TRANSITIONS` / `canTransition`); enforce them server-side. (OPEN → IN_PROGRESS is listed so the UI can offer it, but it's performed by `startTask`, never `updateStatus`.)
 
 ## 6. Roles & permissions
 | Action | USER | MIS_STAFF | MIS_ADMIN |
@@ -90,7 +94,9 @@ REOPENED (treated as active; behaves like IN_PROGRESS on the board).
 | Raise ticket | ✓ | ✓ | ✓ |
 | See own tickets | ✓ | ✓ | ✓ |
 | See all tickets / dashboard / board | ✗ | ✓ | ✓ |
-| Claim / assign / change status / priority / deadline | ✗ | ✓ | ✓ |
+| Claim (assign to self + priority; stays Open) | ✗ | ✓ | ✓ |
+| Start task (set deadline; Open → In Progress) — own claimed ticket | ✗ | ✓ | ✓ |
+| Change status / priority | ✗ | ✓ | ✓ |
 | Bulk claim | ✗ | ✓ | ✓ |
 | Take over a ticket assigned to someone else | ✗ | ✗ | ✓ |
 | Comment on a ticket they can see | ✓ | ✓ | ✓ |
@@ -119,7 +125,7 @@ provider ships now; a `whatsappProvider` implements the same interface as a no-o
 stub (wire real WhatsApp Business API later). Notification functions (all
 best-effort — a failed send never rolls back or throws to the caller):
 - `sendNewTicketNotification` — new ticket → in-app to the whole MIS team (triage).
-- `sendClaimNotification` — claimed → reporter (priority + ETA/deadline), in-app + email.
+- `sendClaimNotification` — **work started** → reporter (priority + ETA/deadline), in-app + email. Fired on **Start task** (or the combined claim & start), NOT on a plain claim — a claim that hasn't started yet is quiet.
 - `sendAssignmentNotification` — assigned → assignee, in-app + email.
 - `sendResolutionNotification` — RESOLVED/CLOSED → reporter ("please verify"), in-app + email.
 - `sendReopenNotification` — reopened → assignee, in-app + email.

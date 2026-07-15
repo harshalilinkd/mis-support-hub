@@ -75,18 +75,33 @@ export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
 
 export const claimTicketSchema = z.object({
   ticketId: z.string().uuid(),
-  // MIS sets these when they claim: the priority and an estimated resolution
-  // date (a "YYYY-MM-DD" string from a date input).
+  // On claim, MIS sets only the priority — the ticket stays OPEN and is assigned
+  // to them; the deadline is set later, when they Start the task (§5).
   priority: z.enum(PRIORITIES),
+  // Optional: a plain claim omits it (ticket stays OPEN). When present, it's the
+  // combined "claim & start" shortcut (board drag / status dropdown), which also
+  // starts work → IN_PROGRESS. A "YYYY-MM-DD" string from a date input.
   deadline: z
     .string()
     .trim()
-    .min(1, "Pick an estimated resolution date")
-    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+    .min(1, "Pick a valid date")
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date")
+    .optional(),
 });
 export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
 
-/** Claim several tickets in one go — each carries its own priority + deadline. */
+/** Start work on a claimed ticket — set the expected completion date (§5). */
+export const startTaskSchema = z.object({
+  ticketId: z.string().uuid(),
+  deadline: z
+    .string()
+    .trim()
+    .min(1, "Pick an expected completion date")
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+});
+export type StartTaskInput = z.infer<typeof startTaskSchema>;
+
+/** Claim several tickets in one go — each carries its own priority (stays OPEN). */
 export const bulkClaimSchema = z.object({
   items: z.array(claimTicketSchema).min(1, "Select at least one ticket"),
 });

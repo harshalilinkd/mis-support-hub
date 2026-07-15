@@ -2,19 +2,22 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Hand } from "lucide-react";
+import { CheckCircle2, Hand, Play } from "lucide-react";
 import { toast } from "sonner";
 
 import { updateStatus } from "@/lib/actions/tickets";
 import type { Status } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
 import { ClaimDialog } from "./claim-dialog";
+import { StartTaskDialog } from "./start-task-dialog";
 
 /**
- * MIS-only action bar on the ticket detail: one-click Claim (assign to me + start
- * work) and, once you're the assignee working on it, Mark resolved. A ticket
- * claimed by someone else is read-only here — that person owns it end-to-end
- * (§6 ownership lock); there is no take-over or reassignment.
+ * MIS-only action bar on the ticket detail, following the claim → start flow (§5):
+ *  1. Claim (assign to me + set priority) — the ticket stays Open.
+ *  2. Start task (set a deadline) — moves it to In Progress; work has started.
+ *  3. Mark resolved — once you're the assignee working on it.
+ * A ticket claimed by someone else is read-only here — that person owns it
+ * end-to-end (§6 ownership lock); there is no take-over or reassignment.
  */
 export function StaffTicketActions({
   ticketId,
@@ -37,6 +40,8 @@ export function StaffTicketActions({
   const done = status === "RESOLVED" || status === "CLOSED";
   const mine = assignedToId === currentUserId;
   const working = mine && (status === "IN_PROGRESS" || status === "REOPENED");
+  // Claimed by me but not started yet — sits Open, waiting for me to Start it.
+  const claimedNotStarted = mine && status === "OPEN";
   const claimedByOther = !!assignedToId && !mine;
 
   function act(
@@ -76,25 +81,41 @@ export function StaffTicketActions({
             <CheckCircle2 className="size-4" /> Mark resolved
           </Button>
         </>
+      ) : claimedNotStarted ? (
+        <>
+          <span className="text-sm text-text-muted">
+            You&apos;ve claimed this — set a deadline to start work.
+          </span>
+          <StartTaskDialog
+            ticketId={ticketId}
+            onDone={onMutate}
+            trigger={
+              <Button className="ml-auto" size="sm" disabled={pending}>
+                <Play className="size-4" /> Start task
+              </Button>
+            }
+          />
+        </>
       ) : claimedByOther ? (
         <span className="text-sm text-text-muted">
           {assignedToName ?? "Another staff member"}{" "}
           {status === "IN_PROGRESS" || status === "REOPENED"
             ? "is working on this ticket."
-            : "is assigned to this ticket."}{" "}
+            : "has claimed this ticket."}{" "}
           Only they can resolve it.
         </span>
       ) : (
         <>
           <span className="text-sm text-text-muted">
-            Pick this up to start working on it — it becomes yours to resolve.
+            Pick this up to set a priority — it becomes yours and stays Open until
+            you Start it.
           </span>
           <ClaimDialog
             ticketId={ticketId}
             onDone={onMutate}
             trigger={
               <Button className="ml-auto" size="sm" disabled={pending}>
-                <Hand className="size-4" /> Claim &amp; start
+                <Hand className="size-4" /> Claim
               </Button>
             }
           />

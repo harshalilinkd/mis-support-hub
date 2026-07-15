@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
@@ -25,22 +26,28 @@ export function StatusControl({
   ticketId,
   status,
   locked = false,
+  mine = false,
 }: {
   ticketId: string;
   status: Status;
   /** True when the ticket is claimed by someone else — render read-only (§6). */
   locked?: boolean;
+  /** True when the ticket is assigned to the current user (drives start vs claim). */
+  mine?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [claimOpen, setClaimOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
   const targets = STATUS_TRANSITIONS[status];
 
   function change(to: Status) {
-    // Open → In Progress = claim: open the priority/deadline dialog so the ticket
-    // is assigned to this member (mirrors the Claim button + board drag).
+    // Open → In Progress = start work (§5). If I've already claimed it, ask only
+    // for a deadline (Start task); if it's unassigned, this is the combined
+    // "claim & start" shortcut (priority + deadline).
     if (status === "OPEN" && to === "IN_PROGRESS") {
-      setClaimOpen(true);
+      if (mine) setStartOpen(true);
+      else setClaimOpen(true);
       return;
     }
     startTransition(async () => {
@@ -50,6 +57,14 @@ export function StatusControl({
       router.refresh();
     });
   }
+
+  // Label the Open → In Progress item by which step it triggers.
+  const label = (to: Status) =>
+    status === "OPEN" && to === "IN_PROGRESS"
+      ? mine
+        ? "Start task…"
+        : "Claim & start…"
+      : `Move to ${humanizeEnum(to)}`;
 
   // Read-only when locked (claimed by someone else) or terminal (no transitions).
   if (locked || targets.length === 0) return <StatusChip status={status} />;
@@ -72,17 +87,26 @@ export function StatusControl({
         <DropdownMenuContent align="start" onClick={stop}>
           {targets.map((s) => (
             <DropdownMenuItem key={s} onSelect={() => change(s)}>
-              Move to {humanizeEnum(s)}
+              {label(s)}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {/* Unassigned Open → In Progress: combined claim & start (priority + date). */}
       <ClaimDialog
         ticketId={ticketId}
         open={claimOpen}
         onOpenChange={setClaimOpen}
         onDone={() => setClaimOpen(false)}
+        withStart
+      />
+      {/* Already mine, Open → In Progress: just set a deadline to start. */}
+      <StartTaskDialog
+        ticketId={ticketId}
+        open={startOpen}
+        onOpenChange={setStartOpen}
+        onDone={() => setStartOpen(false)}
       />
     </>
   );

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, Lock } from "lucide-react";
+import { ArrowRight, Check, Lock, Play } from "lucide-react";
 import { toast } from "sonner";
 
 import { updateStatus } from "@/lib/actions/tickets";
@@ -10,12 +10,15 @@ import type { BoardTicketRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 
 /**
  * The mobile board's move control — a clear, full-width action button that names
- * the destination (there's no dragging on touch). Open → In Progress goes through
- * the claim dialog (priority + deadline); In Progress → Resolved is a direct
- * status change. It runs the same server actions and ownership rules as dragging.
+ * the action (there's no dragging on touch). Following the claim → start flow (§5):
+ * an unassigned Open ticket gets "Move to In Progress" (combined claim & start:
+ * priority + deadline); a ticket I've already claimed gets "Start task" (deadline);
+ * In Progress → Resolved is a direct status change. Same server actions and
+ * ownership rules as dragging.
  */
 export function BoardMoveControl({
   ticket,
@@ -27,16 +30,19 @@ export function BoardMoveControl({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [claimOpen, setClaimOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
 
   // Mirror ClaimButton / the board's drag rules exactly (§6 ownership lock).
   const done = ticket.status === "RESOLVED" || ticket.status === "CLOSED";
   const mine = ticket.assignedToId === currentUser.id;
-  const working =
-    mine && (ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED");
   const locked = !!(ticket.assignedToId && !mine);
-  // Claimable = unassigned (or already mine but not yet started). This also
-  // covers a REOPENED ticket that was left unassigned after a deactivation.
-  const canClaim = !done && !working && (!ticket.assignedToId || mine);
+  // Claimed by me but Open = ready to start (just needs a deadline).
+  const mineNotStarted = mine && ticket.status === "OPEN";
+  // Unassigned + active = claimable (also covers a REOPENED ticket left
+  // unassigned after a deactivation).
+  const unclaimed =
+    !ticket.assignedToId &&
+    (ticket.status === "OPEN" || ticket.status === "REOPENED");
 
   // Resolved / Closed sit in the last column — nothing to move from here.
   if (done) {
@@ -56,8 +62,33 @@ export function BoardMoveControl({
     );
   }
 
-  // Claim → In Progress (asks for priority + an estimated date).
-  if (canClaim) {
+  // Already mine, not started → Start task (asks for a completion date).
+  if (mineNotStarted) {
+    return (
+      <>
+        <Button
+          size="sm"
+          className="h-9 w-full"
+          onClick={() => setStartOpen(true)}
+        >
+          <Play className="size-4" />
+          Start task
+        </Button>
+        <StartTaskDialog
+          ticketId={ticket.id}
+          open={startOpen}
+          onOpenChange={setStartOpen}
+          onDone={() => {
+            setStartOpen(false);
+            router.refresh();
+          }}
+        />
+      </>
+    );
+  }
+
+  // Unassigned → claim & start in one move (asks for priority + a date).
+  if (unclaimed) {
     return (
       <>
         <Button
@@ -76,6 +107,7 @@ export function BoardMoveControl({
             setClaimOpen(false);
             router.refresh();
           }}
+          withStart
         />
       </>
     );
