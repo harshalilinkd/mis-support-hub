@@ -23,6 +23,7 @@ Sheet/AppSheet/Apps Script artifact, so "Sheet Link" is a first-class field.
 - File storage: Vercel Blob (`@vercel/blob`) — client-upload token flow.
 - Email: Resend (`resend`). In-app notifications persisted in Postgres + a Web-Audio chime.
 - Kanban drag-drop: `@dnd-kit/core` + `@dnd-kit/sortable`.
+- Dashboard charts: `recharts` (client components, styled with the design tokens). This is the chosen charting library — supersedes the earlier hand-built-SVG approach for the dashboard; see §10.
 - Toasts: `sonner`. Forms: `react-hook-form` + `zod`.
 Do NOT use Prisma, do NOT use an ORM other than Drizzle, do NOT store files in the DB.
 
@@ -153,6 +154,7 @@ language) — read it before any UI work. Load-bearing rules:
 - Status sub-tabs (Open / In Progress / Resolved / Closed) with count badges; the active tab is an accent-soft pill.
 - **Modals close only via the X / an explicit button** — backdrop click and Escape do NOT dismiss a form/detail modal (protects in-progress input); the image lightbox is the one opt-in exception.
 - Motion: pick the 3–4 effects in `design-system.md §8` and reuse them; respect `prefers-reduced-motion`. One optional generative accent (login + empty states) — subtle, deterministic, reduced-motion aware.
+- **Dashboard charts** use `recharts` (§2), not hand-built SVG — this supersedes design-system.md §10's hand-built-SVG default for the dashboard. The data-viz *rules* still hold: one shared axis (never dual-axis), colour from the design tokens only (cobalt accent + status/priority tokens, never raw hex), identity beyond colour (legend / direct labels), mono numerals, one card radius/shadow, a per-chart **skeleton + empty state**, and `prefers-reduced-motion` honoured (disable chart animation). The dashboard shows exactly six charts (created-vs-resolved area, status donut, department bar, priority-by-week stacked bar, avg-resolution line, aging columns) plus a sparkline per KPI card. Chart series are **derived in the page from existing queries** — charts never add schema/queries/actions. (`components/dashboard/flow-chart.tsx` remains the hand-built-SVG reference for anything outside the dashboard.)
 
 ## 11. How phases work
 Prompts are labelled P0–P9. UI-only phases must not touch schema/API. Schema phases
