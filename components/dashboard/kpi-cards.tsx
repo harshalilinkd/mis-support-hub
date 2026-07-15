@@ -9,6 +9,7 @@ import {
 
 import type { DashboardStats } from "@/lib/db/queries";
 import { CountUp } from "./count-up";
+import { KpiSparkline } from "./kpi-sparkline";
 
 function formatHours(hours: number): string {
   if (!hours) return "—";
@@ -17,12 +18,24 @@ function formatHours(hours: number): string {
   return `${(hours / 24).toFixed(1)}d`;
 }
 
+/** Daily trend series (one per card) that feed the sparklines — derived in the
+ *  dashboard page from the existing ticket list, aligned to the cards by key. */
+export type KpiSparks = {
+  open: number[];
+  inProgress: number[];
+  unassigned: number[];
+  resolvedLast7d: number[];
+  closed: number[];
+  avgResolution: number[];
+};
+
 function Kpi({
   label,
   value,
   sub,
   icon: Icon,
   tint,
+  spark,
   delay,
 }: {
   label: string;
@@ -30,12 +43,13 @@ function Kpi({
   sub: string;
   icon: React.ComponentType<{ className?: string }>;
   tint: string;
+  spark: number[];
   delay: number;
 }) {
   return (
     <div
       style={{ animationDelay: `${delay}ms` }}
-      className="enter-up group rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)] sm:p-5"
+      className="enter-up group flex flex-col rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)] sm:p-5"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-sm font-medium text-text-muted">
@@ -55,11 +69,21 @@ function Kpi({
         {value}
       </div>
       <div className="mt-2 truncate text-xs text-text-muted">{sub}</div>
+      {/* Sparkline — the card's metric over the recent window, tinted to match. */}
+      <div className="-mx-1 mt-3">
+        <KpiSparkline data={spark} color={tint} />
+      </div>
     </div>
   );
 }
 
-export function KpiCards({ stats }: { stats: DashboardStats }) {
+export function KpiCards({
+  stats,
+  sparks,
+}: {
+  stats: DashboardStats;
+  sparks: KpiSparks;
+}) {
   const cards = [
     {
       label: "Open",
@@ -67,6 +91,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "awaiting triage",
       icon: CircleDot,
       tint: "var(--status-open)",
+      spark: sparks.open,
     },
     {
       label: "In Progress",
@@ -74,6 +99,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "being worked on",
       icon: Loader2,
       tint: "var(--status-in-progress)",
+      spark: sparks.inProgress,
     },
     {
       label: "Unassigned",
@@ -81,6 +107,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "need an owner",
       icon: UserX,
       tint: "var(--priority-high)",
+      spark: sparks.unassigned,
     },
     {
       label: "Resolved · 7d",
@@ -88,6 +115,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "last 7 days",
       icon: CircleCheck,
       tint: "var(--status-resolved)",
+      spark: sparks.resolvedLast7d,
     },
     {
       label: "Closed",
@@ -95,6 +123,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "confirmed & done",
       icon: CheckCheck,
       tint: "var(--status-closed)",
+      spark: sparks.closed,
     },
     {
       label: "Avg resolution",
@@ -102,6 +131,7 @@ export function KpiCards({ stats }: { stats: DashboardStats }) {
       sub: "created → resolved",
       icon: Clock,
       tint: "var(--accent)",
+      spark: sparks.avgResolution,
     },
   ];
 

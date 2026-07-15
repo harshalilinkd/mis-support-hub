@@ -37,34 +37,44 @@ export function MyTicketsSkeleton() {
   );
 }
 
-/** /dashboard — KPI row + table rows. */
+/** /dashboard — KPI row (with sparklines) + six-chart bento. */
 export function DashboardSkeleton() {
+  // lg column spans mirroring the bento in the dashboard page.
+  const charts = [
+    "lg:col-span-4",
+    "lg:col-span-2",
+    "lg:col-span-3",
+    "lg:col-span-3",
+    "lg:col-span-4",
+    "lg:col-span-2",
+  ];
   return (
     <div className="space-y-6">
       <HeaderSkeleton />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className="rounded-[var(--radius-card)] border border-border bg-surface p-5"
-          >
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="mt-3 h-8 w-12" />
-          </div>
-        ))}
-      </div>
-      <Skeleton className="h-9 w-full max-w-xl" />
-      <div className="rounded-[var(--radius-card)] border border-border">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="flex items-center gap-4 border-b border-border p-3 last:border-0"
+            className="rounded-[var(--radius-card)] border border-border bg-surface p-4 sm:p-5"
           >
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 flex-1" />
-            <Skeleton className="size-6 rounded-full" />
-            <Skeleton className="h-5 w-20 rounded-full" />
-            <Skeleton className="h-5 w-16 rounded-full" />
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="size-8 rounded-[10px]" />
+            </div>
+            <Skeleton className="mt-3 h-7 w-12" />
+            <Skeleton className="mt-3 h-8 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+        {charts.map((span, i) => (
+          <div
+            key={i}
+            className={`rounded-[var(--radius-card)] border border-border bg-surface p-5 md:col-span-1 ${span}`}
+          >
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="mt-2 h-3 w-24" />
+            <Skeleton className="mt-4 h-[220px] w-full rounded-[var(--radius-input)]" />
           </div>
         ))}
       </div>
