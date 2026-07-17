@@ -239,3 +239,32 @@ export const REQUEST_ACTIVE_STATUSES: Status[] = [
 
 /** Days a RESOLVED ticket waits before auto-CLOSE (CLAUDE.md §5; cron in a later phase). */
 export const AUTO_CLOSE_DAYS = 7;
+
+/**
+ * May this actor log progress on a REQUEST? (§12.4 — "Add progress log: assignee".)
+ *
+ * ASSIGNEE-ONLY, with **no admin override** — deliberately narrower than the build
+ * actions beside it (`canBuild = isAdmin || (isStaff && isAssignee)`), which do let an
+ * admin act on anyone's build. A progress log is not an administrative act on the
+ * build; it is a first-person statement about it ("I got X done, it's 80% there").
+ * Someone who isn't building it cannot truthfully make that statement, and a log
+ * attributed to a non-builder makes the timeline lie about who knows what.
+ *
+ * This lives here, next to the transition gates, so the server action and the UI share
+ * ONE tested predicate rather than each carrying its own copy of the rule — the bug
+ * this replaces was exactly that drift (the composer and the action both allowed any
+ * admin, so a non-assignee could post "80%" on someone else's build).
+ *
+ * Progress logging is not a status transition, so it can't ride on canTransition.
+ */
+export function canLogProgress(
+  role: Role,
+  isAssignee: boolean,
+  status: Status
+): boolean {
+  const isStaffRole = role === "MIS_STAFF" || role === "MIS_ADMIN";
+  // There is nothing to report on before the build starts, and nothing to add once
+  // it's handed over for testing (§12.3).
+  if (status !== "IN_PROGRESS") return false;
+  return isStaffRole && isAssignee;
+}

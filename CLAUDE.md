@@ -269,6 +269,13 @@ Numbers are never computed from a row count.
 - `progress_logs`: id, ticket_id (fk cascade), author_id (fk), type
   (progress_log_type), body (text), percent_complete (int 0-100, nullable),
   created_at. Index on ticket_id.
+  **The request's CURRENT percent-complete is the newest log with a non-null
+  percent_complete — DERIVED, never stored.** Percent is the state of the REQUEST, not
+  of an entry: the detail shows ONE figure at the top ("Progress: 80% · updated by X"),
+  and `listRequests` derives the same value with a correlated subquery for the board
+  card. Do NOT add a `request_details.percent_complete` column: it would be a second
+  source of truth for one number, free to drift from the history it summarises. Entries
+  note the % they set inline, small — never a competing bar per entry.
 
 ### 12.3 REQUEST state machine
 SUBMITTED → UNDER_REVIEW (MIS_STAFF/ADMIN; internal discussion happens as comments)
@@ -308,13 +315,32 @@ a build is under way that nobody owns.
 | Claim + set priority + deadline | no | yes | yes |
 | Release own claim (Claimed-only; back to the approved pool) | no | yes (assignee) | yes (own claim only) |
 | Change an in-flight deadline | no | yes (assignee) | yes |
-| Add progress log | no | yes (assignee) | yes |
+| Add progress log | no | yes (assignee only) | yes (assignee only — no override) |
 | Mark complete (→ IN_TESTING) | no | yes (assignee) | yes |
 | Request changes (→ CHANGES_REQUESTED) | yes (requester only) | no | yes |
 | Accept & close | yes (requester only) | no | no |
 | Comment | yes | yes | yes |
 
 MIS may NEVER force-close a request. Only the requester's acceptance closes it.
+
+> **Why "Add progress log" has no admin override**, unlike every other build action
+> beside it (`canBuild = isAdmin || (isStaff && isAssignee)` lets an admin start,
+> complete or resume anyone's build). A progress log is not an administrative act on
+> the build — it is a **first-person claim about it** ("I got X done, it's 80% there").
+> Someone who isn't doing the work cannot truthfully make that claim, and a log
+> attributed to a non-builder makes the timeline lie about who knows what. Enforced by
+> `canLogProgress` in `lib/ticket-state.ts` — ONE unit-tested predicate shared by the
+> server action and the composer, because the bug it replaces was exactly those two
+> drifting apart (both allowed any admin, so a non-assignee posted "80%" on a build
+> another member had claimed).
+>
+> **ACCEPTED DEBT — no reassignment (`docs/known-issues/0003`).** If an assignee is
+> deactivated or demoted mid-build, nobody can log progress on that request: there is no
+> takeover or reassignment action (§12.3), release is assignee-locked AND CLAIMED-only,
+> and `setUserActive` deliberately releases only ISSUE tickets. The one escape is an
+> admin marking it complete (`markComplete` is `canBuild`, so an admin may). Known,
+> deliberate, unhit so far. **Do not "fix" it by restoring the admin override on
+> progress logs** — that re-introduces the bug above. The gap is assignment, not logging.
 
 ### 12.5 Full auditability (hard requirement)
 Every transition, claim, approval/rejection record, deadline change, progress log,

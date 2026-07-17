@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { Role, Status } from "@/lib/db/schema";
-import { assertStatusForType, canTransition } from "./ticket-state";
+import { assertStatusForType, canLogProgress, canTransition } from "./ticket-state";
 
 /**
  * Guardrail tests for the REQUEST state machine + §12.4 permissions (and a few
@@ -166,6 +166,30 @@ test("releasing a claim is assignee-locked and only before the build starts", ()
   assert.equal(canTransition("REQUEST", "CHANGES_REQUESTED", "APPROVED", ADMIN, true, true), false);
   // And releasing must never be a back door to the approval verdict itself.
   assert.equal(canTransition("REQUEST", "CLAIMED", "PENDING_MD_APPROVAL", ADMIN, false, true), false);
+});
+
+test("only the member building it can log progress — no admin override (§12.4)", () => {
+  // Regression: the composer AND addProgressLog both read
+  // `isAdmin || (isStaff && isAssignee)`, so any admin could post a first-person
+  // "80% done" on a build someone else was doing. Observed in production: a
+  // non-assignee logged 80% on a request another member had claimed.
+  assert.equal(canLogProgress(STAFF, true, "IN_PROGRESS"), true);
+  assert.equal(canLogProgress(ADMIN, true, "IN_PROGRESS"), true); // admin who claimed it
+
+  // The fix: not the assignee ⇒ no. Deliberately STRICTER than the build actions
+  // beside it, where an admin may act on anyone's build — you cannot truthfully
+  // report first-person progress on work you aren't doing.
+  assert.equal(canLogProgress(ADMIN, false, "IN_PROGRESS"), false);
+  assert.equal(canLogProgress(STAFF, false, "IN_PROGRESS"), false);
+  // A USER never logs progress, even if somehow flagged as the assignee.
+  assert.equal(canLogProgress(USER, true, "IN_PROGRESS"), false);
+
+  // Only while the build is actually running: nothing to report before it starts,
+  // nothing to add once it's handed over (§12.3).
+  for (const s of ["CLAIMED", "IN_TESTING", "CHANGES_REQUESTED", "CLOSED", "APPROVED"] as Status[]) {
+    assert.equal(canLogProgress(STAFF, true, s), false, `assignee must not log while ${s}`);
+    assert.equal(canLogProgress(ADMIN, true, s), false, `admin assignee must not log while ${s}`);
+  }
 });
 
 test("P11 lifecycle: submit → review → approval → approve/reject → revive", () => {

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { addProgressLog } from "@/lib/actions/requests";
 import type { RequestDetail } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
-import { isStaff } from "@/lib/roles";
+import { canLogProgress } from "@/lib/ticket-state";
 import { cn } from "@/lib/utils";
 import { PROGRESS_LOG_TYPES } from "@/lib/validators/ticket";
 import { AbsoluteTime } from "@/components/absolute-time";
@@ -45,33 +45,89 @@ export function RequestProgress({
   currentUser: SessionUser;
   onMutate?: () => void;
 }) {
-  const staff = isStaff(currentUser.role);
-  const isAdmin = currentUser.role === "MIS_ADMIN";
-  const canLog =
-    (isAdmin || (staff && request.assignedToId === currentUser.id)) &&
-    request.status === "IN_PROGRESS";
+  // ONE shared, unit-tested predicate (§12.4) — the same call the server makes.
+  // Assignee-only, no admin override: a progress log is a first-person claim about a
+  // build, so only the person doing it can make one. Keeping the rule here rather
+  // than re-deriving it locally is the point — the bug this replaces was the composer
+  // and the action drifting apart.
+  const canLog = canLogProgress(
+    currentUser.role,
+    request.assignedToId === currentUser.id,
+    request.status
+  );
 
   const logs = request.progressLogs;
   // Nothing to show and nothing to add — don't render an empty shell.
   if (!canLog && logs.length === 0) return null;
+
+  /**
+   * The CURRENT progress of the request — the single number of record.
+   *
+   * Derived from the newest log that reported a %, not stored on the request: the log
+   * history already IS that fact, and listRequests computes the same value for the
+   * board card. A stored column would be a second source of truth for one number,
+   * free to drift from the history it summarises — which is the ambiguity this
+   * section exists to remove. Logs arrive ordered by createdAt asc.
+   */
+  const latest = [...logs].reverse().find((l) => l.percentComplete != null) ?? null;
 
   return (
     <section>
       <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
         Progress
       </h2>
-      {canLog ? <ProgressComposer ticketId={request.id} onDone={onMutate} /> : null}
+
+      {latest ? <CurrentProgress log={latest} /> : null}
+
+      {canLog ? (
+        <div className={cn(latest && "mt-3")}>
+          <ProgressComposer ticketId={request.id} onDone={onMutate} />
+        </div>
+      ) : null}
 
       {logs.length === 0 ? (
         <p className="text-sm text-text-muted">No build updates logged yet.</p>
       ) : (
-        <ol className={cn("space-y-3", canLog && "mt-4")}>
+        <ol className={cn("space-y-3", (canLog || latest) && "mt-4")}>
           {logs.map((log) => (
             <ProgressEntry key={log.id} log={log} />
           ))}
         </ol>
       )}
     </section>
+  );
+}
+
+/**
+ * The one bar, the one number (§12.2). Percent-complete is the state of the REQUEST,
+ * not of a log entry — so it is stated once, at the top, attributed and timestamped.
+ * The entries below are history.
+ */
+function CurrentProgress({ log }: { log: LogRow }) {
+  const pct = log.percentComplete ?? 0;
+  return (
+    <div className="rounded-[var(--radius-input)] border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-sm font-medium text-foreground">Progress</span>
+        <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
+          {pct}%
+        </span>
+        <span className="text-xs text-text-muted">
+          · updated by {log.authorName ?? "the assignee"}{" "}
+          <AbsoluteTime date={log.createdAt} />
+        </span>
+      </div>
+      <div
+        className="mt-2 h-2 overflow-hidden rounded-full bg-surface-muted"
+        role="img"
+        aria-label={`${pct}% complete`}
+      >
+        <div
+          className="h-full rounded-full bg-[var(--primary)] transition-[width] duration-300 motion-reduce:transition-none"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -105,24 +161,19 @@ function ProgressEntry({ log }: { log: LogRow }) {
           <span className="font-medium text-foreground">{log.authorName ?? "Unknown"}</span>
           <AbsoluteTime date={log.createdAt} className="text-text-muted" />
           {log.percentComplete != null ? (
-            <span className="ml-auto font-mono font-medium tabular-nums text-foreground">
-              {log.percentComplete}%
+            <span
+              title="The figure this update reported at the time"
+              className="ml-auto font-mono tabular-nums text-text-muted"
+            >
+              set {log.percentComplete}%
             </span>
           ) : null}
         </div>
         <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground">{log.body}</p>
-        {log.percentComplete != null ? (
-          <div
-            className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-muted"
-            role="img"
-            aria-label={`${log.percentComplete}% complete`}
-          >
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${log.percentComplete}%`, backgroundColor: meta.color }}
-            />
-          </div>
-        ) : null}
+        {/* NO per-entry bar. The % an entry set is history — noted inline above, small.
+            One bar, one number, at the top of the section (§12.2): a bar per entry
+            competes with the current figure and leaves the reader guessing which one
+            is the request's actual state. */}
       </div>
     </li>
   );

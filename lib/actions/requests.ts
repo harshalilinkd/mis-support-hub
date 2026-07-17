@@ -21,7 +21,7 @@ import {
   sendRequestSubmittedNotification,
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
-import { canTransition } from "@/lib/ticket-state";
+import { canLogProgress, canTransition } from "@/lib/ticket-state";
 import {
   acceptRequestSchema,
   claimRequestSchema,
@@ -482,11 +482,17 @@ export async function addProgressLog(input: {
 
   const t = await loadRequest(parsed.data.ticketId);
   if (!t) return fail("Request not found.");
-  if (t.assignedTo !== user.id && user.role !== "MIS_ADMIN") {
-    return fail(`Only the assignee can log progress on ${t.number}.`);
-  }
+
+  // Status first, so "not started yet" reports as that rather than as a permission
+  // problem — the assignee themselves hits this branch before they start work.
   if (t.status !== "IN_PROGRESS") {
     return fail(`Log progress once the build is in progress (${t.number} is ${t.status}).`);
+  }
+  // The SAME predicate the composer renders on (§12.4) — assignee-only, NO admin
+  // override. Previously this read `t.assignedTo !== user.id && user.role !== "MIS_ADMIN"`,
+  // which let any admin post a first-person update on a build they weren't doing.
+  if (!canLogProgress(user.role, t.assignedTo === user.id, t.status)) {
+    return fail(`Only the member building ${t.number} can log progress on it.`);
   }
 
   await q.addProgressLogRow({
