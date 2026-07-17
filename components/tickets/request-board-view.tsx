@@ -24,7 +24,6 @@ import {
   markComplete,
   moveToReview,
   recordApprovalDecision,
-  resumeWork,
   reviveRequest,
   sendForApproval,
 } from "@/lib/actions/requests";
@@ -286,9 +285,11 @@ export function RequestBoardView({
         return recordApprovalDecision({ ticketId: r.id, decision: "REJECTED" });
       }
       if (to === "IN_PROGRESS") {
-        // Resuming after a revision needs nothing; STARTING needs a delivery date,
-        // which a drag can't supply — send them to the detail for that.
-        if (r.status === "CHANGES_REQUESTED") return resumeWork(r.id);
+        // Every way into this column goes through the detail. STARTING needs a
+        // delivery date a drag can't supply; RESUMING can't arrive here at all,
+        // because a CHANGES_REQUESTED card already sits in this column and the
+        // same-column guard above stops it — "Back in progress" on the detail
+        // does that job.
         return Promise.resolve({
           ok: false as const,
           error: "Open the request to start the build — you need to set a delivery date.",
@@ -322,7 +323,11 @@ export function RequestBoardView({
       overId === DROPPED_LANE
         ? ("DROPPED" as Status)
         : COLUMNS.find((c) => c.id === overId)?.target;
-    if (!to || to === r.status) return;
+    // "Did it actually move?" is a COLUMN question, not a status one. Two columns
+    // hold two statuses each (Approved holds CLAIMED, In progress holds
+    // CHANGES_REQUESTED), so comparing statuses let a drop onto the card's OWN
+    // column pass this guard and fire a real transition while the card never moved.
+    if (!to || columnFor(r.status) === overId) return;
     void runMove(r, to);
   }
 

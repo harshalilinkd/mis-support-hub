@@ -1607,12 +1607,19 @@ export async function claimRequestRow(args: {
  * Start the build: CLAIMED → IN_PROGRESS, committing to a delivery date. The date
  * lands here (not on claim) so a request mirrors an issue — claim takes ownership,
  * starting work is where the promise is made (§5/§12.3).
+ *
+ * `previousDeadline` is almost always null (claiming sets no date), but a date CAN
+ * already exist: "Change date" is offered while the build is still CLAIMED. When it
+ * does, this is a date MOVE, and the DEADLINE_SET row has to carry the old value
+ * like `updateRequestDeadlineRow` does — otherwise a slip is recorded as a
+ * first-time set.
  */
 export async function startWorkRow(args: {
   ticketId: string;
   actorId: string;
   from: Status;
   deadline: Date;
+  previousDeadline: Date | null;
 }) {
   assertStatusForType("REQUEST", "IN_PROGRESS");
   await db.batch([
@@ -1632,6 +1639,7 @@ export async function startWorkRow(args: {
       ticketId: args.ticketId,
       actorId: args.actorId,
       type: "DEADLINE_SET",
+      fromValue: args.previousDeadline ? args.previousDeadline.toISOString() : null,
       toValue: args.deadline.toISOString(),
     }),
   ]);

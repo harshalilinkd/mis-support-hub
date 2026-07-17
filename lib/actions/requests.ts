@@ -333,14 +333,22 @@ export async function startWork(input: {
     return fail(`Only the assignee can work on ${t.number}.`);
   }
 
+  // Usually null — claiming sets no date. But "Change date" is offered while the
+  // build is still CLAIMED, so a date may already have been promised; then this is
+  // a MOVE and both the audit row and the requester must hear the old one (§12.6).
+  const details = await q.getRequestDetailsRow(t.id);
+  const previous = details?.deadline ?? null;
+
   await q.startWorkRow({
     ticketId: t.id,
     actorId: user.id,
     from: t.status,
     deadline: new Date(parsed.data.deadline),
+    previousDeadline: previous,
   });
-  // First date the requester hears — same shape as a later change (never silent).
-  await sendRequestDeadlineChangedNotification(t.id, null);
+  // The requester always hears the date — a first set reads "targeted for X", a
+  // move reads "moved from X to Y". Never silent either way.
+  await sendRequestDeadlineChangedNotification(t.id, previous);
   revalidateRequestRoutes(t.number);
   return ok(undefined);
 }
