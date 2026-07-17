@@ -92,6 +92,13 @@
       "when": 1784270978795,
       "tag": "0012_light_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784276814719,
+      "tag": "0013_powerful_sinister_six",
+      "breakpoints": true
     }
   ]
 }

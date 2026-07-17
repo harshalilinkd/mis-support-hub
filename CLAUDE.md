@@ -373,3 +373,130 @@ only — the Resend email templates for these are not built yet.
   the issue lists/dashboard, and MIS could force-close a request through the ISSUE
   machine (IN_PROGRESS is shared). `getTicketById` is deliberately NOT type-filtered —
   the request actions call it and then check `type` themselves.
+
+## 13. Systems Repository module (ADDITIVE — new tables only)
+
+Central directory of every system the MIS team builds, so URLs aren't lost and
+searching is instant. Purely additive: it does NOT change issue/request logic, and no
+issue/request query, action, or state machine is touched by it.
+
+### 13.1 Enums
+- `system_type`: SHEET | APPS_SCRIPT | WEB_APP | OTHER
+- `system_status`: ACTIVE | DEPRECATED | ARCHIVED (default ACTIVE)
+
+Both are brand-new `CREATE TYPE`s on brand-new tables, so none of the
+`ALTER TYPE … ADD VALUE` caveats that applied to `status` in 0010 are in play.
+
+### 13.2 Tables (mirrors `lib/db/schema.ts`)
+- `systems`: id (uuid), **code (text, unique — 'SYS-001'; see §13.7)**, name,
+  system_type (enum), department (the EXISTING `department` enum — reused, never
+  redeclared), owner_id (fk users.id), frontend_url (text, **required, a real URL**),
+  backend_url (nullable), status (system_status, default ACTIVE), notes (nullable),
+  linked_ticket_id (fk tickets.id, nullable — set when logged from a REQUEST; **no
+  cascade**, deleting a ticket must never silently delete a directory entry),
+  logged_by (fk users.id), created_at, updated_at (`$onUpdate`). Indexes on code,
+  name, department, status.
+- `system_access_confirmations`: id, system_id (fk **cascade**), grantee_id (fk
+  access_grantees.id, nullable), **grantee_label (text — a SNAPSHOT of the name at
+  confirm time)**, confirmed (bool), confirmed_by (fk users.id), confirmed_at. One row
+  per active grantee per system. Index on system_id.
+  The label is snapshotted rather than joined so that renaming or deactivating a
+  grantee later cannot rewrite history.
+- `access_grantees` (config): id, **label (text, UNIQUE)**, is_active (bool, default
+  true), sort_order (int), created_at. Seeded with "Naushi Ma'am" (1) and "Raghav Sir"
+  (2) **by migration 0013**, idempotently (`ON CONFLICT (label) DO NOTHING`).
+  This table drives the required checklist — **never hardcode grantee names** in a
+  form, an action, or the seed script. Grantees are deactivated, never deleted.
+
+> **Why the grantee seed lives in the MIGRATION, not `lib/db/seed.ts`:** seed.ts is a
+> dev-only script (it creates `@example.com` users and is never run against
+> production). Grantees seeded only there would not exist in prod — and an EMPTY
+> `access_grantees` table silently voids §13.4, because "every active grantee has
+> confirmed = true" is **vacuously true over an empty set**. See §13.4.
+
+### 13.3 Permissions
+| Action | USER | MIS_STAFF | MIS_ADMIN |
+|---|---|---|---|
+| View + search the directory | ✓ (read-only) | ✓ | ✓ |
+| Create / edit / archive a system | ✗ | ✓ | ✓ |
+| Manage the `access_grantees` config | ✗ | ✗ | ✓ |
+
+Two deliberate departures worth knowing:
+- **The directory is company-wide readable.** Every other USER-facing read is
+  row-scoped (§6: `created_by = session.user.id`); this is the first authenticated
+  read-all surface, and it exposes frontend/backend URLs + notes across all four
+  departments. That is the point of a directory, but it IS a departure from §6.
+- **The MIS_STAFF / MIS_ADMIN split here is real, not nominal.** §12.1 notes MIS_STAFF
+  is retired from the admin role picker, but `adminBulkCreateUsers` still maps a
+  "staff" row to MIS_STAFF, so MIS_STAFF users are reachable in production. Do not
+  collapse the two tiers.
+
+There is **no soft delete** on `systems` (no `deleted_at`, no recycle bin) — §9's
+soft-delete rule is scoped to tickets. `status = ARCHIVED` is retirement, and a system
+is never hard-deleted.
+
+### 13.4 Compliance rule (hard requirement, server-enforced)
+A system cannot be created unless EVERY currently-active `access_grantee` has a
+confirmation row with `confirmed = true`. Re-fetch the active grantees server-side on
+every create; **never trust the client checkboxes** (their labels are ignored entirely —
+the snapshot is taken from the server's own row).
+
+**This is TWO checks, not one:**
+1. **Refuse when the active grantee list is EMPTY** — "No active access-grantees
+   configured — add at least one before logging a system". Without this the rule is
+   vacuous: a universally-quantified predicate over an empty set is true, so a
+   database with no grantees would wave every system through the very gate meant to
+   stop it. An empty checklist means the config is missing, not that everyone approved.
+2. Every active grantee present AND `confirmed = true`.
+
+The checklist is **self-attested**: it records confirmed_by + confirmed_at as the
+accountability trail. It does NOT verify Google sharing — that needs the Drive API and
+is explicitly out of scope (future work).
+
+The system row and its confirmation rows are written in ONE `db.batch` (neon-http has
+no interactive transactions, §2). The id is generated app-side (`crypto.randomUUID`)
+because a batch statement cannot read a previous statement's returned id — same
+pattern as `createRequestTicket`. A system row without its confirmations would be a
+non-compliant directory entry, which is exactly what §13.4 exists to prevent.
+
+### 13.5 Integration with REQUEST completion
+When a REQUEST is marked complete (`markComplete` → IN_TESTING), prompt the acting
+MIS member to log the built system, pre-filled (name = system_name, owner = assignee,
+department, linked_ticket_id = the ticket). A **soft prompt, never a hard block** on
+the request lifecycle — only the requester closes a request (§12.4). Completed/closed
+requests show a "system logged ✓ / not logged" flag so nothing slips.
+
+Two facts the implementation must respect:
+- **The actor is the assignee, not necessarily an admin.** `markComplete` is gated on
+  STAFF_ROLES and is normally called by the assignee (who may be MIS_STAFF). An
+  admin-only prompt would never fire for a staff member's own completed build.
+- **`markComplete` has TWO call sites.** The detail action bar opens a dialog, but the
+  request board also calls it directly on a drag into "Testing" with no dialog at all.
+  A prompt wired only into the detail is silently skipped on every board drag — decide
+  both call sites explicitly.
+
+### 13.6 Enforcement (as built)
+- `lib/validators/systems.ts` — zod; enum values mirrored as const tuples so a client
+  component never imports the DB driver (same convention as `lib/validators/user.ts`).
+  `frontend_url` is validated as a real URL (stricter than `tickets.sheet_link`, which
+  deliberately accepts a URL *or* a plain name), so the shared `isUrl` render guard
+  never meets a row it must downgrade to text.
+- `lib/actions/systems.ts` — every action re-checks permissions server-side via
+  `getCurrentUser()` + typed `fail()` (actions never use the redirect-based
+  `requireRole`, which is for pages).
+- `lib/db/queries.ts` — `systemCodeSql` is the ONE place a code is generated.
+
+### 13.7 Numbering (correct from day one)
+`systems.code` = `'SYS-' || lpad(n::text, greatest(3, length(n::text)), '0')` drawn
+from the `system_seq` sequence — a scalar subquery, so `nextval()` runs exactly once
+per insert. Unique; **never computed from a row count** (§9).
+
+The width is `greatest(3, length(n))`, i.e. pad to a MINIMUM of three digits, so it
+can never truncate: 1 → SYS-001, 999 → SYS-999, 1000 → SYS-1000, 12345 → SYS-12345.
+
+> This deliberately does NOT repeat the tracked MIS-/REQ- ceiling
+> (`docs/known-issues/0001`): `lpad(n, 3, '0')` TRUNCATES once the number outgrows the
+> pad width — `lpad('1000',3,'0')` → `'100'`, which then collides on the unique index.
+> `to_char(n, 'FM000')` is also wrong: it overflows to `'###'`. Both were verified
+> against Postgres before choosing this expression. **This new sequence is correct at
+> every scale; the ISSUE/REQUEST ceiling remains open and is tracked separately.**

@@ -66,6 +66,22 @@ export const progressLogTypeEnum = pgEnum("progress_log_type", [
   "BLOCKER",
 ]);
 
+// Systems Repository (§13.1). Brand-new enums on brand-new tables — additive, so
+// none of the ALTER TYPE ADD VALUE caveats that applied to `status` in 0010 apply.
+export const systemTypeEnum = pgEnum("system_type", [
+  "SHEET",
+  "APPS_SCRIPT",
+  "WEB_APP",
+  "OTHER",
+]);
+// ARCHIVED is retirement, NOT deletion — §13 has no soft-delete/recycle bin, so a
+// system is never hard-deleted (§13.3).
+export const systemStatusEnum = pgEnum("system_status", [
+  "ACTIVE",
+  "DEPRECATED",
+  "ARCHIVED",
+]);
+
 export type Role = (typeof roleEnum.enumValues)[number];
 export type Department = (typeof departmentEnum.enumValues)[number];
 export type TicketType = (typeof ticketTypeEnum.enumValues)[number];
@@ -73,6 +89,8 @@ export type Status = (typeof statusEnum.enumValues)[number];
 export type Priority = (typeof priorityEnum.enumValues)[number];
 export type MdDecision = (typeof mdDecisionEnum.enumValues)[number];
 export type ProgressLogType = (typeof progressLogTypeEnum.enumValues)[number];
+export type SystemType = (typeof systemTypeEnum.enumValues)[number];
+export type SystemStatus = (typeof systemStatusEnum.enumValues)[number];
 
 /** ticket_activity.type is stored as text (CLAUDE.md §4) but constrained in TS. */
 export const ACTIVITY_TYPES = [
@@ -153,6 +171,27 @@ export const ticketSeq = pgSequence("ticket_seq", {
   increment: 1,
 });
 export const requestSeq = pgSequence("request_seq", {
+  startWith: 1,
+  increment: 1,
+});
+
+/**
+ * Systems Repository sequence (§13.7). Feeds `systems.code` = 'SYS-001', 'SYS-002'…
+ *
+ * Unlike ticket_seq / request_seq, this one is CORRECT PAST 999 by construction. The
+ * MIS-/REQ- ceiling (docs/known-issues/0001) comes from `lpad(n,3,'0')`, which
+ * TRUNCATES once the number outgrows the pad width — lpad('1000',3,'0') → '100',
+ * which then collides with SYS-100 on the unique index. The code expression here
+ * pads to a MINIMUM of 3 instead:
+ *
+ *   lpad(n::text, greatest(3, length(n::text)), '0')
+ *
+ * → 1 → '001', 999 → '999', 1000 → '1000', 12345 → '12345'. Never truncates, because
+ * the width is never smaller than the string. (Verified against Postgres. Note
+ * `to_char(n, 'FM000')` is the tempting alternative and is WRONG — it overflows to
+ * '###' past 999.) See systemCodeSql in lib/db/queries.ts — the one place it lives.
+ */
+export const systemSeq = pgSequence("system_seq", {
   startWith: 1,
   increment: 1,
 });
@@ -432,6 +471,102 @@ export const notifications = pgTable(
 );
 
 /* ------------------------------------------------------------------ *
+ * Systems Repository (§13) — purely additive. A directory of every system MIS
+ * builds, so URLs aren't lost. Nothing here touches issue/request logic.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The directory row. `code` ('SYS-001') is the human-readable handle and the
+ * deep-link key — drawn from system_seq, never from a row count (§9).
+ */
+export const systems = pgTable(
+  "systems",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull().unique(),
+    name: text("name").notNull(),
+    systemType: systemTypeEnum("system_type").notNull(),
+    department: departmentEnum("department").notNull(),
+    // Who owns the system day-to-day (not necessarily who logged it).
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id),
+    frontendUrl: text("frontend_url").notNull(),
+    backendUrl: text("backend_url"),
+    status: systemStatusEnum("status").notNull().default("ACTIVE"),
+    notes: text("notes"),
+    // Set when the system was logged off the back of a REQUEST (§13.5). No cascade:
+    // deleting a ticket must never silently delete the directory entry.
+    linkedTicketId: uuid("linked_ticket_id").references(() => tickets.id),
+    loggedBy: uuid("logged_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("systems_code_idx").on(t.code),
+    index("systems_name_idx").on(t.name),
+    index("systems_department_idx").on(t.department),
+    index("systems_status_idx").on(t.status),
+  ]
+);
+
+/**
+ * The self-attested access checklist (§13.4). One row per active grantee per system,
+ * written in the SAME batch as the system itself.
+ *
+ * `granteeLabel` is a SNAPSHOT of the name at confirm time, deliberately not a join:
+ * renaming or deactivating a grantee later must not rewrite history. `granteeId`
+ * is kept alongside it for integrity, but the label is the record.
+ *
+ * This attests that a human ticked a box — it does NOT verify Google sharing (that
+ * needs the Drive API; explicitly out of scope). The accountability trail is
+ * confirmed_by + confirmed_at.
+ */
+export const systemAccessConfirmations = pgTable(
+  "system_access_confirmations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    systemId: uuid("system_id")
+      .notNull()
+      .references(() => systems.id, { onDelete: "cascade" }),
+    granteeId: uuid("grantee_id").references(() => accessGrantees.id),
+    granteeLabel: text("grantee_label").notNull(),
+    confirmed: boolean("confirmed").notNull().default(false),
+    confirmedBy: uuid("confirmed_by")
+      .notNull()
+      .references(() => users.id),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("system_access_confirmations_system_id_idx").on(t.systemId)]
+);
+
+/**
+ * Admin-managed config driving the required checklist (§13.2/§13.3). Grantee names
+ * are NEVER hardcoded in a form or an action — they are read from here.
+ *
+ * `label` is unique so the migration seed can be idempotent (ON CONFLICT DO NOTHING).
+ * Rows are deactivated, never deleted, so old confirmations keep their referent.
+ */
+export const accessGrantees = pgTable(
+  "access_grantees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    label: text("label").notNull().unique(),
+    isActive: boolean("is_active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("access_grantees_is_active_idx").on(t.isActive)]
+);
+
+/* ------------------------------------------------------------------ *
  * Inferred row types
  * ------------------------------------------------------------------ */
 export type User = typeof users.$inferSelect;
@@ -450,3 +585,9 @@ export type ProgressLog = typeof progressLogs.$inferSelect;
 export type NewProgressLog = typeof progressLogs.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
+export type SystemRow = typeof systems.$inferSelect;
+export type NewSystemRow = typeof systems.$inferInsert;
+export type SystemAccessConfirmation = typeof systemAccessConfirmations.$inferSelect;
+export type NewSystemAccessConfirmation = typeof systemAccessConfirmations.$inferInsert;
+export type AccessGrantee = typeof accessGrantees.$inferSelect;
+export type NewAccessGrantee = typeof accessGrantees.$inferInsert;

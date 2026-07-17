@@ -31,6 +31,11 @@ import {
   ticketComments,
   tickets,
   users,
+  type SystemStatus,
+  type SystemType,
+  accessGrantees,
+  systemAccessConfirmations,
+  systems,
 } from "./schema";
 import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
 import { assertStatusForType } from "@/lib/ticket-state";
@@ -1893,3 +1898,280 @@ export async function markAllNotificationsRead(userId: string) {
 }
 
 export type NotificationRow = Awaited<ReturnType<typeof listNotifications>>[number];
+
+/* ------------------------------------------------------------------ *
+ * Systems Repository (§13) — additive; nothing here touches issue/request reads.
+ * ------------------------------------------------------------------ */
+
+const ownerUser = alias(users, "system_owner");
+const loggerUser = alias(users, "system_logger");
+const confirmerUser = alias(users, "system_confirmer");
+const linkedTicket = alias(tickets, "linked_ticket");
+
+/**
+ * The ONE place systems.code is generated (§13.7). Draws from system_seq and pads to
+ * a MINIMUM of three digits — `greatest(3, length(...))` means the width is never
+ * smaller than the number, so it can never truncate.
+ *
+ * This is deliberately NOT `lpad(n, 3, '0')`: that is the tracked MIS-/REQ- ceiling
+ * (docs/known-issues/0001), where lpad('1000',3,'0') -> '100' collides with SYS-100 on
+ * the unique index once the sequence passes 999. `to_char(n,'FM000')` is also wrong —
+ * it overflows to '###'. Never compute a code from a row count (§9).
+ *
+ * A scalar subquery, so nextval() is evaluated exactly ONCE per insert.
+ */
+const systemCodeSql = sql<string>`(
+  select 'SYS-' || lpad(n::text, greatest(3, length(n::text)), '0')
+  from (select nextval('system_seq') as n) s
+)`;
+
+export type CreateSystemArgs = {
+  name: string;
+  systemType: SystemType;
+  department: Department;
+  ownerId: string;
+  frontendUrl: string;
+  backendUrl?: string | null;
+  notes?: string | null;
+  linkedTicketId?: string | null;
+  loggedBy: string;
+  /** Already validated against the live active grantee set by the caller (§13.4). */
+  confirmations: { granteeId: string; granteeLabel: string }[];
+};
+
+/**
+ * Insert a system plus its full access checklist in ONE db.batch (§13.4).
+ *
+ * The id is generated app-side (crypto.randomUUID) rather than by the DB, because
+ * db.batch hands the driver an array of pre-built statements — statement N+1 cannot
+ * read statement N's returned id. Same pattern as createRequestTicket. Batching
+ * matters here: a system row without its confirmation rows is a non-compliant entry
+ * in the directory, which is precisely what §13.4 exists to prevent.
+ */
+export async function createSystemRow(args: CreateSystemArgs) {
+  const id = crypto.randomUUID();
+  const [rows] = await db.batch([
+    db
+      .insert(systems)
+      .values({
+        id,
+        code: systemCodeSql,
+        name: args.name,
+        systemType: args.systemType,
+        department: args.department,
+        ownerId: args.ownerId,
+        frontendUrl: args.frontendUrl,
+        backendUrl: args.backendUrl ?? null,
+        notes: args.notes ?? null,
+        linkedTicketId: args.linkedTicketId ?? null,
+        loggedBy: args.loggedBy,
+      })
+      .returning(),
+    ...args.confirmations.map((c) =>
+      db.insert(systemAccessConfirmations).values({
+        systemId: id,
+        granteeId: c.granteeId,
+        // Snapshot: renaming the grantee later must not rewrite this record.
+        granteeLabel: c.granteeLabel,
+        confirmed: true,
+        confirmedBy: args.loggedBy,
+      })
+    ),
+  ]);
+  return rows[0];
+}
+
+/** Patch a system. `updatedAt` is bumped by the schema's $onUpdate (drizzle-side). */
+export async function updateSystemRow(
+  id: string,
+  patch: {
+    name?: string;
+    systemType?: SystemType;
+    department?: Department;
+    ownerId?: string;
+    frontendUrl?: string;
+    backendUrl?: string | null;
+    notes?: string | null;
+    status?: SystemStatus;
+  }
+) {
+  const [row] = await db.update(systems).set(patch).where(eq(systems.id, id)).returning();
+  return row ?? null;
+}
+
+/** Retire a system. §13 has no hard delete — ARCHIVED is the terminal state. */
+export async function archiveSystemRow(id: string) {
+  const [row] = await db
+    .update(systems)
+    .set({ status: "ARCHIVED" })
+    .where(eq(systems.id, id))
+    .returning();
+  return row ?? null;
+}
+
+export async function getSystemById(id: string) {
+  const [row] = await db.select().from(systems).where(eq(systems.id, id)).limit(1);
+  return row ?? null;
+}
+
+export type SystemFilters = {
+  search?: string;
+  department?: Department;
+  systemType?: SystemType;
+  status?: SystemStatus;
+  ownerId?: string;
+};
+
+/**
+ * The directory list. Readable by ANY authenticated user (§13.3) — deliberately not
+ * row-scoped the way tickets are (§6), because a directory nobody can search is
+ * pointless. Text search spans name + code.
+ */
+export async function listSystems(filters: SystemFilters = {}) {
+  const conds: SQL[] = [];
+  if (filters.department) conds.push(eq(systems.department, filters.department));
+  if (filters.systemType) conds.push(eq(systems.systemType, filters.systemType));
+  if (filters.status) conds.push(eq(systems.status, filters.status));
+  if (filters.ownerId) conds.push(eq(systems.ownerId, filters.ownerId));
+  const search = filters.search?.trim();
+  if (search) {
+    const like = `%${search}%`;
+    conds.push(or(ilike(systems.name, like), ilike(systems.code, like))!);
+  }
+
+  return db
+    .select({
+      id: systems.id,
+      code: systems.code,
+      name: systems.name,
+      systemType: systems.systemType,
+      department: systems.department,
+      status: systems.status,
+      frontendUrl: systems.frontendUrl,
+      backendUrl: systems.backendUrl,
+      createdAt: systems.createdAt,
+      updatedAt: systems.updatedAt,
+      ownerId: systems.ownerId,
+      ownerName: ownerUser.name,
+      ownerImage: ownerUser.image,
+      // The REQUEST this was built for, when it came from one (§13.5).
+      linkedTicketId: systems.linkedTicketId,
+      linkedTicketNumber: linkedTicket.number,
+    })
+    .from(systems)
+    .leftJoin(ownerUser, eq(systems.ownerId, ownerUser.id))
+    .leftJoin(linkedTicket, eq(systems.linkedTicketId, linkedTicket.id))
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(desc(systems.updatedAt));
+}
+
+export type SystemListRow = Awaited<ReturnType<typeof listSystems>>[number];
+
+/** Full detail for the deep link /systems/[code] — owner, logger, linked REQ, checklist. */
+export async function getSystemByCode(code: string) {
+  const [row] = await db
+    .select({
+      id: systems.id,
+      code: systems.code,
+      name: systems.name,
+      systemType: systems.systemType,
+      department: systems.department,
+      status: systems.status,
+      frontendUrl: systems.frontendUrl,
+      backendUrl: systems.backendUrl,
+      notes: systems.notes,
+      createdAt: systems.createdAt,
+      updatedAt: systems.updatedAt,
+      ownerId: systems.ownerId,
+      ownerName: ownerUser.name,
+      ownerImage: ownerUser.image,
+      loggedById: systems.loggedBy,
+      loggedByName: loggerUser.name,
+      linkedTicketId: systems.linkedTicketId,
+      linkedTicketNumber: linkedTicket.number,
+      linkedTicketTitle: linkedTicket.title,
+    })
+    .from(systems)
+    .leftJoin(ownerUser, eq(systems.ownerId, ownerUser.id))
+    .leftJoin(loggerUser, eq(systems.loggedBy, loggerUser.id))
+    .leftJoin(linkedTicket, eq(systems.linkedTicketId, linkedTicket.id))
+    .where(eq(systems.code, code))
+    .limit(1);
+  if (!row) return null;
+
+  const confirmations = await db
+    .select({
+      id: systemAccessConfirmations.id,
+      granteeId: systemAccessConfirmations.granteeId,
+      granteeLabel: systemAccessConfirmations.granteeLabel,
+      confirmed: systemAccessConfirmations.confirmed,
+      confirmedAt: systemAccessConfirmations.confirmedAt,
+      confirmedById: systemAccessConfirmations.confirmedBy,
+      confirmedByName: confirmerUser.name,
+    })
+    .from(systemAccessConfirmations)
+    .leftJoin(confirmerUser, eq(systemAccessConfirmations.confirmedBy, confirmerUser.id))
+    .where(eq(systemAccessConfirmations.systemId, row.id))
+    .orderBy(asc(systemAccessConfirmations.granteeLabel));
+
+  return { ...row, confirmations };
+}
+
+export type SystemDetail = NonNullable<Awaited<ReturnType<typeof getSystemByCode>>>;
+
+/** Is this REQUEST already in the directory? Drives the §13.5 "system logged" flag. */
+export async function getSystemForTicket(ticketId: string) {
+  const [row] = await db
+    .select({ id: systems.id, code: systems.code, name: systems.name })
+    .from(systems)
+    .where(eq(systems.linkedTicketId, ticketId))
+    .limit(1);
+  return row ?? null;
+}
+
+/* ---------------------------- access grantees ---------------------------- */
+
+/** The required checklist (§13.2). Config-driven — grantee names are never hardcoded. */
+export async function listActiveGranteesRow() {
+  return db
+    .select()
+    .from(accessGrantees)
+    .where(eq(accessGrantees.isActive, true))
+    .orderBy(asc(accessGrantees.sortOrder), asc(accessGrantees.label));
+}
+
+/** Every grantee incl. deactivated — for the admin config screen. */
+export async function listAllGranteesRow() {
+  return db
+    .select()
+    .from(accessGrantees)
+    .orderBy(asc(accessGrantees.sortOrder), asc(accessGrantees.label));
+}
+
+/**
+ * Add a grantee. Re-activates an existing label rather than colliding on the unique
+ * index — that's the natural admin gesture after deactivating someone by mistake.
+ */
+export async function addGranteeRow(label: string) {
+  const [maxRow] = await db
+    .select({
+      max: sql<number>`coalesce(max(${accessGrantees.sortOrder}), 0)`.mapWith(Number),
+    })
+    .from(accessGrantees);
+  const [row] = await db
+    .insert(accessGrantees)
+    .values({ label, sortOrder: (maxRow?.max ?? 0) + 1 })
+    .onConflictDoUpdate({ target: accessGrantees.label, set: { isActive: true } })
+    .returning();
+  return row ?? null;
+}
+
+/** Deactivate, never delete — existing confirmations must keep their referent. */
+export async function deactivateGranteeRow(id: string) {
+  const [row] = await db
+    .update(accessGrantees)
+    .set({ isActive: false })
+    .where(eq(accessGrantees.id, id))
+    .returning();
+  return row ?? null;
+}

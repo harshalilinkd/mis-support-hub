@@ -18,6 +18,9 @@ import { drizzle } from "drizzle-orm/neon-http";
 
 import * as schema from "./schema";
 import {
+  accessGrantees,
+  systemAccessConfirmations,
+  systems,
   progressLogs,
   requestDetails,
   ticketActivity,
@@ -153,6 +156,58 @@ async function logProgress(
       toValue: type,
     }),
   ]);
+}
+
+/**
+ * Log a system + its full access checklist (§13.4), mirroring createSystemRow in
+ * lib/db/queries.ts: app-side uuid + ONE db.batch, and the same never-truncating
+ * code expression (pads to a MINIMUM of 3 — NOT lpad(n,3,'0'), which is the tracked
+ * MIS-/REQ- ceiling bug).
+ */
+async function createSystemSeed(args: {
+  name: string;
+  systemType: "SHEET" | "APPS_SCRIPT" | "WEB_APP" | "OTHER";
+  department: "LINKD" | "LD_SILK_MILLS" | "VHAGAR" | "LD_COTTON_MILLS";
+  ownerId: string;
+  frontendUrl: string;
+  backendUrl: string | null;
+  notes: string | null;
+  linkedTicketId: string | null;
+  loggedBy: string;
+  grantees: { id: string; label: string }[];
+}) {
+  const id = crypto.randomUUID();
+  const [rows] = await db.batch([
+    db
+      .insert(systems)
+      .values({
+        id,
+        code: sql`(
+          select 'SYS-' || lpad(n::text, greatest(3, length(n::text)), '0')
+          from (select nextval('system_seq') as n) s
+        )`,
+        name: args.name,
+        systemType: args.systemType,
+        department: args.department,
+        ownerId: args.ownerId,
+        frontendUrl: args.frontendUrl,
+        backendUrl: args.backendUrl,
+        notes: args.notes,
+        linkedTicketId: args.linkedTicketId,
+        loggedBy: args.loggedBy,
+      })
+      .returning(),
+    ...args.grantees.map((g) =>
+      db.insert(systemAccessConfirmations).values({
+        systemId: id,
+        granteeId: g.id,
+        granteeLabel: g.label,
+        confirmed: true,
+        confirmedBy: args.loggedBy,
+      })
+    ),
+  ]);
+  return rows[0];
 }
 
 async function main() {
@@ -332,6 +387,64 @@ async function main() {
     console.log(`  ✓ requests: ${r1.number} (PENDING_MD_APPROVAL), ${r2.number} (IN_PROGRESS + logs)`);
   } else {
     console.log("  • request tickets already present — skipping request seed.");
+  }
+
+  // --- Systems Repository (§13): 2 fully-confirmed sample systems ---
+  // Grantee labels are read from the DB, never hardcoded here (§13.2) — the two
+  // rows come from migration 0013. If the migration hasn't been applied yet the
+  // list is empty, and we skip rather than write a non-compliant system.
+  const grantees = await db
+    .select()
+    .from(accessGrantees)
+    .where(eq(accessGrantees.isActive, true));
+
+  const existingSystems = await db.select({ id: systems.id }).from(systems).limit(1);
+  if (grantees.length === 0) {
+    console.log(
+      "  • access_grantees is empty — apply migration 0013 first, skipping the systems seed."
+    );
+  } else if (existingSystems.length > 0) {
+    console.log("  • systems already present — skipping the systems seed.");
+  } else {
+    // Link one sample to a real REQUEST so the directory's linked-REQ join has data.
+    const [someRequest] = await db
+      .select({ id: tickets.id, number: tickets.number })
+      .from(tickets)
+      .where(eq(tickets.type, "REQUEST"))
+      .limit(1);
+
+    const s1 = await createSystemSeed({
+      name: "Purchase Order System",
+      systemType: "WEB_APP",
+      department: "LINKD",
+      ownerId: staff.id,
+      frontendUrl: "https://po.example.com/app",
+      backendUrl: "https://console.cloud.google.com/apps-script/po-backend",
+      notes: "Replaces the shared PO sheet. Approval flow + supplier emails.",
+      linkedTicketId: someRequest?.id ?? null,
+      loggedBy: admin.id,
+      grantees,
+    });
+
+    const s2 = await createSystemSeed({
+      name: "VHAGAR Production Entry Sheet",
+      systemType: "SHEET",
+      department: "VHAGAR",
+      ownerId: admin.id,
+      frontendUrl:
+        "https://docs.google.com/spreadsheets/d/1exampleVHAGARproductionsheet/edit",
+      backendUrl: null,
+      notes: "Daily production entry; feeds the master sheet via an Apps Script trigger.",
+      linkedTicketId: null,
+      loggedBy: staff.id,
+      grantees,
+    });
+
+    console.log(
+      `  ✓ systems: ${s1.code} (${grantees.length} confirmations${
+        someRequest ? `, linked to ${someRequest.number}` : ""
+      }), ${s2.code}`
+    );
   }
 
   console.log("Seed complete.");
