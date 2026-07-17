@@ -96,6 +96,13 @@ export const releaseTicketSchema = z.object({
 });
 export type ReleaseTicketInput = z.infer<typeof releaseTicketSchema>;
 
+/** Undo a request claim — the assignee sends their claimed-but-not-started build
+ * back to the approved pool (§12.3). Assignee-locked in the action; body is the id. */
+export const releaseRequestSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+export type ReleaseRequestInput = z.infer<typeof releaseRequestSchema>;
+
 export const claimTicketSchema = z.object({
   ticketId: z.string().uuid(),
   // On claim, MIS sets only the priority — the ticket stays OPEN and is assigned

@@ -37,6 +37,8 @@ function describe(a: ActivityRow): string {
       return `${actor} revived the request`;
     case "CLAIMED":
       return `${actor} claimed the build`;
+    case "UNCLAIMED":
+      return `${actor} released the claim — back to the approved pool`;
     case "DEADLINE_SET":
       return a.toValue ? `${actor} set delivery for ${formatDue(a.toValue)}` : `${actor} set a delivery date`;
     case "STARTED":

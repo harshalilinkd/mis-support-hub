@@ -243,6 +243,19 @@ CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (
 uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
 illegal and rejected server-side.
 
+**Release / undo a claim** (`releaseRequest`, CLAIMED → APPROVED): the mis-claim
+escape hatch, mirroring the ISSUE release (§5). The assignee sends a build they
+claimed by mistake **back to the approved pool** — clears assigned_to, priority,
+claimed_by/claimed_at and any deadline, so it looks exactly as it did on approval and
+is claimable again. Writes an UNCLAIMED activity row. **Assignee-locked** — even an
+MIS_ADMIN may release only a build assigned to themselves, never someone else's claim
+(deliberately stricter than the build steps: an admin may work anyone's build, but
+taking one off a colleague is a takeover, not an undo). Allowed **only while CLAIMED**:
+once started, a delivery date has been promised to the requester, so it's no longer a
+quiet correction. **Unlike an ISSUE release, this one notifies** — the claim already
+told the requester someone picked it up (§12.6), so silence would leave them believing
+a build is under way that nobody owns.
+
 ### 12.4 REQUEST permissions
 | Action | Requester (USER) | MIS_STAFF | MIS_ADMIN |
 |---|---|---|---|
@@ -253,6 +266,7 @@ illegal and rejected server-side.
 | Record approval/rejection (on MD's behalf) | no | no | yes |
 | Revive a DROPPED request | no | no | yes |
 | Claim + set priority + deadline | no | yes | yes |
+| Release own claim (Claimed-only; back to the approved pool) | no | yes (assignee) | yes (own claim only) |
 | Change an in-flight deadline | no | yes (assignee) | yes |
 | Add progress log | no | yes (assignee) | yes |
 | Mark complete (→ IN_TESTING) | no | yes (assignee) | yes |
@@ -275,7 +289,11 @@ increment is also an activity row, so every attempt is timestamped.
 - REQUEST_PENDING_APPROVAL → MIS_ADMINs (they record the decision)
 - REQUEST_DECISION_RECORDED → requester + MIS team (approved or dropped; include the
   remark when present)
-- REQUEST_CLAIMED → requester ("{member} is now building {number}, deadline {date}")
+- REQUEST_CLAIMED → requester ("{member} has picked up {number}"; the date follows at
+  start-work, so a claim promises no ETA)
+- **REQUEST_RELEASED → requester** (the claim was undone — "{number} is back in the
+  queue, still approved"). A release is NOT silent, precisely because the claim wasn't:
+  leaving the "picked up" notice standing would misinform the requester.
 - **REQUEST_DEADLINE_CHANGED → requester** (the assignee moved an in-flight delivery
   date — a deadline change is never silent)
 - REQUEST_PROGRESS → requester (in-app by default)

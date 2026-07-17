@@ -517,6 +517,31 @@ export async function sendRequestClaimedNotification(ticketId: string): Promise<
 }
 
 /**
+ * Claim undone → the requester ("it's back in the queue"). The claim already told
+ * them "{member} has picked up {number}", so silence here would leave them believing
+ * a build is under way that nobody owns. Best-effort like every other notify (§8).
+ */
+export async function sendRequestReleasedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "REQUEST_RELEASED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} is back in the queue`,
+      body: `${ticket.title}\nIt's still approved — another MIS member will pick it up.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestReleasedNotification]", e);
+  }
+}
+
+/**
  * Delivery date set or moved → the requester. Fired when the assignee starts work
  * (first date, `previous` = null) and on every later change — a delivery date is
  * never silent (P12).

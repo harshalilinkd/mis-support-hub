@@ -48,6 +48,7 @@ const ACTIVITY_TEXT: Record<string, string> = {
   DROPPED: "dropped the request",
   REVIVED: "revived the request",
   CLAIMED: "claimed the build",
+  UNCLAIMED: "released the claim",
   DEADLINE_SET: "set the delivery date",
   STARTED: "started building",
   MARKED_COMPLETE: "marked the build complete",

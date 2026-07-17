@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Send,
   ThumbsUp,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +16,7 @@ import {
   markComplete,
   moveToReview,
   recordApprovalDecision,
+  releaseRequest,
   resumeWork,
   reviveRequest,
   sendForApproval,
@@ -114,6 +116,24 @@ export function RequestActions({
     buttons.push(
       <Button key="start" size="sm" disabled={pending} onClick={() => setDialog("start")}>
         <PlayCircle className="size-4" /> Start building
+      </Button>
+    );
+  }
+  // Release is ASSIGNEE-LOCKED, not canBuild: an admin may start/work any build but
+  // may only undo a claim they made themselves (§12.4). Offering it any wider would
+  // dangle a button the server rejects.
+  if (s === "CLAIMED" && staff && isAssignee) {
+    buttons.push(
+      <Button
+        key="release"
+        size="sm"
+        variant="outline"
+        disabled={pending}
+        onClick={() =>
+          run("Released — it's back in the approved pool", () => releaseRequest(request.id))
+        }
+      >
+        <Undo2 className="size-4" /> Release
       </Button>
     );
   }

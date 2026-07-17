@@ -1604,6 +1604,35 @@ export async function claimRequestRow(args: {
 }
 
 /**
+ * Undo a claim: CLAIMED → APPROVED, returning the build to the approved pool in one
+ * batch (mirrors `releaseTicketRow` for issues, §5). Clears the assignee, the
+ * priority, the claim record and any deadline, so the request looks exactly as it
+ * did the moment it was approved and is claimable again. Writes an UNCLAIMED
+ * activity row. The caller enforces staff + the assignee lock (§12.4) and that the
+ * build hasn't started.
+ */
+export async function releaseRequestRow(args: { ticketId: string; actorId: string }) {
+  assertStatusForType("REQUEST", "APPROVED");
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: "APPROVED", assignedTo: null, priority: null })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ claimedBy: null, claimedAt: null, deadline: null })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "UNCLAIMED",
+      fromValue: "CLAIMED",
+      toValue: "APPROVED",
+    }),
+  ]);
+}
+
+/**
  * Start the build: CLAIMED → IN_PROGRESS, committing to a delivery date. The date
  * lands here (not on claim) so a request mirrors an issue — claim takes ownership,
  * starting work is where the promise is made (§5/§12.3).

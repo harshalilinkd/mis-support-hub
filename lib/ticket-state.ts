@@ -47,7 +47,11 @@ export const REQUEST_STATUS_TRANSITIONS: Record<Status, Status[]> = {
   UNDER_REVIEW: ["PENDING_MD_APPROVAL"],
   PENDING_MD_APPROVAL: ["APPROVED", "DROPPED"],
   APPROVED: ["CLAIMED"],
-  CLAIMED: ["IN_PROGRESS"],
+  // CLAIMED → APPROVED is the mis-claim escape hatch (mirrors the ISSUE release,
+  // §5): the assignee sends a build they claimed by mistake back to the approved
+  // pool. Only from CLAIMED — once started, a delivery date has been promised, so
+  // it is no longer a quiet undo.
+  CLAIMED: ["IN_PROGRESS", "APPROVED"],
   IN_PROGRESS: ["IN_TESTING"],
   IN_TESTING: ["CHANGES_REQUESTED", "CLOSED"],
   CHANGES_REQUESTED: ["IN_PROGRESS"],
@@ -90,6 +94,12 @@ function requestActorAllows(
       return isAdmin;
     case "APPROVED->CLAIMED":
       return isStaff;
+    // Releasing a claim is ASSIGNEE-LOCKED, deliberately stricter than canBuild:
+    // even an MIS_ADMIN may only undo a claim they made themselves, never someone
+    // else's (mirrors the ISSUE release lock, §6). Taking a build off another
+    // member is a takeover, not an undo.
+    case "CLAIMED->APPROVED":
+      return isStaff && isAssignee;
     case "CLAIMED->IN_PROGRESS":
     case "IN_PROGRESS->IN_TESTING":
     case "CHANGES_REQUESTED->IN_PROGRESS":

@@ -16,6 +16,7 @@ import {
   sendRequestPendingApprovalNotification,
   sendRequestProgressNotification,
   sendRequestReadyForTestingNotification,
+  sendRequestReleasedNotification,
   sendRequestSubmittedNotification,
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
@@ -27,6 +28,7 @@ import {
   markCompleteSchema,
   mdDecisionSchema,
   progressLogSchema,
+  releaseRequestSchema,
   requestActionSchema,
   requestChangesSchema,
   startWorkSchema,
@@ -270,6 +272,53 @@ export async function claimRequest(input: {
     priority: parsed.data.priority,
   });
   await sendRequestClaimedNotification(t.id);
+  revalidateRequestRoutes(t.number);
+  return ok(undefined);
+}
+
+/**
+ * CLAIMED → APPROVED — undo a mis-claim, sending the build back to the approved
+ * pool (mirrors `releaseTicket` for issues, §5). Clears the assignee, priority,
+ * claim record and any deadline; the request is claimable again.
+ *
+ * Assignee-locked (§12.4): even an MIS_ADMIN may release only a build they claimed
+ * themselves. Taking someone else's build is a takeover, not an undo.
+ *
+ * Allowed only while CLAIMED. Once started, a delivery date has been promised to
+ * the requester, so it is no longer a quiet correction — that needs a real
+ * conversation, not a button.
+ */
+export async function releaseRequest(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can release a request.");
+  }
+  const parsed = releaseRequestSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const t = await loadRequest(parsed.data.ticketId);
+  if (!t) return fail("Request not found.");
+
+  if (!t.assignedTo) return fail(`${t.number} isn't claimed.`);
+  if (t.assignedTo !== user.id) {
+    const owner = await q.getUserById(t.assignedTo);
+    return fail(
+      `${t.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can release it.`
+    );
+  }
+  if (t.status !== "CLAIMED") {
+    return fail(
+      `${t.number} has already been started — it can't be released back to the pool.`
+    );
+  }
+  if (!allows(t, "APPROVED", user)) {
+    return fail(`You can't release ${t.number}.`);
+  }
+
+  await q.releaseRequestRow({ ticketId: t.id, actorId: user.id });
+  // The claim told the requester someone picked it up — correct that (§12.6).
+  await sendRequestReleasedNotification(t.id);
   revalidateRequestRoutes(t.number);
   return ok(undefined);
 }

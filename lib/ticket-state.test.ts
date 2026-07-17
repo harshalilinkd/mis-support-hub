@@ -23,6 +23,8 @@ const LEGAL_REQUEST: Edge[] = [
   ["PENDING_MD_APPROVAL", "APPROVED", ADMIN, false, false],
   ["PENDING_MD_APPROVAL", "DROPPED", ADMIN, false, false],
   ["APPROVED", "CLAIMED", STAFF, false, false],
+  ["CLAIMED", "APPROVED", STAFF, false, true], // release: own claim only
+  ["CLAIMED", "APPROVED", ADMIN, false, true], // admin releasing their OWN claim
   ["CLAIMED", "IN_PROGRESS", STAFF, false, true], // assignee
   ["CLAIMED", "IN_PROGRESS", ADMIN, false, false], // admin may build
   ["IN_PROGRESS", "IN_TESTING", STAFF, false, true],
@@ -40,7 +42,9 @@ const ILLEGAL_TOPOLOGY: [Status, Status][] = [
   ["SUBMITTED", "IN_PROGRESS"],
   ["UNDER_REVIEW", "APPROVED"],
   ["APPROVED", "IN_PROGRESS"], // must pass through CLAIMED
+  ["IN_PROGRESS", "APPROVED"], // a started build can't be quietly released
   ["IN_TESTING", "APPROVED"],
+  ["CHANGES_REQUESTED", "APPROVED"],
   ["DROPPED", "IN_PROGRESS"], // DROPPED only revives to UNDER_REVIEW
   ["CLOSED", "IN_PROGRESS"],
   ["PENDING_MD_APPROVAL", "CLAIMED"],
@@ -65,6 +69,11 @@ const FORBIDDEN_ACTOR: Edge[] = [
   // Move to review / claim: staff-gated, not USER.
   ["SUBMITTED", "UNDER_REVIEW", USER, false, false],
   ["APPROVED", "CLAIMED", USER, false, false],
+  // Release: you undo only your OWN claim. Stricter than the build steps — an
+  // admin may build anyone's claim but may not release it out from under them.
+  ["CLAIMED", "APPROVED", ADMIN, false, false],
+  ["CLAIMED", "APPROVED", STAFF, false, false],
+  ["CLAIMED", "APPROVED", USER, false, true],
   // Build steps: the assigned staff (or admin) only — not a non-assignee staffer.
   ["CLAIMED", "IN_PROGRESS", STAFF, false, false],
   ["IN_PROGRESS", "IN_TESTING", STAFF, false, false],
@@ -138,6 +147,25 @@ test("a REQUEST can never reach the ISSUE terminal states (force-close regressio
   assert.equal(canTransition("REQUEST", "IN_PROGRESS", "CLOSED", ADMIN, true, true), false);
   assert.equal(canTransition("REQUEST", "RESOLVED", "CLOSED", ADMIN, true, true), false);
   assert.throws(() => assertStatusForType("REQUEST", "RESOLVED"));
+});
+
+test("releasing a claim is assignee-locked and only before the build starts", () => {
+  // The mis-claim escape hatch (§12.3, mirrors the ISSUE release in §5).
+  // You may undo your OWN claim...
+  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", STAFF, false, true), true);
+  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", ADMIN, false, true), true);
+  // ...but never someone else's. This is deliberately stricter than the build
+  // steps: an admin may start/complete anyone's build, yet must not yank a claim
+  // out from under the member who made it — that's a takeover, not an undo.
+  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", ADMIN, false, false), false);
+  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", STAFF, false, false), false);
+  // A USER never releases, even if somehow flagged as the assignee.
+  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", USER, false, true), false);
+  // Once started, the requester has been promised a date — no quiet undo exists.
+  assert.equal(canTransition("REQUEST", "IN_PROGRESS", "APPROVED", ADMIN, true, true), false);
+  assert.equal(canTransition("REQUEST", "CHANGES_REQUESTED", "APPROVED", ADMIN, true, true), false);
+  // And releasing must never be a back door to the approval verdict itself.
+  assert.equal(canTransition("REQUEST", "CLAIMED", "PENDING_MD_APPROVAL", ADMIN, false, true), false);
 });
 
 test("P11 lifecycle: submit → review → approval → approve/reject → revive", () => {

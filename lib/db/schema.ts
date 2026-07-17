@@ -119,6 +119,10 @@ export const NOTIFICATION_TYPES = [
   "REQUEST_PENDING_APPROVAL",
   "REQUEST_DECISION_RECORDED",
   "REQUEST_CLAIMED",
+  // Extends §12.6: the requester was told "{member} has picked up {number}" on the
+  // claim, so an undo has to correct that — otherwise they keep believing someone
+  // is building it. (An ISSUE release is silent only because its claim is too.)
+  "REQUEST_RELEASED",
   // Extends §12.6: P12 requires the requester be told when a delivery date moves
   // ("deadline changes are never silent"). Reflect into §12.6 when §12 is written.
   "REQUEST_DEADLINE_CHANGED",
