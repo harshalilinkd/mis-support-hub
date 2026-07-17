@@ -17,6 +17,7 @@ import {
   sendRequestProgressNotification,
   sendRequestReadyForTestingNotification,
   sendRequestReleasedNotification,
+  sendRequestRevivedNotification,
   sendRequestSubmittedNotification,
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
@@ -231,6 +232,10 @@ export async function reviveRequest(ticketId: string): Promise<ActionResult> {
     to: "UNDER_REVIEW",
     activity: "REVIVED",
   });
+  // §12.6's reversal rule: the DROPPED verdict was emailed to the requester and the
+  // team, so its undo must reach the same people — otherwise that mail stands as the
+  // last word on a request that is back under review.
+  await sendRequestRevivedNotification(t.id);
   revalidateRequestRoutes(t.number);
   return ok(undefined);
 }

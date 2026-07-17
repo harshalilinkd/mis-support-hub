@@ -148,6 +148,10 @@ export const NOTIFICATION_TYPES = [
   "REQUEST_READY_FOR_TESTING",
   "REQUEST_CHANGES_REQUESTED",
   "REQUEST_ACCEPTED",
+  // §12.6's reversal rule: a DROPPED verdict is announced by email, so its undo
+  // (reviveRequest) must be announced too — otherwise the drop mail sits in the
+  // requester's inbox asserting a dead request that is in fact back under review.
+  "REQUEST_REVIVED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

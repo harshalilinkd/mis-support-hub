@@ -12,6 +12,7 @@ import { emailProvider } from "./email";
 import type {
   NotificationChannel,
   NotificationProvider,
+  NotificationTemplate,
   NotifyInput,
 } from "./types";
 import { whatsappProvider } from "./whatsapp";
@@ -376,10 +377,21 @@ export async function sendCommentNotification(
 
 /* ------------------------------------------------------------------ *
  * REQUEST notifications (CLAUDE.md §12.6). Reuse createInApp — in-app is the
- * persisted channel that drives the bell; all best-effort (§8).
+ * persisted channel that drives the bell — and notify() for email, the SAME Resend
+ * sender and shell the ISSUE templates use. All best-effort (§8): a failed send is
+ * logged and swallowed, never rolled back and never thrown to the caller.
+ *
+ * Email is added ALONGSIDE in-app, never instead of it. Only REQUEST_PROGRESS stays
+ * in-app: a build update every few days would fill an inbox, and it makes no earlier
+ * email false — which is the test §12.6's reversal rule applies to everything else.
  * ------------------------------------------------------------------ */
 
-/** Fan out one in-app notice to every active MIS member (best-effort). */
+/**
+ * Fan out to every active MIS member (best-effort).
+ *
+ * `email` opts the fan-out into the mail channel too; when set, `template` and `data`
+ * are required. In-app always goes out regardless — email is additive.
+ */
 async function notifyTeam(
   ticket: { id: string; number: string; title: string; createdBy: string },
   type: NotificationType,
@@ -388,23 +400,42 @@ async function notifyTeam(
   {
     skipReporter = true,
     skipUserId,
-  }: { skipReporter?: boolean; skipUserId?: string | null } = {}
+    email,
+  }: {
+    skipReporter?: boolean;
+    skipUserId?: string | null;
+    email?: { template: NotificationTemplate; data: Record<string, string> };
+  } = {}
 ): Promise<void> {
   const staff = await listAssignableUsers();
+  const recipients = staff
+    // `skipUserId` avoids double-notifying someone who already got a tailored
+    // notice (e.g. the assignee on REQUEST_ACCEPTED).
+    .filter((s) => s.id !== skipUserId)
+    .filter((s) => !skipReporter || s.id !== ticket.createdBy);
+
   await Promise.all(
-    staff
-      // `skipUserId` avoids double-notifying someone who already got a tailored
-      // notice (e.g. the assignee on REQUEST_ACCEPTED).
-      .filter((s) => s.id !== skipUserId)
-      .filter((s) => !skipReporter || s.id !== ticket.createdBy)
+    recipients.map((s) =>
+      createInApp({
+        userId: s.id,
+        type,
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        title,
+        body,
+      })
+    )
+  );
+
+  if (!email) return;
+  await Promise.all(
+    recipients
+      .filter((s) => s.email)
       .map((s) =>
-        createInApp({
-          userId: s.id,
-          type,
-          ticketId: ticket.id,
-          ticketNumber: ticket.number,
-          title,
-          body,
+        notify({
+          to: { email: s.email, name: s.name },
+          template: email.template,
+          data: email.data,
         })
       )
   );
@@ -421,7 +452,18 @@ export async function sendRequestSubmittedNotification(ticketId: string): Promis
       ticket,
       "REQUEST_SUBMITTED",
       `New request ${ticket.number}`,
-      `${ticket.title}\nSubmitted by ${who} — needs review.`
+      `${ticket.title}\nSubmitted by ${who} — needs review.`,
+      {
+        email: {
+          template: "REQUEST_SUBMITTED",
+          data: {
+            number: ticket.number,
+            title: ticket.title,
+            submittedBy: who,
+            appUrl: appUrl(),
+          },
+        },
+      }
     );
   } catch (e) {
     console.error("[sendRequestSubmittedNotification]", e);
@@ -448,6 +490,18 @@ export async function sendRequestPendingApprovalNotification(
         })
       )
     );
+    // Admins only — they are the ones who record the MD's verdict (§12.4).
+    await Promise.all(
+      admins
+        .filter((a) => a.email)
+        .map((a) =>
+          notify({
+            to: { email: a.email, name: a.name },
+            template: "REQUEST_PENDING_APPROVAL",
+            data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+          })
+        )
+    );
   } catch (e) {
     console.error("[sendRequestPendingApprovalNotification]", e);
   }
@@ -465,6 +519,18 @@ export async function sendRequestDecisionRecordedNotification(
     const verb = approved ? "approved" : "dropped";
     const remark = details?.mdRemark ? `\n“${details.mdRemark}”` : "";
 
+    const recorder = await loadUser(details?.mdDecisionRecordedBy);
+    // The remark is OPTIONAL even on a reject (§12.2) — only include it when present,
+    // so the template can omit the quote block entirely rather than render an empty one.
+    const emailData = {
+      number: ticket.number,
+      title: ticket.title,
+      decision: approved ? "APPROVED" : "REJECTED",
+      recordedBy: recorder?.name ?? "an MIS admin",
+      ...(details?.mdRemark ? { remark: details.mdRemark } : {}),
+      appUrl: appUrl(),
+    };
+
     const reporter = await loadUser(ticket.createdBy);
     if (reporter) {
       await createInApp({
@@ -475,15 +541,72 @@ export async function sendRequestDecisionRecordedNotification(
         title: `${ticket.number} was ${verb}`,
         body: `${ticket.title}${remark}`,
       });
+      if (reporter.email) {
+        await notify({
+          to: { email: reporter.email, name: reporter.name },
+          template: "REQUEST_DECISION_RECORDED",
+          data: emailData,
+        });
+      }
     }
     await notifyTeam(
       ticket,
       "REQUEST_DECISION_RECORDED",
       `${ticket.number} was ${verb}`,
-      `${ticket.title}${remark}`
+      `${ticket.title}${remark}`,
+      { email: { template: "REQUEST_DECISION_RECORDED", data: emailData } }
     );
   } catch (e) {
     console.error("[sendRequestDecisionRecordedNotification]", e);
+  }
+}
+
+/**
+ * DROPPED → UNDER_REVIEW (revive) → the requester + the MIS team.
+ *
+ * §12.6's reversal rule. The drop was announced by email to both — and that mail even
+ * says "an MIS admin can revive it" — so the revive has to be announced to the same
+ * people, or the last thing in their inbox asserts a dead request that is in fact
+ * back under review. Mirrors REQUEST_DECISION_RECORDED's recipients exactly, because
+ * it is the undo of precisely that message.
+ */
+export async function sendRequestRevivedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const emailData = {
+      number: ticket.number,
+      title: ticket.title,
+      appUrl: appUrl(),
+    };
+
+    const reporter = await loadUser(ticket.createdBy);
+    if (reporter) {
+      await createInApp({
+        userId: reporter.id,
+        type: "REQUEST_REVIVED",
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        title: `${ticket.number} is back under review`,
+        body: `${ticket.title}\nIt was dropped earlier and has been brought back.`,
+      });
+      if (reporter.email) {
+        await notify({
+          to: { email: reporter.email, name: reporter.name },
+          template: "REQUEST_REVIVED",
+          data: emailData,
+        });
+      }
+    }
+    await notifyTeam(
+      ticket,
+      "REQUEST_REVIVED",
+      `${ticket.number} is back under review`,
+      `${ticket.title}\nRevived from Dropped — it needs review again.`,
+      { email: { template: "REQUEST_REVIVED", data: emailData } }
+    );
+  } catch (e) {
+    console.error("[sendRequestRevivedNotification]", e);
   }
 }
 
@@ -511,6 +634,21 @@ export async function sendRequestClaimedNotification(ticketId: string): Promise<
         ? `${ticket.title}\nTargeting delivery by ${eta}.`
         : `${ticket.title}\nThey'll confirm a delivery date when the build starts.`,
     });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "REQUEST_CLAIMED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          claimedBy: workerName,
+          // Empty = no date yet; the template says so rather than inventing one.
+          deadline: eta ?? "",
+          appUrl: appUrl(),
+        },
+      });
+    }
   } catch (e) {
     console.error("[sendRequestClaimedNotification]", e);
   }
@@ -536,6 +674,18 @@ export async function sendRequestReleasedNotification(ticketId: string): Promise
       title: `${ticket.number} is back in the queue`,
       body: `${ticket.title}\nIt's still approved — another MIS member will pick it up.`,
     });
+
+    // §12.6's reversal rule: the claim emailed the requester "{member} has picked up
+    // {number}", so the undo must email too. In-app alone would leave that mail
+    // standing in their inbox asserting a build is under way that isn't — misinformed
+    // is worse than uninformed.
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "REQUEST_RELEASED",
+        data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+      });
+    }
   } catch (e) {
     console.error("[sendRequestReleasedNotification]", e);
   }
@@ -570,6 +720,22 @@ export async function sendRequestDeadlineChangedNotification(
         ? `${ticket.title}\nDelivery moved from ${was} to ${now}.`
         : `${ticket.title}\nDelivery is now targeted for ${now}.`,
     });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "REQUEST_DEADLINE_CHANGED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          deadline: now,
+          // Present only on a real MOVE — its absence is what makes the template
+          // say "targeted for" rather than "moved from".
+          ...(was ? { previousDeadline: was } : {}),
+          appUrl: appUrl(),
+        },
+      });
+    }
   } catch (e) {
     console.error("[sendRequestDeadlineChangedNotification]", e);
   }
@@ -614,6 +780,14 @@ export async function sendRequestReadyForTestingNotification(
       title: `${ticket.number} is ready to test`,
       body: `${ticket.title}\nPlease try it, then accept it or request changes.`,
     });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "REQUEST_READY_FOR_TESTING",
+        data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+      });
+    }
   } catch (e) {
     console.error("[sendRequestReadyForTestingNotification]", e);
   }
@@ -636,6 +810,25 @@ export async function sendRequestChangesNotification(ticketId: string): Promise<
       title: `Changes requested on ${ticket.number}`,
       body: `${ticket.title}\n${reporter?.name ?? "The requester"} asked for changes — see the note in the thread.`,
     });
+
+    if (worker.email) {
+      const details = await getRequestDetailsRow(ticket.id);
+      await notify({
+        to: { email: worker.email, name: worker.name },
+        template: "REQUEST_CHANGES_REQUESTED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          requestedBy: reporter?.name ?? "The requester",
+          // NO +1 here. requestChangesRow already incremented revision_round and this
+          // notifier runs AFTER that write, so the row we just read IS the round being
+          // announced — adding one would report round 3 for the second change request.
+          // Matches the timeline, which renders the same value (§12.5).
+          round: String(details?.revisionRound ?? 1),
+          appUrl: appUrl(),
+        },
+      });
+    }
   } catch (e) {
     console.error("[sendRequestChangesNotification]", e);
   }
@@ -649,6 +842,15 @@ export async function sendRequestAcceptedNotification(ticketId: string): Promise
     const reporter = await loadUser(ticket.createdBy);
     const who = reporter?.name ?? "The requester";
     const worker = await loadUser(ticket.assignedTo);
+    const acceptedDetails = await getRequestDetailsRow(ticket.id);
+    const acceptedData = {
+      number: ticket.number,
+      title: ticket.title,
+      acceptedBy: who,
+      rounds: String(acceptedDetails?.revisionRound ?? 0),
+      appUrl: appUrl(),
+    };
+
     if (worker) {
       await createInApp({
         userId: worker.id,
@@ -658,14 +860,26 @@ export async function sendRequestAcceptedNotification(ticketId: string): Promise
         title: `${ticket.number} was accepted & closed`,
         body: `${ticket.title}\n${who} accepted the build. Nicely done.`,
       });
+      if (worker.email) {
+        await notify({
+          to: { email: worker.email, name: worker.name },
+          template: "REQUEST_ACCEPTED",
+          data: acceptedData,
+        });
+      }
     }
     await notifyTeam(
       ticket,
       "REQUEST_ACCEPTED",
       `${ticket.number} was accepted & closed`,
       `${ticket.title}\n${who} accepted the build.`,
-      // The assignee already got the tailored notice above — don't send it twice.
-      { skipReporter: true, skipUserId: worker?.id ?? null }
+      // The assignee already got the tailored notice above — don't send it twice,
+      // in-app OR by email (skipUserId covers both fan-outs).
+      {
+        skipReporter: true,
+        skipUserId: worker?.id ?? null,
+        email: { template: "REQUEST_ACCEPTED", data: acceptedData },
+      }
     );
   } catch (e) {
     console.error("[sendRequestAcceptedNotification]", e);

@@ -341,8 +341,42 @@ increment is also an activity row, so every attempt is timestamped.
 - REQUEST_CHANGES_REQUESTED → assignee
 - REQUEST_ACCEPTED → assignee + MIS team
 
-Best-effort; a failed send must never roll back the DB mutation. Currently in-app
-only — the Resend email templates for these are not built yet.
+Best-effort; a failed send must never roll back the DB mutation.
+
+**Channels (as built).** In-app for all of the above, **plus email** for the eight
+marked — the SAME Resend sender, the SAME `shell()` layout, and the SAME `notify()`
+dispatcher the ISSUE templates use (`lib/notifications/templates.ts`). There is no
+second email style and no parallel sender. Email is added ALONGSIDE in-app, never
+instead of it, and every email deep-links to `{NEXT_PUBLIC_APP_URL}/tickets/{number}`
+(§12.7's one link pattern). With `RESEND_API_KEY` unset the provider warns and returns
+`{ok:false}` — it never throws, so an unconfigured environment degrades to in-app only.
+
+- REQUEST_RELEASED → requester (the claim was undone — "{number} is back with the MIS
+  team"). See the reversal rule below.
+- **REQUEST_REVIVED → requester + MIS team** (a DROPPED request was brought back —
+  "{number} is back under review"). The reversal of REQUEST_DECISION_RECORDED's drop,
+  to the same recipients. Required by the rule below the moment the drop started
+  emailing: the drop mail even says "an MIS admin can revive it", so leaving the revive
+  silent makes that mail the last word on a request that is no longer dead.
+
+**In-app ONLY, deliberately:** `REQUEST_PROGRESS` — a build update every few days would
+fill an inbox for no gain, and no earlier email is made false by it.
+
+> ### The reversal rule (applies to every channel decision, not just this list)
+> **Any state change announced by email must have its reversal announced by email too.**
+>
+> The reason is not symmetry for its own sake. An email that is never corrected doesn't
+> leave the reader uninformed — it leaves them **misinformed**, holding something false
+> with no reason to doubt it. A requester with "Aditya has picked up REQ-005" sitting in
+> their inbox *believes* work is under way. Correcting that only in-app fixes it for
+> people who happen to open the app; for everyone else the app is now actively lying.
+> Silence would have been better than an uncorrected announcement — and correcting it
+> is better than both.
+>
+> So: `REQUEST_CLAIMED` emails ⇒ `REQUEST_RELEASED` must email. The same test decides
+> any future undo — a reopen after an accept, a de-assignment, a revive — without
+> re-litigating it per event. **Before adding an email, ask what reverses it, and
+> whether that reversal mails too.** If it can't, don't send the first one either.
 
 ### 12.7 Routing (Hybrid)
 - **Shared, type-aware detail:** `/tickets/[number]` renders BOTH types, branching on
