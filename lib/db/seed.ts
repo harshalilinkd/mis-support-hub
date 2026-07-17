@@ -81,9 +81,7 @@ async function createRequest(args: {
   currentSheetLink?: string | null;
   intendedUsers: string;
   expectedBenefit: string;
-  urgency: Priority;
   department: Department;
-  targetDate?: Date | null;
   createdBy: string;
 }) {
   const id = crypto.randomUUID();
@@ -110,8 +108,6 @@ async function createRequest(args: {
       currentSheetLink: args.currentSheetLink ?? null,
       intendedUsers: args.intendedUsers,
       expectedBenefit: args.expectedBenefit,
-      urgency: args.urgency,
-      targetDate: args.targetDate ?? null,
     }),
     db.insert(ticketActivity).values({
       ticketId: id,
@@ -249,9 +245,7 @@ async function main() {
       intendedUsers: "Purchase team, store managers, accounts",
       expectedBenefit:
         "One place to raise, approve, and track POs; no lost approvals; vendor-wise pending view.",
-      urgency: "HIGH",
       department: "LINKD",
-      targetDate: null,
       createdBy: user.id,
     });
     await advanceRequest(r1.id, staff.id, "SUBMITTED", "UNDER_REVIEW", "MOVED_TO_REVIEW");
@@ -273,9 +267,7 @@ async function main() {
       intendedUsers: "All employees, HR, department heads",
       expectedBenefit:
         "Self-service leave, auto attendance capture, accurate payroll inputs.",
-      urgency: "URGENT",
       department: "LD_SILK_MILLS",
-      targetDate: null,
       createdBy: user.id,
     });
     await advanceRequest(r2.id, staff.id, "SUBMITTED", "UNDER_REVIEW", "MOVED_TO_REVIEW");
@@ -306,7 +298,8 @@ async function main() {
         toValue: "APPROVED",
       }),
     ]);
-    // Staff claims the build: assignee + priority + deadline.
+    // Staff claims the build: assignee + priority only — the delivery date is
+    // committed at start-work (§12.3, mirrors §5).
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + 21);
     await db.batch([
@@ -316,15 +309,21 @@ async function main() {
         .where(eq(tickets.id, r2.id)),
       db
         .update(requestDetails)
-        .set({ claimedBy: staff.id, claimedAt: new Date(), deadline })
+        .set({ claimedBy: staff.id, claimedAt: new Date() })
         .where(eq(requestDetails.ticketId, r2.id)),
       db.insert(ticketActivity).values([
         { ticketId: r2.id, actorId: staff.id, type: "CLAIMED", fromValue: "APPROVED", toValue: "CLAIMED" },
+      ]),
+    ]);
+    // Build starts — this is where the delivery date is committed.
+    await db.batch([
+      db.update(tickets).set({ status: "IN_PROGRESS" }).where(eq(tickets.id, r2.id)),
+      db.update(requestDetails).set({ deadline }).where(eq(requestDetails.ticketId, r2.id)),
+      db.insert(ticketActivity).values([
+        { ticketId: r2.id, actorId: staff.id, type: "STARTED", fromValue: "CLAIMED", toValue: "IN_PROGRESS" },
         { ticketId: r2.id, actorId: staff.id, type: "DEADLINE_SET", toValue: deadline.toISOString() },
       ]),
     ]);
-    // Build starts + two progress logs.
-    await advanceRequest(r2.id, staff.id, "CLAIMED", "IN_PROGRESS", "STARTED");
     // NOTE: one log per batch, deliberately. Postgres now() is the TRANSACTION
     // timestamp, so batching both logs together stamps them identically and
     // "latest progress" (order by created_at desc limit 1) becomes a coin flip.

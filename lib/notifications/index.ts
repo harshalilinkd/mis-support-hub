@@ -504,10 +504,12 @@ export async function sendRequestClaimedNotification(ticketId: string): Promise<
       type: "REQUEST_CLAIMED",
       ticketId: ticket.id,
       ticketNumber: ticket.number,
-      title: `${workerName} is now building ${ticket.number}`,
+      title: `${workerName} has picked up ${ticket.number}`,
+      // A claim carries no date — that arrives when they start work (mirrors §5),
+      // so don't promise an ETA we don't have yet.
       body: eta
         ? `${ticket.title}\nTargeting delivery by ${eta}.`
-        : `${ticket.title}\nThe build has been claimed.`,
+        : `${ticket.title}\nThey'll confirm a delivery date when the build starts.`,
     });
   } catch (e) {
     console.error("[sendRequestClaimedNotification]", e);
@@ -515,8 +517,9 @@ export async function sendRequestClaimedNotification(ticketId: string): Promise<
 }
 
 /**
- * Delivery date moved → the requester. A deadline change is never silent (P12):
- * they were promised a date on claim, so they hear when it shifts.
+ * Delivery date set or moved → the requester. Fired when the assignee starts work
+ * (first date, `previous` = null) and on every later change — a delivery date is
+ * never silent (P12).
  */
 export async function sendRequestDeadlineChangedNotification(
   ticketId: string,

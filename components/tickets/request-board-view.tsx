@@ -27,7 +27,6 @@ import {
   resumeWork,
   reviveRequest,
   sendForApproval,
-  startWork,
 } from "@/lib/actions/requests";
 import type { RequestListRow } from "@/lib/db/queries";
 import type { Role, Status } from "@/lib/db/schema";
@@ -287,7 +286,13 @@ export function RequestBoardView({
         return recordApprovalDecision({ ticketId: r.id, decision: "REJECTED" });
       }
       if (to === "IN_PROGRESS") {
-        return r.status === "CHANGES_REQUESTED" ? resumeWork(r.id) : startWork(r.id);
+        // Resuming after a revision needs nothing; STARTING needs a delivery date,
+        // which a drag can't supply — send them to the detail for that.
+        if (r.status === "CHANGES_REQUESTED") return resumeWork(r.id);
+        return Promise.resolve({
+          ok: false as const,
+          error: "Open the request to start the build — you need to set a delivery date.",
+        });
       }
       if (to === "IN_TESTING") return markComplete({ ticketId: r.id });
       if (to === "CLOSED") return acceptRequest(r.id);

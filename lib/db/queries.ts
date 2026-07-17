@@ -1274,9 +1274,7 @@ export interface CreateRequestArgs {
   currentSheetLink?: string | null;
   intendedUsers: string;
   expectedBenefit: string;
-  urgency: Priority;
   department: Department;
-  targetDate?: Date | null;
 }
 
 /** Create a REQUEST — number from request_seq (REQ-001…), status SUBMITTED. */
@@ -1295,7 +1293,7 @@ export async function createRequestTicket(args: CreateRequestArgs) {
         department: args.department,
         sheetLink: args.currentSheetLink ?? null,
         status: "SUBMITTED",
-        // Priority is set by MIS on claim (§12.3); urgency lives in the brief.
+        // A raised request has NO priority — MIS sets it on claim (§12.3, mirrors §5).
         priority: null,
         createdBy: args.createdBy,
       })
@@ -1308,8 +1306,6 @@ export async function createRequestTicket(args: CreateRequestArgs) {
       currentSheetLink: args.currentSheetLink ?? null,
       intendedUsers: args.intendedUsers,
       expectedBenefit: args.expectedBenefit,
-      urgency: args.urgency,
-      targetDate: args.targetDate ?? null,
     }),
     db.insert(ticketActivity).values({
       ticketId: id,
@@ -1335,6 +1331,8 @@ export interface RequestFilters {
   /** Match any of these request stages. */
   statuses?: Status[];
   department?: Department;
+  /** Only requests assigned to this user — the MIS member's own build queue. */
+  assignedTo?: string;
   /** Matches the request number or system name. */
   search?: string;
 }
@@ -1349,6 +1347,7 @@ export async function listRequests(
   if (viewer.role === "USER") conds.push(eq(tickets.createdBy, viewer.id));
   if (filters.statuses?.length) conds.push(inArray(tickets.status, filters.statuses));
   if (filters.department) conds.push(eq(tickets.department, filters.department));
+  if (filters.assignedTo) conds.push(eq(tickets.assignedTo, filters.assignedTo));
   const search = filters.search?.trim();
   if (search) {
     const like = `%${search}%`;
@@ -1365,9 +1364,7 @@ export async function listRequests(
       department: tickets.department,
       status: tickets.status,
       priority: tickets.priority,
-      urgency: requestDetails.urgency,
       revisionRound: requestDetails.revisionRound,
-      targetDate: requestDetails.targetDate,
       deadline: requestDetails.deadline,
       // Latest reported % from the progress logs — the board card's progress bar.
       // Correlated so one query still feeds both the list and the board.
@@ -1430,8 +1427,6 @@ export async function getRequestByNumber(
       currentSheetLink: requestDetails.currentSheetLink,
       intendedUsers: requestDetails.intendedUsers,
       expectedBenefit: requestDetails.expectedBenefit,
-      urgency: requestDetails.urgency,
-      targetDate: requestDetails.targetDate,
       mdDecision: requestDetails.mdDecision,
       mdDecidedAt: requestDetails.mdDecidedAt,
       mdRemark: requestDetails.mdRemark,
@@ -1588,7 +1583,6 @@ export async function claimRequestRow(args: {
   actorId: string;
   from: Status;
   priority: Priority;
-  deadline: Date;
 }) {
   await db.batch([
     db
@@ -1597,7 +1591,7 @@ export async function claimRequestRow(args: {
       .where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ claimedBy: args.actorId, claimedAt: new Date(), deadline: args.deadline })
+      .set({ claimedBy: args.actorId, claimedAt: new Date() })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -1605,6 +1599,34 @@ export async function claimRequestRow(args: {
       type: "CLAIMED",
       fromValue: args.from,
       toValue: "CLAIMED",
+    }),
+  ]);
+}
+
+/**
+ * Start the build: CLAIMED → IN_PROGRESS, committing to a delivery date. The date
+ * lands here (not on claim) so a request mirrors an issue — claim takes ownership,
+ * starting work is where the promise is made (§5/§12.3).
+ */
+export async function startWorkRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  deadline: Date;
+}) {
+  assertStatusForType("REQUEST", "IN_PROGRESS");
+  await db.batch([
+    db.update(tickets).set({ status: "IN_PROGRESS" }).where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ deadline: args.deadline })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "STARTED",
+      fromValue: args.from,
+      toValue: "IN_PROGRESS",
     }),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,

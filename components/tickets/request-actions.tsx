@@ -25,6 +25,7 @@ import type { RequestDetail } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { isStaff } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +56,7 @@ export function RequestActions({
 }) {
   const [pending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<
-    null | "decision" | "complete"
+    null | "decision" | "start" | "complete"
   >(null);
 
   const staff = isStaff(currentUser.role);
@@ -111,7 +112,7 @@ export function RequestActions({
   }
   if (s === "CLAIMED" && canBuild) {
     buttons.push(
-      <Button key="start" size="sm" disabled={pending} onClick={() => run("Build started", () => startWork(request.id))}>
+      <Button key="start" size="sm" disabled={pending} onClick={() => setDialog("start")}>
         <PlayCircle className="size-4" /> Start building
       </Button>
     );
@@ -153,12 +154,77 @@ export function RequestActions({
           )
         }
       />
+      <StartWorkDialog
+        open={dialog === "start"}
+        pending={pending}
+        onOpenChange={(o) => !o && setDialog(null)}
+        onSubmit={(deadline) =>
+          run("Build started — the requester has the delivery date", () =>
+            startWork({ ticketId: request.id, deadline })
+          )
+        }
+      />
       <NoteDialog open={dialog === "complete"} pending={pending} title="Mark build complete" label="Handover note (optional)" placeholder="Anything the requester should know before testing…" required={false} confirmLabel="Mark complete" onOpenChange={(o) => !o && setDialog(null)} onSubmit={(note) => run("Marked complete — ready for testing", () => markComplete({ ticketId: request.id, note }))} />
     </>
   );
 }
 
 /* -------- dialogs -------- */
+
+/**
+ * Starting the build is where the delivery promise is made (§12.3, mirrors §5's
+ * startTask) — so the date is required here, not at claim.
+ */
+function StartWorkDialog({
+  open,
+  pending,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  pending: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSubmit: (deadline: string) => void;
+}) {
+  const [deadline, setDeadline] = useState("");
+  useEffect(() => {
+    if (open) setDeadline("");
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Start building</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-text-muted">
+          Set the date you expect to hand this back for testing. The requester is
+          told, and any later change is recorded — a delivery date is never silent.
+        </p>
+        <div>
+          <label htmlFor="start-deadline" className="mb-1 block text-sm font-medium">
+            Delivery date
+          </label>
+          <Input
+            id="start-deadline"
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            disabled={pending}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={() => onSubmit(deadline)} disabled={pending || !deadline}>
+            {pending ? "Starting…" : "Start building"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function DecisionDialog({
   open,

@@ -78,6 +78,13 @@
       "when": 1784115287283,
       "tag": "0010_nifty_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784266327181,
+      "tag": "0011_romantic_stardust",
+      "breakpoints": true
     }
   ]
 }

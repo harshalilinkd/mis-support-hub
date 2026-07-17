@@ -172,7 +172,7 @@ export function RequestsView({
                   <StatusChip status={r.status} className="shrink-0" />
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
-                  <PriorityChip priority={r.urgency} className="shrink-0" />
+                  <PriorityChip priority={r.priority} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">
                     {DEPARTMENT_LABELS[r.department]} · {r.createdByName ?? "—"}
                   </span>
@@ -191,7 +191,7 @@ export function RequestsView({
                   <TableHead>System</TableHead>
                   <TableHead>Dept</TableHead>
                   <TableHead>Stage</TableHead>
-                  <TableHead>Urgency</TableHead>
+                  <TableHead>Priority</TableHead>
                   <TableHead>Requester</TableHead>
                   <TableHead>Assignee</TableHead>
                   <TableHead className="text-right">Submitted</TableHead>
@@ -214,7 +214,7 @@ export function RequestsView({
                       {DEPARTMENT_LABELS[r.department]}
                     </TableCell>
                     <TableCell><StatusChip status={r.status} /></TableCell>
-                    <TableCell><PriorityChip priority={r.urgency} /></TableCell>
+                    <TableCell><PriorityChip priority={r.priority} /></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <UserAvatar name={r.createdByName} image={r.createdByImage} />

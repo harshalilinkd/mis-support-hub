@@ -192,15 +192,6 @@ const optionalText = (max: number) =>
     .or(z.literal(""))
     .transform((v) => (v ? v : undefined));
 
-// An optional "YYYY-MM-DD" date string ("" → undefined).
-const optionalDate = z
-  .string()
-  .trim()
-  .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), "Pick a valid date")
-  .optional()
-  .or(z.literal(""))
-  .transform((v) => (v ? v : undefined));
-
 /** Request intake — mirrors the request_details brief (§12.2). */
 export const createRequestSchema = z.object({
   systemName: z
@@ -225,9 +216,9 @@ export const createRequestSchema = z.object({
     .trim()
     .min(5, "What's the expected benefit?")
     .max(2000),
-  urgency: z.enum(PRIORITIES),
   department: z.enum(DEPARTMENTS),
-  targetDate: optionalDate,
+  // No urgency / target date: the requester states the need, MIS sets the priority
+  // on claim and the delivery date when they start work (mirrors §5).
 });
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 
@@ -248,14 +239,21 @@ export type MdDecisionInput = z.infer<typeof mdDecisionSchema>;
 /** Claim a REQUEST for the build — sets assignee + priority + delivery deadline. */
 export const claimRequestSchema = z.object({
   ticketId: z.string().uuid(),
+  // Claim sets ownership + priority only — the delivery date comes at start-work.
   priority: z.enum(PRIORITIES),
+});
+export type ClaimRequestInput = z.infer<typeof claimRequestSchema>;
+
+/** Start the build — the assignee commits to a delivery date (§12.3, mirrors §5). */
+export const startWorkSchema = z.object({
+  ticketId: z.string().uuid(),
   deadline: z
     .string()
     .trim()
     .min(1, "Pick a delivery date")
     .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
 });
-export type ClaimRequestInput = z.infer<typeof claimRequestSchema>;
+export type StartWorkInput = z.infer<typeof startWorkSchema>;
 
 /** Change the delivery deadline on an in-flight request. Audited + the requester is
  *  notified — a deadline move is never silent (P12). */

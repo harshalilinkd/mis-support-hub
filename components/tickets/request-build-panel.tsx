@@ -56,7 +56,6 @@ export function RequestBuildPanel({
 }) {
   const [pending, startTransition] = useTransition();
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>("MEDIUM");
-  const [deadline, setDeadline] = useState("");
   const [editing, setEditing] = useState(false);
 
   const staff = isStaff(currentUser.role);
@@ -76,11 +75,11 @@ export function RequestBuildPanel({
           <h2 className="font-display text-sm font-semibold">Claim this request</h2>
         </div>
         <p className="mt-0.5 text-xs text-text-muted">
-          It&apos;s approved and waiting for an MIS member. Claiming assigns it to you
-          and promises the requester a delivery date.
+          It&apos;s approved and waiting for an MIS member. Claiming assigns it to you and
+          sets its priority — you&apos;ll commit to a delivery date when you start work.
         </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <div>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="min-w-[10rem] flex-1">
             <label className="mb-1 block text-xs font-medium">Priority</label>
             <Select
               value={priority}
@@ -99,27 +98,11 @@ export function RequestBuildPanel({
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <label htmlFor="claim-deadline" className="mb-1 block text-xs font-medium">
-              Delivery date
-            </label>
-            <Input
-              id="claim-deadline"
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              disabled={pending}
-            />
-          </div>
           <Button
-            disabled={pending || !deadline}
+            disabled={pending}
             onClick={() =>
               startTransition(async () => {
-                const res = await claimRequest({
-                  ticketId: request.id,
-                  priority,
-                  deadline,
-                });
+                const res = await claimRequest({ ticketId: request.id, priority });
                 if (!res.ok) {
                   toast.error(res.error);
                   return;

@@ -359,8 +359,10 @@ export const requestDetails = pgTable("request_details", {
   currentSheetLink: text("current_sheet_link"),
   intendedUsers: text("intended_users").notNull(),
   expectedBenefit: text("expected_benefit").notNull(),
-  urgency: priorityEnum("urgency").notNull(),
-  targetDate: date("target_date", { mode: "date" }),
+  // NOTE: no `urgency` / `target_date` here. A REQUEST mirrors the ISSUE flow (§5):
+  // the requester states the need, MIS sets `tickets.priority` when they claim it,
+  // and the delivery `deadline` below is set when they start work. The requester
+  // never self-assigns a priority or a date.
   // MD decision (§12.2). There is NO MD role/login — the approval is an offline
   // formality an MIS_ADMIN records on the MD's behalf: `mdDecisionRecordedBy` is
   // the admin who ticked it (defaults to the acting admin), `mdDecidedAt` is when,

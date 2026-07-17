@@ -16,7 +16,6 @@ import {
   createRequestSchema,
   DEPARTMENT_LABELS,
   DEPARTMENTS,
-  PRIORITIES,
   type CreateRequestInput,
 } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
@@ -32,13 +31,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FileDropzone } from "./file-dropzone";
 
 type FormValues = z.input<typeof createRequestSchema>;
-
-const URGENCY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
-  LOW: "Low — nice to have",
-  MEDIUM: "Medium — would help",
-  HIGH: "High — needed soon",
-  URGENT: "Urgent — blocking work",
-};
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -62,23 +54,21 @@ function Label({
   );
 }
 
-/** A titled group of related fields (§12.7 intake grouping). */
-function Group({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
+/**
+ * A field group. The eyebrow carries the grouping without a second description
+ * line — the labels and placeholders already say what each field is, and this form
+ * should fit the viewport rather than read like a document.
+ *
+ * `first-of-type` (not `first`) because the "requesting as" banner above is a div:
+ * the first <section> genuinely is the first of its type, so the rule matches.
+ */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    // A Group is never the first child (the "requesting as" banner is), so a
-    // `first:` modifier would never match — the divider is drawn unconditionally.
-    <section className="border-t border-border pt-4">
-      <h2 className="font-display text-sm font-semibold">{title}</h2>
-      <p className="mb-3 text-xs text-text-muted">{description}</p>
-      <div className="space-y-3">{children}</div>
+    <section className="border-t border-border pt-3 first-of-type:border-t-0 first-of-type:pt-0">
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        {title}
+      </h2>
+      <div className="space-y-2.5">{children}</div>
     </section>
   );
 }
@@ -107,9 +97,7 @@ export function RequestForm({
       currentProcess: "",
       currentSheetLink: "",
       intendedUsers: "",
-      urgency: undefined,
       department: requester.department ?? undefined,
-      targetDate: "",
     },
   });
 
@@ -153,16 +141,16 @@ export function RequestForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
+      className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
     >
-      <div className="truncate rounded-[var(--radius-input)] border border-border bg-surface-muted px-3 py-2 text-xs text-text-muted">
+      <div className="truncate rounded-[var(--radius-input)] border border-border bg-surface-muted px-3 py-1.5 text-xs text-text-muted">
         Requesting as{" "}
         <span className="font-medium text-foreground">{requester.name}</span> ·{" "}
         {requester.email}
       </div>
 
-      <Group title="What you need" description="The system you're asking for and why it matters.">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Section title="What you need">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           <div>
             <Label htmlFor="systemName">System name</Label>
             <Input
@@ -200,7 +188,7 @@ export function RequestForm({
           <Label htmlFor="problemStatement">Problem it solves</Label>
           <Textarea
             id="problemStatement"
-            rows={3}
+            rows={2}
             placeholder="The pain point today, and what a new system would fix."
             disabled={pending}
             {...register("problemStatement")}
@@ -218,12 +206,12 @@ export function RequestForm({
           />
           <FieldError message={errors.expectedBenefit?.message} />
         </div>
-      </Group>
+      </Section>
 
-      <Group title="Today's process" description="How this is handled right now, if at all.">
+      <Section title="Context">
         <div>
           <Label htmlFor="currentProcess" hint="optional">
-            Current process
+            How it&apos;s handled today
           </Label>
           <Textarea
             id="currentProcess"
@@ -234,22 +222,20 @@ export function RequestForm({
           />
           <FieldError message={errors.currentProcess?.message} />
         </div>
-        <div>
-          <Label htmlFor="currentSheetLink" hint="optional">
-            Sheet / app link
-          </Label>
-          <Input
-            id="currentSheetLink"
-            placeholder="Link to the sheet or app you use now"
-            disabled={pending}
-            {...register("currentSheetLink")}
-          />
-          <FieldError message={errors.currentSheetLink?.message} />
-        </div>
-      </Group>
-
-      <Group title="Who & when" description="Who will use it, and how soon you need it.">
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/* Two single-line fields pair into one row — half the height of stacking. */}
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="currentSheetLink" hint="optional">
+              Sheet / app link
+            </Label>
+            <Input
+              id="currentSheetLink"
+              placeholder="Link to the sheet you use now"
+              disabled={pending}
+              {...register("currentSheetLink")}
+            />
+            <FieldError message={errors.currentSheetLink?.message} />
+          </div>
           <div>
             <Label htmlFor="intendedUsers">Intended users</Label>
             <Input
@@ -260,46 +246,19 @@ export function RequestForm({
             />
             <FieldError message={errors.intendedUsers?.message} />
           </div>
-          <div>
-            <Label>Urgency</Label>
-            <Controller
-              control={control}
-              name="urgency"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="How urgent is it?" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {URGENCY_LABELS[p]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            <FieldError message={errors.urgency?.message} />
-          </div>
         </div>
-        <div>
-          <Label htmlFor="targetDate" hint="optional">
-            Needed by
-          </Label>
-          <Input id="targetDate" type="date" disabled={pending} {...register("targetDate")} />
-          <FieldError message={errors.targetDate?.message} />
-        </div>
-      </Group>
+        {/* MIS sets the priority on claim and commits to a delivery date at
+            start-work (§12.3) — the requester states the need, not the schedule. */}
+      </Section>
 
-      <Group title="Attachments" description="Anything that helps — a mock-up, a sample sheet, a screenshot.">
+      <Section title="Attachments">
         <FileDropzone
           onChange={setAttachments}
           onBusyChange={setUploading}
           disabled={pending}
           compact
         />
-      </Group>
+      </Section>
 
       <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">
         <Button type="button" variant="ghost" onClick={() => router.back()} disabled={pending}>

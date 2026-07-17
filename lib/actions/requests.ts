@@ -29,6 +29,7 @@ import {
   progressLogSchema,
   requestActionSchema,
   requestChangesSchema,
+  startWorkSchema,
   updateDeadlineSchema,
 } from "@/lib/validators/ticket";
 import { fail, ok, type ActionResult } from "./result";
@@ -98,9 +99,7 @@ export async function createRequest(
     currentSheetLink: d.currentSheetLink ?? null,
     intendedUsers: d.intendedUsers,
     expectedBenefit: d.expectedBenefit,
-    urgency: d.urgency,
     department: d.department,
-    targetDate: d.targetDate ? new Date(d.targetDate) : null,
   });
 
   await sendRequestSubmittedNotification(request.id);
@@ -239,7 +238,6 @@ export async function reviveRequest(ticketId: string): Promise<ActionResult> {
 export async function claimRequest(input: {
   ticketId: string;
   priority: string;
-  deadline: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -270,7 +268,6 @@ export async function claimRequest(input: {
     actorId: user.id,
     from: t.status,
     priority: parsed.data.priority,
-    deadline: new Date(parsed.data.deadline),
   });
   await sendRequestClaimedNotification(t.id);
   revalidateRequestRoutes(t.number);
@@ -310,9 +307,42 @@ async function enterProgress(
   return ok(undefined);
 }
 
-/** CLAIMED → IN_PROGRESS — the assignee starts the build (§12.3). */
-export async function startWork(ticketId: string): Promise<ActionResult> {
-  return enterProgress(ticketId, ["CLAIMED"]);
+/**
+ * CLAIMED → IN_PROGRESS — the assignee starts the build AND commits to a delivery
+ * date. The date lives here, not on claim, so a request mirrors an issue (§5): the
+ * promise is made when work actually starts. The requester is told the ETA.
+ */
+export async function startWork(input: {
+  ticketId: string;
+  deadline: string;
+}): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can work on a request.");
+  }
+  const parsed = startWorkSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const t = await loadRequest(parsed.data.ticketId);
+  if (!t) return fail("Request not found.");
+  if (t.status !== "CLAIMED") {
+    return fail(`Can't start the build on ${t.number} from ${t.status}.`);
+  }
+  if (!allows(t, "IN_PROGRESS", user)) {
+    return fail(`Only the assignee can work on ${t.number}.`);
+  }
+
+  await q.startWorkRow({
+    ticketId: t.id,
+    actorId: user.id,
+    from: t.status,
+    deadline: new Date(parsed.data.deadline),
+  });
+  // First date the requester hears — same shape as a later change (never silent).
+  await sendRequestDeadlineChangedNotification(t.id, null);
+  revalidateRequestRoutes(t.number);
+  return ok(undefined);
 }
 
 /**

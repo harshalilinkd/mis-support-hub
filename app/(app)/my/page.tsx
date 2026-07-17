@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
 import { requireUser } from "@/lib/authz";
-import { listAssignedToMe, listMyTickets } from "@/lib/db/queries";
+import { listAssignedToMe, listMyTickets, listRequests } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
 import { PageHeader } from "@/components/shell/page-header";
 import { MyTicketsView } from "@/components/tickets/my-tickets-view";
+import { MyWorkView } from "@/components/tickets/my-work-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
 
@@ -16,6 +17,11 @@ export default async function MyTicketsPage() {
   const rows = isStaff
     ? await listAssignedToMe(user.id)
     : await listMyTickets(user.id);
+  // A claimed system request is that member's work too (§12.3) — it belongs in the
+  // same place as their tickets, in its own section.
+  const myRequests = isStaff
+    ? await listRequests({ id: user.id, role: user.role }, { assignedTo: user.id })
+    : [];
 
   const tickets = rows.map((r) => ({
     id: r.id,
@@ -38,15 +44,15 @@ export default async function MyTicketsPage() {
         title={isStaff ? "Assigned to Me" : "My Tickets"}
         description={
           isStaff
-            ? "Tickets assigned to you, grouped by status — active work and your closed history."
+            ? "Your work — issue tickets and the system requests you're building."
             : "Tickets you've raised, most recent first."
         }
       />
-      <MyTicketsView
-        tickets={tickets}
-        variant={isStaff ? "assigned" : "raised"}
-        currentUser={user}
-      />
+      {isStaff ? (
+        <MyWorkView tickets={tickets} requests={myRequests} currentUser={user} />
+      ) : (
+        <MyTicketsView tickets={tickets} variant="raised" currentUser={user} />
+      )}
     </div>
   );
 }

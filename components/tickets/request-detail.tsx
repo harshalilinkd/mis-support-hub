@@ -98,16 +98,11 @@ export function RequestDetail({
             <span className="text-text-muted">Unassigned</span>
           )}
         </Meta>
-        <Meta label="Urgency">
-          <PriorityChip priority={request.urgency} />
-        </Meta>
         <Meta label="Submitted">
           <AbsoluteTime date={request.createdAt} dateOnly className="font-mono" />
         </Meta>
         {request.deadline ? (
           <Meta label="Delivery target">{formatDueDate(request.deadline)}</Meta>
-        ) : request.targetDate ? (
-          <Meta label="Needed by">{formatDueDate(request.targetDate)}</Meta>
         ) : null}
         {request.revisionRound > 0 ? (
           <Meta label="Revisions">{request.revisionRound}</Meta>

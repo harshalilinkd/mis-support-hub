@@ -215,14 +215,17 @@ Numbers are never computed from a row count.
 ### 12.2 New tables
 - `request_details` (1:1 with REQUEST tickets): ticket_id (pk, fk cascade),
   system_name, problem_statement, current_process (nullable), current_sheet_link
-  (nullable), intended_users, expected_benefit, urgency (priority enum), **target_date
-  (date, nullable)**, md_decision (enum, default PENDING), **md_decision_recorded_by**
+  (nullable), intended_users, expected_benefit,
+  md_decision (enum, default PENDING), **md_decision_recorded_by**
   (fk users.id, nullable — the MIS_ADMIN who ticked on the MD's behalf; defaults to the
   acting admin), md_decided_at (nullable), md_remark (text, nullable — **OPTIONAL even
   on reject**), claimed_by (fk users.id, nullable), claimed_at (nullable), **deadline
   (date, nullable)**, revision_round (int default 0), completed_at (nullable),
   accepted_at (nullable). **There is NO `md_decided_by` column** — the recorder IS the
-  accountability record.
+  accountability record. **There is also NO `urgency` / `target_date`**: a request
+  mirrors an issue (§5) — the requester states the need, MIS sets `tickets.priority`
+  on claim, and `deadline` is committed at start-work. The requester never
+  self-assigns a priority or a date.
 - `progress_logs`: id, ticket_id (fk cascade), author_id (fk), type
   (progress_log_type), body (text), percent_complete (int 0-100, nullable),
   created_at. Index on ticket_id.
@@ -232,8 +235,10 @@ SUBMITTED → UNDER_REVIEW (MIS_STAFF/ADMIN; internal discussion happens as comm
 → PENDING_MD_APPROVAL (MIS sends it up) → APPROVED or DROPPED.
 The APPROVED/DROPPED verdict is RECORDED BY AN MIS_ADMIN on the MD's behalf (writes
 md_decision, md_decision_recorded_by, md_decided_at, optional md_remark).
-APPROVED → CLAIMED (an MIS member self-claims: sets assigned_to, priority, deadline)
-→ IN_PROGRESS → IN_TESTING (MIS marks complete) → CLOSED (requester accepts) OR
+APPROVED → CLAIMED (an MIS member self-claims: sets assigned_to + **priority**; no
+date yet) → IN_PROGRESS (`startWork` — the assignee **commits to the delivery
+`deadline` here**, and the requester is told) → IN_TESTING (MIS marks complete) →
+CLOSED (requester accepts) OR
 CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (loops,
 uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
 illegal and rejected server-side.
