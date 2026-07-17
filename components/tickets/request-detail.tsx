@@ -1,17 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { CheckCircle2, ExternalLink, XCircle } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { UserAvatar } from "@/components/user-avatar";
-import type { RequestDetail as RequestDetailData } from "@/lib/db/queries";
+import type { AssignableUser, RequestDetail as RequestDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { isStaff } from "@/lib/roles";
 import { formatDueDate, isUrl } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AttachmentGrid } from "./attachment-grid";
 import { PriorityChip, StatusChip, TypeChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
 import { RequestActions } from "./request-actions";
+import { RequestLogSystem } from "./request-log-system";
+import type { GranteeOption } from "@/components/systems/system-form";
 import { RequestBuildPanel } from "./request-build-panel";
 import { RequestHistory } from "./request-history";
 import { RequestJourney } from "./request-journey";
@@ -41,11 +45,26 @@ export function RequestDetail({
   request,
   currentUser,
   onMutate,
+  owners = null,
+  grantees = null,
 }: {
   request: RequestDetailData;
   currentUser: SessionUser;
   onMutate?: () => void;
+  /** For the §13.5 log-a-system prompt. null = this host didn't supply them (the
+   *  request sheet), which routes the prompt to the full detail page instead. */
+  owners?: AssignableUser[] | null;
+  grantees?: GranteeOption[] | null;
 }) {
+  // §13.5: raise the log prompt the moment a build is marked complete. It is a SOFT
+  // prompt — markComplete has already succeeded by then, so dismissing it changes
+  // nothing about the request, and the requester's accept/close is untouched (§12.4).
+  const [justCompleted, setJustCompleted] = useState(false);
+  // Mirrors markComplete's own gate — the actor is normally the ASSIGNEE (who may be
+  // MIS_STAFF), not an admin, so an admin-only prompt would never fire for them.
+  const canBuild =
+    currentUser.role === "MIS_ADMIN" ||
+    (isStaff(currentUser.role) && request.assignedToId === currentUser.id);
   // Key the banner off the CURRENT status, never off mdDecision: a revive leaves
   // md_decision = REJECTED behind, so keying on the decision would keep showing a
   // red "dropped" banner on a request that is back under review (§12.3/§12.7).
@@ -117,7 +136,22 @@ export function RequestDetail({
       <RequestUatPanel request={request} currentUser={currentUser} onMutate={onMutate} />
 
       {/* Workflow actions */}
-      <RequestActions request={request} currentUser={currentUser} onMutate={onMutate} />
+      <RequestActions
+        request={request}
+        currentUser={currentUser}
+        onMutate={onMutate}
+        onCompleted={() => setJustCompleted(true)}
+      />
+
+      <RequestLogSystem
+        request={request}
+        currentUser={currentUser}
+        canBuild={canBuild}
+        owners={owners}
+        grantees={grantees}
+        autoOpen={justCompleted}
+        onAutoOpenHandled={() => setJustCompleted(false)}
+      />
 
       {/* Recorded approval outcome. When DROPPED this is the §12.7 banner: the
           remark (if any) + who recorded the MD's decision and when. */}

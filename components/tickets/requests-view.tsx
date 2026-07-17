@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Library, Search, Sparkles } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { EmptyState } from "@/components/shell/empty-state";
@@ -65,6 +66,39 @@ const TABS: { key: TabKey; label: string; statuses: Status[] | null }[] = [
 
 const inTab = (tab: (typeof TABS)[number], row: RequestListRow) =>
   tab.statuses === null || tab.statuses.includes(row.status);
+
+/**
+ * §13.5 — "system logged ✓ / not logged". Only meaningful once the build is
+ * finished: before that there is nothing to log, so an empty cell is the honest
+ * answer rather than a nag on every row.
+ */
+function SystemLoggedCell({ row }: { row: RequestListRow }) {
+  const finished =
+    row.status === "IN_TESTING" ||
+    row.status === "CLOSED" ||
+    row.status === "CHANGES_REQUESTED";
+  if (row.systemCode) {
+    return (
+      <Link
+        href={`/systems/${row.systemCode}`}
+        className="inline-flex items-center gap-1.5 rounded-sm font-mono text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <CheckCircle2 className="size-3.5" />
+        {row.systemCode}
+      </Link>
+    );
+  }
+  if (!finished) return <span className="text-sm text-text-muted">—</span>;
+  return (
+    <span
+      title="This build isn't in the systems directory yet"
+      className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--priority-high)]"
+    >
+      <Library className="size-3.5" />
+      Not logged
+    </span>
+  );
+}
 
 export function RequestsView({
   requests,
@@ -198,6 +232,13 @@ export function RequestsView({
                   </span>
                   <AbsoluteTime date={r.createdAt} dateOnly className="shrink-0 font-mono" />
                 </div>
+                {/* §13.5 flag — mobile gets it too, or a finished-but-unlogged build
+                    is invisible to anyone working from a phone. */}
+                {r.systemCode || ["IN_TESTING", "CLOSED", "CHANGES_REQUESTED"].includes(r.status) ? (
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <SystemLoggedCell row={r} />
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -214,6 +255,7 @@ export function RequestsView({
                   <TableHead>Priority</TableHead>
                   <TableHead>Requester</TableHead>
                   <TableHead>Assignee</TableHead>
+                  <TableHead>System</TableHead>
                   <TableHead className="text-right">Submitted</TableHead>
                 </TableRow>
               </TableHeader>
@@ -250,6 +292,9 @@ export function RequestsView({
                       ) : (
                         <span className="text-sm text-text-muted">—</span>
                       )}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <SystemLoggedCell row={r} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
                       {/* §9: lists/tables render absolute IST via the deterministic

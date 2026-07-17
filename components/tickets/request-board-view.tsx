@@ -16,12 +16,11 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronDown, Library, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   acceptRequest,
-  markComplete,
   moveToReview,
   recordApprovalDecision,
   reviveRequest,
@@ -102,6 +101,9 @@ function blockReason(
   return `You can't move ${humanizeEnum(from)} → ${humanizeEnum(to)}.`;
 }
 
+/** A build only has something to log once it is finished (§13.5). */
+const FINISHED_STATUSES: Status[] = ["IN_TESTING", "CLOSED", "CHANGES_REQUESTED"];
+
 const isOverdue = (r: RequestListRow) =>
   !!r.deadline &&
   new Date(r.deadline).getTime() < Date.now() &&
@@ -178,6 +180,22 @@ const RequestCardContent = forwardRef<
         >
           {overdue ? "Overdue · " : "Due "}
           {DUE_FMT.format(new Date(r.deadline))}
+        </p>
+      ) : null}
+      {/* §13.5 — a finished build that nobody logged is flagged on the card itself,
+          so it's visible without opening anything. Text + icon, never colour alone. */}
+      {r.systemCode ? (
+        <p className="mt-2 inline-flex items-center gap-1 font-mono text-[10px] text-text-muted">
+          <CheckCircle2 className="size-3" />
+          {r.systemCode}
+        </p>
+      ) : FINISHED_STATUSES.includes(r.status) ? (
+        <p
+          className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold"
+          style={{ color: "var(--priority-high)" }}
+        >
+          <Library className="size-3" />
+          Not logged
         </p>
       ) : null}
       {children}
@@ -295,7 +313,16 @@ export function RequestBoardView({
           error: "Open the request to start the build — you need to set a delivery date.",
         });
       }
-      if (to === "IN_TESTING") return markComplete({ ticketId: r.id });
+      if (to === "IN_TESTING") {
+        // Refused on purpose (§13.5). Marking complete opens the log-the-system
+        // prompt, and that dialog lives ONLY on the detail — duplicating it here
+        // would fork a flow that carries a mandatory compliance checklist. A drag
+        // also can't supply the handover note.
+        return Promise.resolve({
+          ok: false as const,
+          error: "Open the request to mark complete and log the system.",
+        });
+      }
       if (to === "CLOSED") return acceptRequest(r.id);
       return Promise.resolve({ ok: false, error: "Unsupported move." });
     };

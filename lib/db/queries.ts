@@ -1365,6 +1365,13 @@ export async function listRequests(
         where pl.ticket_id = ${tickets.id} and pl.percent_complete is not null
         order by pl.created_at desc limit 1
       )`.mapWith((v) => (v === null ? null : Number(v))),
+      // §13.5: has the built system been logged into the directory yet? A
+      // correlated subquery (same shape as percentComplete above) so the list and
+      // the board can flag a finished build that nobody logged — without a join
+      // that would duplicate rows.
+      systemCode: sql<string | null>`(
+        select s.code from ${systems} s where s.linked_ticket_id = ${tickets.id} limit 1
+      )`,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
       createdById: tickets.createdBy,
@@ -1403,6 +1410,10 @@ export async function getRequestByNumber(
       status: tickets.status,
       priority: tickets.priority,
       sheetLink: tickets.sheetLink,
+      // §13.5 — the built system's code once it's in the directory, else null.
+      systemCode: sql<string | null>`(
+        select s.code from ${systems} s where s.linked_ticket_id = ${tickets.id} limit 1
+      )`,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
       createdById: tickets.createdBy,

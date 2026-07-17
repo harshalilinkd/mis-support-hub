@@ -26,6 +26,38 @@ export const SYSTEM_STATUS_LABELS: Record<(typeof SYSTEM_STATUSES)[number], stri
 };
 
 /**
+ * Guess the system type from its frontend URL — a convenience default only.
+ *
+ * The caller must never let this override a manual choice: it is a starting point,
+ * not a classifier. Returns null when the URL isn't parseable yet (people type into
+ * the field character by character), so a half-typed URL doesn't churn the select.
+ *
+ * Host-based, not substring-based: a naive `url.includes("script.google.com")` would
+ * match `https://evil.test/?x=script.google.com`.
+ */
+export function systemTypeFromUrl(
+  url: string
+): (typeof SYSTEM_TYPES)[number] | null {
+  let host: string;
+  try {
+    host = new URL(url.trim()).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host === "docs.google.com") {
+    // Only /spreadsheets is a Sheet — docs.google.com also serves Docs, Slides, Forms.
+    try {
+      if (new URL(url.trim()).pathname.startsWith("/spreadsheets")) return "SHEET";
+    } catch {
+      return null;
+    }
+    return "OTHER";
+  }
+  if (host === "script.google.com") return "APPS_SCRIPT";
+  return "WEB_APP";
+}
+
+/**
  * `frontend_url` is REQUIRED and must be a real URL — a stricter contract than
  * tickets.sheet_link, which deliberately accepts "a URL OR a plain system name".
  * Validating here means the shared isUrl() render guard can never meet a row it

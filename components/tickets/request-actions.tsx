@@ -51,10 +51,13 @@ export function RequestActions({
   request,
   currentUser,
   onMutate,
+  onCompleted,
 }: {
   request: RequestDetail;
   currentUser: SessionUser;
   onMutate?: () => void;
+  /** Fired after markComplete succeeds, so the host can raise the §13.5 log prompt. */
+  onCompleted?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<
@@ -68,7 +71,12 @@ export function RequestActions({
   // is no longer staff must not be offered build actions the server would reject.
   const canBuild = isAdmin || (staff && isAssignee);
 
-  const run = (label: string, fn: () => Promise<ActionResult>) => {
+  const run = (
+    label: string,
+    fn: () => Promise<ActionResult>,
+    /** Runs only after the mutation succeeded — never gates it (§13.5 soft prompt). */
+    onSuccess?: () => void
+  ) => {
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) {
@@ -78,6 +86,7 @@ export function RequestActions({
       toast.success(label);
       setDialog(null);
       onMutate?.();
+      onSuccess?.();
     });
   };
 
@@ -184,7 +193,12 @@ export function RequestActions({
           )
         }
       />
-      <NoteDialog open={dialog === "complete"} pending={pending} title="Mark build complete" label="Handover note (optional)" placeholder="Anything the requester should know before testing…" required={false} confirmLabel="Mark complete" onOpenChange={(o) => !o && setDialog(null)} onSubmit={(note) => run("Marked complete — ready for testing", () => markComplete({ ticketId: request.id, note }))} />
+      <NoteDialog open={dialog === "complete"} pending={pending} title="Mark build complete" label="Handover note (optional)" placeholder="Anything the requester should know before testing…" required={false} confirmLabel="Mark complete" onOpenChange={(o) => !o && setDialog(null)} onSubmit={(note) =>
+          run("Marked complete — ready for testing", () =>
+            markComplete({ ticketId: request.id, note })
+          , onCompleted)
+        }
+      />
     </>
   );
 }

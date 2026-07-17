@@ -466,14 +466,47 @@ department, linked_ticket_id = the ticket). A **soft prompt, never a hard block*
 the request lifecycle — only the requester closes a request (§12.4). Completed/closed
 requests show a "system logged ✓ / not logged" flag so nothing slips.
 
-Two facts the implementation must respect:
+**As built (P16):**
 - **The actor is the assignee, not necessarily an admin.** `markComplete` is gated on
-  STAFF_ROLES and is normally called by the assignee (who may be MIS_STAFF). An
-  admin-only prompt would never fire for a staff member's own completed build.
-- **`markComplete` has TWO call sites.** The detail action bar opens a dialog, but the
-  request board also calls it directly on a drag into "Testing" with no dialog at all.
-  A prompt wired only into the detail is silently skipped on every board drag — decide
-  both call sites explicitly.
+  STAFF_ROLES and is normally called by the assignee (who may be MIS_STAFF), so the
+  prompt gates on `canBuild` (`isAdmin || (isStaff && isAssignee)`) — mirroring the
+  action exactly. An admin-only prompt would never fire for a staff member's own build.
+- **The dialog lives ONLY on the request detail** (`RequestLogSystem`), and the board
+  now **refuses** a drag into Testing ("Open the request to mark complete and log the
+  system"). `markComplete` used to have two call sites — the detail's note dialog and a
+  bare board drag — so a prompt wired only into the detail was silently skipped on every
+  drag. Refusing the drag is the fix: one source of truth for a flow that carries a
+  mandatory compliance checklist, and a drag can't supply the handover note either.
+- **Soft by construction.** The prompt is raised from `run()`'s success callback — i.e.
+  only AFTER markComplete has already committed. Dismissing it changes nothing about the
+  request, and the requester's accept/close (§12.4) is untouched.
+- **The flag** reads `systemCode`, a correlated subquery on `listRequests` /
+  `getRequestByNumber` (same shape as `percentComplete`) — no join, no extra round-trip.
+  It shows only once a build is finished (IN_TESTING / CLOSED / CHANGES_REQUESTED);
+  before that there is nothing to log, so a flag would just be a nag.
+- **Type auto-detect** (`systemTypeFromUrl`, unit-tested in `lib/validators/systems.test.ts`):
+  `docs.google.com` + path `/spreadsheets` → SHEET; **any other docs.google.com path →
+  OTHER** (that host also serves Docs, Slides and Forms, which are not spreadsheets);
+  `script.google.com` → APPS_SCRIPT; anything else → WEB_APP; an unparseable/half-typed
+  URL → null (leave the field alone). Matched on HOSTNAME, not substring —
+  `includes("script.google.com")` would match `https://evil.test/?x=script.google.com`.
+  It is a prefilled DEFAULT and must never override a manual choice: the form latches a
+  `typeTouched` ref **when the picker OPENS**, not only on change — Radix fires no
+  `onValueChange` when you re-pick the value already selected, so latching on change
+  alone would let a later URL edit silently overwrite a choice the user had just made.
+- **Owner pre-fill vs. the owner picker.** §13.5 pre-fills owner = assignee, but the
+  picker is fed by `listAssignableUsers()` (ACTIVE MIS_STAFF/MIS_ADMIN). Those sets
+  legitimately diverge: deactivating a member releases their ISSUE tickets but
+  deliberately NOT their requests, so a request can still be assigned to someone since
+  deactivated or demoted. The prompt therefore **appends the assignee to the picker when
+  they're missing** rather than dropping the default — otherwise the id matches no option,
+  Radix renders the trigger BLANK while the form holds a valid uuid, and the system is
+  logged with an owner nobody saw. (`createSystem` validates `ownerId` as a uuid, not as
+  a member of any set.)
+- **Hosts that don't supply the form's data** (the request *sheet* is a preview, not the
+  detail) pass `owners`/`grantees` as **null**, and the prompt routes to the full detail
+  instead of opening a form that would wrongly report "no grantees configured". null =
+  not supplied; `[]` = genuinely none configured. The two must not be conflated.
 
 ### 13.6 Enforcement (as built)
 - `lib/validators/systems.ts` — zod; enum values mirrored as const tuples so a client
@@ -485,6 +518,21 @@ Two facts the implementation must respect:
   `getCurrentUser()` + typed `fail()` (actions never use the redirect-based
   `requireRole`, which is for pages).
 - `lib/db/queries.ts` — `systemCodeSql` is the ONE place a code is generated.
+- **The `canBuild` gate** (`isAdmin || (isStaff && isAssignee)`) mirrors `markComplete`
+  exactly and is the gate for the §13.5 prompt. It is computed in BOTH
+  `app/(app)/tickets/[number]/page.tsx` (to decide whether to fetch owners/grantees at
+  all) and `components/tickets/request-detail.tsx` (to render the prompt). They must stay
+  identical — if they ever diverge, the prompt renders without the data it needs.
+- **`owners`/`grantees` are `null` when a host didn't supply them**, and `[]` when there
+  genuinely are none. **Never conflate the two.** The request *sheet* is a preview and
+  passes null, so the prompt routes to the full detail; passing `[]` there would open the
+  form and wrongly announce "No access-grantees configured" (§13.4's fail-closed state)
+  when the checklist is perfectly well configured.
+
+> **KNOWN ISSUE — `systems.linked_ticket_id` is unindexed and non-unique
+> (`docs/known-issues/0002`).** The §13.5 flag is a correlated subquery over that column,
+> and nothing stops two systems linking to one request. Tracked, not fixed — both need a
+> migration.
 
 ### 13.7 Numbering (correct from day one)
 `systems.code` = `'SYS-' || lpad(n::text, greatest(3, length(n::text)), '0')` drawn

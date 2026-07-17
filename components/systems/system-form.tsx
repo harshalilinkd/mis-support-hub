@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
@@ -10,12 +10,13 @@ import { toast } from "sonner";
 import type { z } from "zod";
 
 import { createSystem } from "@/lib/actions/systems";
-import type { AssignableUser } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { cn } from "@/lib/utils";
 import {
   SYSTEM_TYPES,
   SYSTEM_TYPE_LABELS,
   createSystemSchema,
+  systemTypeFromUrl,
   type CreateSystemInput,
 } from "@/lib/validators/systems";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/validators/ticket";
@@ -34,6 +35,13 @@ import { Textarea } from "@/components/ui/textarea";
 type FormValues = z.input<typeof createSystemSchema>;
 
 export type GranteeOption = { id: string; label: string };
+
+/** Just what the owner picker renders — AssignableUser satisfies this structurally. */
+export type OwnerOption = {
+  id: string;
+  name: string | null;
+  email?: string | null;
+};
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -113,14 +121,26 @@ export function SystemForm({
   linkedTicketId,
   defaultName,
   defaultDepartment,
+  defaultOwnerId,
+  onDone,
+  embedded = false,
+  onCancel,
 }: {
-  owners: AssignableUser[];
+  owners: OwnerOption[];
   grantees: GranteeOption[];
   currentUser: SessionUser;
   /** Pre-fill when logging off the back of a REQUEST (§13.5). */
   linkedTicketId?: string;
   defaultName?: string;
   defaultDepartment?: (typeof DEPARTMENTS)[number];
+  /** The request's assignee — they built it, so they own it by default (§13.5). */
+  defaultOwnerId?: string;
+  /** Called instead of routing to the new system — used when hosted in a dialog. */
+  onDone?: (code: string) => void;
+  /** Drop the card chrome when the form is already inside a dialog's surface. */
+  embedded?: boolean;
+  /** Dialog hosts supply their own Cancel; the standalone page uses router.back(). */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -130,6 +150,7 @@ export function SystemForm({
     handleSubmit,
     control,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<FormValues, unknown, CreateSystemInput>({
     resolver: zodResolver(createSystemSchema),
@@ -137,7 +158,7 @@ export function SystemForm({
       name: defaultName ?? "",
       systemType: undefined,
       department: defaultDepartment ?? undefined,
-      ownerId: undefined,
+      ownerId: defaultOwnerId ?? undefined,
       frontendUrl: "",
       backendUrl: "",
       notes: "",
@@ -154,6 +175,22 @@ export function SystemForm({
   const allConfirmed =
     grantees.length > 0 && confirmations?.every((c) => c.confirmed === true);
 
+  /**
+   * Guess the type from the frontend URL (§13, P16) — a default, never a decision.
+   * `typeTouched` latches the moment someone picks a type themselves, and from then
+   * on the URL never moves it again: a convenience that overwrote a deliberate
+   * choice would be worse than no convenience at all.
+   */
+  const frontendUrl = watch("frontendUrl");
+  const typeTouched = useRef(false);
+  useEffect(() => {
+    if (typeTouched.current) return;
+    const guess = systemTypeFromUrl(frontendUrl ?? "");
+    if (!guess) return;
+    // `shouldDirty: false` — a guess is not a user edit.
+    setValue("systemType", guess, { shouldDirty: false, shouldValidate: false });
+  }, [frontendUrl, setValue]);
+
   if (grantees.length === 0) {
     return <NoGranteesBlocked isAdmin={currentUser.role === "MIS_ADMIN"} />;
   }
@@ -166,14 +203,23 @@ export function SystemForm({
         return;
       }
       toast.success(`${res.data.code} logged`);
-      router.push(`/systems/${res.data.code}`);
+      // A dialog host closes itself and refreshes in place; the standalone page
+      // routes to the new system.
+      if (onDone) onDone(res.data.code);
+      else router.push(`/systems/${res.data.code}`);
     });
   };
 
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
+      className={cn(
+        "space-y-3",
+        // A dialog already provides the surface — a second card inside it would
+        // double the border, radius and shadow (design-system: one card treatment).
+        !embedded &&
+          "rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
+      )}
     >
       <Section title="The system">
         <div className="grid gap-2.5 sm:grid-cols-2">
@@ -193,7 +239,22 @@ export function SystemForm({
               control={control}
               name="systemType"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
+                <Select
+                  value={field.value}
+                  // Latch on OPENING, not only on change: Radix fires no
+                  // onValueChange when you re-pick the value already selected, so a
+                  // user who opens the list and confirms the URL's guess would never
+                  // latch — and a later URL edit would silently overwrite the choice
+                  // they just made. Opening the picker is the intent.
+                  onOpenChange={(o) => {
+                    if (o) typeTouched.current = true;
+                  }}
+                  onValueChange={(v) => {
+                    typeTouched.current = true;
+                    field.onChange(v);
+                  }}
+                  disabled={pending}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="What kind of system?" />
                   </SelectTrigger>
@@ -338,8 +399,18 @@ export function SystemForm({
         ) : null}
       </Section>
 
-      <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">
-        <Button type="button" variant="ghost" onClick={() => router.back()} disabled={pending}>
+      <div
+        className={cn(
+          "flex justify-end gap-2 border-t border-border pt-3",
+          !embedded && "-mx-4 px-4 sm:-mx-5 sm:px-5"
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => (onCancel ? onCancel() : router.back())}
+          disabled={pending}
+        >
           Cancel
         </Button>
         {/* The server re-validates the whole checklist regardless (§13.4) — this
