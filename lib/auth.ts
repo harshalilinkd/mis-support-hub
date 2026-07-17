@@ -5,6 +5,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import { authConfig } from "./auth.config";
+import { canSignIn } from "./auth-gate";
 import { db } from "./db";
 import { getUserByEmail, getUserById } from "./db/queries";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
@@ -53,19 +54,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   }),
   callbacks: {
     ...authConfig.callbacks,
-    // Full (Node-runtime) sign-in gate: domain allowlist (edge-safe) + is_active.
+    /**
+     * Full (Node-runtime) sign-in gate: the app is INVITE-ONLY (§7).
+     *
+     * Why not the domain allowlist alone: it cannot gate this organisation. The
+     * team signs in with personal Gmail (not a Workspace domain), so
+     * ALLOWED_EMAIL_DOMAINS="gmail.com" would admit roughly every Google account
+     * alive, and leaving it empty admits everyone. Either way it's the same open
+     * door, and an unknown account used to self-provision a USER row here.
+     *
+     * So membership — not the domain — is the gate: you may sign in if an admin
+     * already created your account (Settings → Users), and the domain allowlist
+     * stays on top as an optional extra filter for the day this moves to Workspace.
+     *
+     * ADMIN_EMAILS is the bootstrap: those addresses may still self-provision, or a
+     * fresh deployment with an empty users table could admit nobody at all — an
+     * unrecoverable lockout, since the only way in would be the UI you can't reach.
+     */
     async signIn(params) {
-      const domainOk = await authConfig.callbacks!.signIn!(params);
-      if (domainOk === false) return false;
       const email = (
         params.profile?.email ??
         params.user?.email ??
         ""
       ).toLowerCase();
-      // New users (no row yet) default to active; only block known-inactive users.
+      // The optional ALLOWED_EMAIL_DOMAINS filter (edge-safe, no DB). Its result is
+      // handed to canSignIn rather than short-circuiting here, so the ADMIN_EMAILS
+      // bootstrap can be exempted from it — see lib/auth-gate.ts.
+      const domainAllowed = (await authConfig.callbacks!.signIn!(params)) !== false;
+      // The decision itself is a pure, unit-tested function (lib/auth-gate.ts) —
+      // this callback only gathers the facts. A refused sign-in surfaces on the
+      // login page as error=AccessDenied ("ask the MIS team to add you").
       const dbUser = email ? await getUserByEmail(email) : null;
-      if (dbUser && !dbUser.isActive) return false;
-      return true;
+      return canSignIn({ email, user: dbUser, adminEmails, domainAllowed });
     },
     // Read the authoritative role from the DB on sign-in, and (idempotently)
     // promote ADMIN_EMAILS to MIS_ADMIN on every sign-in — matches CLAUDE.md §7

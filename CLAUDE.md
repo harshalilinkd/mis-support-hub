@@ -111,13 +111,53 @@ Enforce on the server (in actions/queries), never trust the client. USER may onl
 
 ## 7. Auth rules
 Google SSO **and** email + password. Google is first-class SSO; passwords are an
-additional door (`bcryptjs` verify against `users.password_hash`). Restrict Google
-sign-in to the company Workspace domain(s) via `ALLOWED_EMAIL_DOMAINS`. On first
-Google sign-in, upsert a `users` row with role USER; emails in `ADMIN_EMAILS` get
-MIS_ADMIN. Admins can create accounts with a password (bulk add); users can
-set/change their own password in Profile. Session carries `id` and `role`
-(extended session callback). Protect all `/(app)` routes with middleware;
-unauthenticated → `/login`.
+additional door (`bcryptjs` verify against `users.password_hash`).
+
+**The app is INVITE-ONLY — membership is the gate, not the email domain.** You may
+sign in only if a `users` row already exists for your email (an admin created it in
+Settings → Users) and `is_active` is true. An unknown Google account is refused
+(`AccessDenied`, and the login page tells them to ask MIS to add them) — it does NOT
+self-provision.
+> **Why not the domain allowlist (as originally specified):** it cannot gate this
+> organisation. The team signs in with **personal Gmail**, not a Workspace domain
+> (15 of 18 users are @gmail.com), so `ALLOWED_EMAIL_DOMAINS="gmail.com"` would admit
+> nearly every Google account in existence, and leaving it empty admits everyone.
+> `ALLOWED_EMAIL_DOMAINS` therefore remains supported as an **optional extra filter**
+> layered on top (useful if this ever moves to a Workspace domain) — but it is never
+> the thing keeping strangers out.
+
+**`ADMIN_EMAILS` is the bootstrap exception**: those addresses may self-provision on
+first sign-in, and are promoted to MIS_ADMIN on every sign-in (idempotent, never
+downgrades). Without it a fresh deployment with an empty `users` table would admit
+nobody — an unrecoverable lockout, since the only way in is a UI you can't reach.
+
+**There is NO self-service sign-up.** Admins create accounts with a password (bulk
+add in Settings → Users); a user sets/changes their own password in Profile once
+they're in. A public `registerWithPassword` action used to exist and defeated the gate
+entirely — the invite check asks "does a `users` row exist?", and that action was an
+unauthenticated way to make one exist, so any stranger could mint an active USER row
+and sign in through the password door while the Google door was bolted. Closing only
+one door is not closing the door: **any new path that can INSERT a `users` row is a
+sign-in bypass.** Account creation belongs to MIS_ADMIN actions only.
+
+The decision itself lives in `lib/auth-gate.ts` (`canSignIn`) — a pure, unit-tested
+function (`lib/auth-gate.test.ts`), same convention as `lib/ticket-state.ts`. Two
+orderings in it are load-bearing:
+- An existing row's `is_active` is checked BEFORE `ADMIN_EMAILS`, so deactivating a
+  bootstrap admin still locks them out (otherwise removing an admin would silently do
+  nothing).
+- `ADMIN_EMAILS` is **exempt from `ALLOWED_EMAIL_DOMAINS`**. The bootstrap is the
+  recovery hatch, and a hatch a config change can lock is not a hatch: setting the
+  domain filter to a domain the team doesn't use (the docs used to instruct exactly
+  that) would otherwise refuse every user AND the only account that could add them
+  back — with no way in through the UI.
+
+Session carries `id` and `role` (extended session callback). Protect all `/(app)`
+routes with middleware; unauthenticated → `/login`.
+> **Known gap (pre-existing, not fixed):** sessions are JWT (`strategy: "jwt"`), so
+> deactivating a user does not revoke a session already issued — their token stays
+> valid at the edge until it expires. `getCurrentUser()` re-checks `is_active` on
+> every `/(app)` request and returns null, so the app itself still locks them out.
 
 ## 8. Notification contract
 `/lib/notifications` is channel-agnostic: an internal `notify({to, template, data})`

@@ -140,22 +140,11 @@ export async function listAssignableUsers() {
 
 export type AssignableUser = Awaited<ReturnType<typeof listAssignableUsers>>[number];
 
-/** Create an email+password account (self-signup). role defaults to USER. */
-export async function createUserWithPassword(args: {
-  name: string;
-  email: string;
-  passwordHash: string;
-}) {
-  const [row] = await db
-    .insert(users)
-    .values({
-      name: args.name,
-      email: args.email.toLowerCase(),
-      passwordHash: args.passwordHash,
-    })
-    .returning();
-  return row;
-}
+// NOTE: `createUserWithPassword` (self-signup) was removed deliberately — it was an
+// unauthenticated way to mint an active users row, which defeated the invite-only
+// gate in lib/auth.ts (§7). Admin account creation goes through `insertUserWithRole`,
+// which is reachable only from an MIS_ADMIN action. Don't add an unguarded
+// user-insert helper back.
 
 /**
  * Every user, for the admin Settings → Users screen. Never selects the

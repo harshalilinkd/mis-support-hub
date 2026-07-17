@@ -1,17 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 
-import {
-  registerWithPassword,
-  signInWithPassword,
-} from "@/lib/actions/auth";
+import { signInWithPassword } from "@/lib/actions/auth";
 import type { AuthFormState } from "@/lib/validators/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-type Mode = "signin" | "signup";
 
 function FieldLabel({
   htmlFor,
@@ -30,32 +25,22 @@ function FieldLabel({
   );
 }
 
-/** The actual form — remounted (via `key`) when the mode flips, so a stale
- * error from the other mode doesn't linger. */
-function CredentialsFields({ mode }: { mode: Mode }) {
-  const action =
-    mode === "signin" ? signInWithPassword : registerWithPassword;
+/**
+ * Email + password sign-in — the second door alongside Google SSO (§7).
+ *
+ * Sign-IN only. This form used to have a "Create an account" mode, which let any
+ * stranger mint their own active USER row and walk in; the app is invite-only, so
+ * accounts come from an MIS_ADMIN in Settings → Users and a password is set in
+ * Profile. Don't add a sign-up mode back.
+ */
+export function CredentialsForm() {
   const [state, formAction, pending] = useActionState<AuthFormState, FormData>(
-    action,
+    signInWithPassword,
     {}
   );
 
   return (
     <form action={formAction} className="space-y-3 text-left">
-      {mode === "signup" ? (
-        <div>
-          <FieldLabel htmlFor="name">Name</FieldLabel>
-          <Input
-            id="name"
-            name="name"
-            autoComplete="name"
-            placeholder="Your full name"
-            required
-            disabled={pending}
-          />
-        </div>
-      ) : null}
-
       <div>
         <FieldLabel htmlFor="email">Email</FieldLabel>
         <Input
@@ -75,10 +60,9 @@ function CredentialsFields({ mode }: { mode: Mode }) {
           id="password"
           name="password"
           type="password"
-          autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+          autoComplete="current-password"
+          placeholder="Your password"
           required
-          minLength={mode === "signup" ? 8 : undefined}
           disabled={pending}
         />
       </div>
@@ -89,51 +73,10 @@ function CredentialsFields({ mode }: { mode: Mode }) {
         </p>
       ) : null}
 
-      <Button
-        type="submit"
-        variant="outline"
-        className="w-full"
-        disabled={pending}
-      >
+      <Button type="submit" variant="outline" className="w-full" disabled={pending}>
         {pending ? <Loader2 className="animate-spin" /> : null}
-        {mode === "signin" ? "Sign in" : "Create account"}
+        Sign in
       </Button>
     </form>
-  );
-}
-
-export function CredentialsForm() {
-  const [mode, setMode] = useState<Mode>("signin");
-
-  return (
-    <div className="space-y-3">
-      <CredentialsFields key={mode} mode={mode} />
-
-      <p className="text-center text-xs text-text-muted">
-        {mode === "signin" ? (
-          <>
-            New here?{" "}
-            <button
-              type="button"
-              onClick={() => setMode("signup")}
-              className="font-medium text-primary hover:underline"
-            >
-              Create an account
-            </button>
-          </>
-        ) : (
-          <>
-            Already have an account?{" "}
-            <button
-              type="button"
-              onClick={() => setMode("signin")}
-              className="font-medium text-primary hover:underline"
-            >
-              Sign in
-            </button>
-          </>
-        )}
-      </p>
-    </div>
   );
 }

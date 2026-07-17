@@ -65,8 +65,8 @@ flowchart TD
 | `DATABASE_URL` | Neon pooled connection string |
 | `AUTH_SECRET` | `npx auth secret` — **fresh** value in prod |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google OAuth client |
-| `ALLOWED_EMAIL_DOMAINS` | e.g. `linkdprints.com` — **required in prod**; gates **both** Google and email/password sign-up |
-| `ADMIN_EMAILS` | emails auto-promoted to `MIS_ADMIN` on sign-in |
+| `ALLOWED_EMAIL_DOMAINS` | OPTIONAL extra filter — leave **empty** unless you run a Workspace domain. NOT the sign-in gate (see §2) |
+| `ADMIN_EMAILS` | auto-promoted to `MIS_ADMIN`, **and** the invite-only bootstrap — the only emails that may sign in with no `users` row. Set at least one |
 | `BLOB_READ_WRITE_TOKEN` | added by the Blob store |
 | `RESEND_API_KEY` / `EMAIL_FROM` | email (optional; unset = emails skipped) |
 | `NEXT_PUBLIC_APP_URL` | public base URL (set after first deploy, then redeploy) |
@@ -85,23 +85,26 @@ flowchart TD
 ## 2. Authentication flow
 
 Two doors, one session. Google SSO is primary; email/password is an additional
-door for people without a company Google account. **Both** are gated by the same
-`ALLOWED_EMAIL_DOMAINS` allowlist (single source of truth in
-[`lib/email-domains.ts`](./lib/email-domains.ts)).
+door for people without a company Google account. **The app is invite-only**: you
+may sign in only if an admin already created your account and it is active — or
+your email is in `ADMIN_EMAILS` (the bootstrap). There is no self-service sign-up.
+
+`ALLOWED_EMAIL_DOMAINS` is only an *optional extra filter* on top, and it is empty
+by design: this org signs in with personal Gmail, so a domain list can never be the
+gate (CLAUDE.md §7). The decision itself is the pure, unit-tested `canSignIn` in
+[`lib/auth-gate.ts`](./lib/auth-gate.ts).
 
 ```mermaid
 flowchart TD
     L[/login] -->|Continue with Google| G[Google OAuth]
     L -->|Email + password: Sign in| P[signInWithPassword]
-    L -->|Email + password: Create account| R[registerWithPassword]
 
-    G --> DZ{domain in allowlist?}
-    R --> DZ
-    DZ -->|no| X[Rejected]
-    DZ -->|yes| ACT{account active?}
-    P --> ACT
-    ACT -->|no| X
-    ACT -->|yes| S[JWT session: id + role]
+    G --> GATE{canSignIn}
+    P --> GATE
+    GATE -->|no users row| X[Rejected: ask MIS to add you]
+    GATE -->|row exists but inactive| X
+    GATE -->|in ADMIN_EMAILS: bootstrap| S[JWT session: id + role]
+    GATE -->|invited and active| S
     S --> HOME{role?}
     HOME -->|USER| MY[/my]
     HOME -->|MIS_STAFF / MIS_ADMIN| DASH[/dashboard]
@@ -111,10 +114,11 @@ flowchart TD
   fresh from the DB on each sign-in, and `ADMIN_EMAILS` are (idempotently)
   promoted to `MIS_ADMIN`. See [`lib/auth.ts`](./lib/auth.ts).
 - **Email/password specifics** ([`lib/actions/auth.ts`](./lib/actions/auth.ts)):
-  - Created by **self-signup** or by an **MIS_ADMIN** (Settings → Users → Add
-    user). Passwords hashed with **bcrypt** (cost 10).
-  - Sign-up **rejects an already-registered email** — you can never set a
-    password on an account you don't control (no takeover of a Google account).
+  - Accounts are created **only by an MIS_ADMIN** (Settings → Users → Add user);
+    a user sets/changes their own password in Profile. Hashed with **bcrypt**
+    (cost 10). There is deliberately no self-service sign-up: it created the
+    `users` row itself, which is exactly what the invite gate tests for, so it let
+    any stranger in through the password door.
   - The `Credentials` provider lives only in `lib/auth.ts` (Node runtime), so
     bcrypt/DB never leak into edge middleware.
 - **Route protection:** [`middleware.ts`](./middleware.ts) runs on all `/(app)`

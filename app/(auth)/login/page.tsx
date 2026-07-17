@@ -13,8 +13,10 @@ export const metadata: Metadata = {
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
+  // Invite-only (§7): almost always an account MIS hasn't added yet, so say what
+  // to do about it rather than just refusing.
   AccessDenied:
-    "This Google account isn't permitted. Sign in with your approved company account.",
+    "This account doesn't have access yet. Ask the MIS team to add you, then sign in again.",
   Configuration:
     "Sign-in is misconfigured. Please contact the MIS team.",
   Verification: "That sign-in link is invalid or has expired.",
@@ -98,7 +100,7 @@ export default async function LoginPage({
         </div>
 
         <p className="enter-up text-xs text-text-muted" style={{ animationDelay: "280ms" }}>
-          Access is restricted to approved company domains.
+          Access is limited to accounts set up by the MIS team.
         </p>
       </div>
     </main>

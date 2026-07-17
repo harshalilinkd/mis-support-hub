@@ -1,16 +1,22 @@
 "use server";
 
-import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
 
 import { signIn, signOut } from "@/lib/auth";
-import { createUserWithPassword, getUserByEmail } from "@/lib/db/queries";
-import { isEmailDomainAllowed } from "@/lib/email-domains";
-import {
-  signInSchema,
-  signUpSchema,
-  type AuthFormState,
-} from "@/lib/validators/auth";
+import { signInSchema, type AuthFormState } from "@/lib/validators/auth";
+
+/**
+ * There is deliberately NO self-service sign-up here (§7). The app is invite-only:
+ * accounts are created by an MIS_ADMIN in Settings → Users, and a user sets or
+ * changes their own password in Profile once they're in.
+ *
+ * A `registerWithPassword` action used to live here and defeated the whole gate.
+ * The invite check in lib/auth.ts asks "does a users row exist?" — and this was a
+ * public, unauthenticated way to make one exist, so any stranger could mint their
+ * own active USER row and sign straight in. It leaned on the domain allowlist,
+ * which is empty by design (see §7: this org signs in with personal Gmail, so a
+ * domain list can never be the gate). Do not reintroduce it.
+ */
 
 export async function signOutAction() {
   await signOut({ redirectTo: "/login" });
@@ -49,51 +55,3 @@ export async function signInWithPassword(
   return {};
 }
 
-/**
- * Self-service email + password sign-up. Enforces the same company-domain
- * allowlist as Google SSO (CLAUDE.md §7), rejects existing emails (never
- * overwrites a password on an account you don't control), creates a USER-role
- * account, then signs them in.
- */
-export async function registerWithPassword(
-  _prev: AuthFormState,
-  formData: FormData
-): Promise<AuthFormState> {
-  const parsed = signUpSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
-    password: formData.get("password"),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
-  }
-  const { name, email, password } = parsed.data;
-
-  if (!isEmailDomainAllowed(email)) {
-    return { error: "Use your approved company email address to sign up." };
-  }
-
-  const existing = await getUserByEmail(email);
-  if (existing) {
-    return { error: "An account with this email already exists — sign in instead." };
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  try {
-    await createUserWithPassword({ name, email, passwordHash });
-  } catch {
-    // Unique-constraint race (two sign-ups at once) or a transient DB error.
-    return { error: "Could not create the account. Please try again." };
-  }
-
-  try {
-    await signIn("credentials", { email, password, redirectTo: "/" });
-  } catch (error) {
-    if (error instanceof AuthError) {
-      // Account exists now, but auto sign-in failed — let them sign in manually.
-      return { error: "Account created. Please sign in with your new password." };
-    }
-    throw error;
-  }
-  return {};
-}

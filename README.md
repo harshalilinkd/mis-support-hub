@@ -14,7 +14,7 @@ Replaces a Google Form + Sheet.
 | --- | --- |
 | Framework | Next.js 15 (App Router, Server Actions), TypeScript strict |
 | Database | Neon Postgres + Drizzle ORM (`drizzle-orm/neon-http`) |
-| Auth | Auth.js v5 (`next-auth@beta`), Google SSO only, domain-restricted |
+| Auth | Auth.js v5 (`next-auth@beta`), Google SSO + email/password. Invite-only — accounts are created by an admin |
 | UI | Tailwind CSS v4 + shadcn/ui + lucide-react |
 | Files | Vercel Blob |
 | Email | Resend (in-app toast via `sonner`; WhatsApp is a stubbed provider) |
@@ -47,7 +47,7 @@ See [`.env.example`](./.env.example). Required for a full run:
 | `DATABASE_URL` | Neon pooled connection string |
 | `AUTH_SECRET` | `npx auth secret` |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google OAuth Web client. Redirect URI: `{NEXT_PUBLIC_APP_URL}/api/auth/callback/google` |
-| `ALLOWED_EMAIL_DOMAINS` | Comma-separated Workspace domains. Empty = allow any (dev only) |
+| `ALLOWED_EMAIL_DOMAINS` | OPTIONAL extra filter. Empty = no domain filter, the expected setup — invite-only membership is the real gate (§7) |
 | `ADMIN_EMAILS` | Comma-separated emails bootstrapped to `MIS_ADMIN` |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob store token |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Email. Unset = emails skipped (non-fatal) |
@@ -109,7 +109,7 @@ yet — set env vars first.
 | `DATABASE_URL` | Neon pooled connection string |
 | `AUTH_SECRET` | generate a fresh one: `npx auth secret` (don't reuse the dev value) |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | from the Google OAuth client |
-| `ALLOWED_EMAIL_DOMAINS` | your Workspace domain(s), comma-separated, e.g. `linkd.com` (**required in prod** — empty allows any Google account) |
+| `ALLOWED_EMAIL_DOMAINS` | Leave **empty** unless you run a Workspace domain. It is an optional extra filter, NOT the sign-in gate — the app is invite-only, so only accounts an admin created can sign in. Setting it to a domain your team doesn't use refuses everyone except `ADMIN_EMAILS` |
 | `ADMIN_EMAILS` | comma-separated emails that become `MIS_ADMIN` on first sign-in (put yourself here) |
 | `BLOB_READ_WRITE_TOKEN` | added automatically when you create the Blob store |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Resend key + a `From` on your verified domain |
@@ -140,7 +140,7 @@ npm run db:migrate
 ### 6. Go-live checklist
 
 - Sign in with an email in `ADMIN_EMAILS` → you land on the dashboard as `MIS_ADMIN`.
-- Confirm `ALLOWED_EMAIL_DOMAINS` is set so only your org can sign in.
+- Confirm `ADMIN_EMAILS` contains a real address you control — it is the bootstrap: the only account that can sign in before any user rows exist (§7). Leave `ALLOWED_EMAIL_DOMAINS` empty unless you have a Workspace domain.
 - Upload a screenshot on a ticket to confirm Blob works; resolve a ticket to
   confirm email (if Resend is configured).
 - Reset seed/test data anytime with `npm run db:clean`.
