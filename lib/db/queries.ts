@@ -1261,7 +1261,6 @@ export interface CreateRequestArgs {
   problemStatement: string;
   currentProcess?: string | null;
   currentSheetLink?: string | null;
-  intendedUsers: string;
   expectedBenefit: string;
   department: Department;
 }
@@ -1293,7 +1292,6 @@ export async function createRequestTicket(args: CreateRequestArgs) {
       problemStatement: args.problemStatement,
       currentProcess: args.currentProcess ?? null,
       currentSheetLink: args.currentSheetLink ?? null,
-      intendedUsers: args.intendedUsers,
       expectedBenefit: args.expectedBenefit,
     }),
     db.insert(ticketActivity).values({
@@ -1414,7 +1412,6 @@ export async function getRequestByNumber(
       problemStatement: requestDetails.problemStatement,
       currentProcess: requestDetails.currentProcess,
       currentSheetLink: requestDetails.currentSheetLink,
-      intendedUsers: requestDetails.intendedUsers,
       expectedBenefit: requestDetails.expectedBenefit,
       mdDecision: requestDetails.mdDecision,
       mdDecidedAt: requestDetails.mdDecidedAt,

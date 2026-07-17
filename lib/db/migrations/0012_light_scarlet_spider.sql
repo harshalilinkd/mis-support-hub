@@ -1,0 +1,1 @@
+ALTER TABLE "request_details" DROP COLUMN "intended_users";

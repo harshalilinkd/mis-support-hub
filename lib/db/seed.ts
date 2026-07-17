@@ -79,7 +79,6 @@ async function createRequest(args: {
   problemStatement: string;
   currentProcess?: string | null;
   currentSheetLink?: string | null;
-  intendedUsers: string;
   expectedBenefit: string;
   department: Department;
   createdBy: string;
@@ -106,7 +105,6 @@ async function createRequest(args: {
       problemStatement: args.problemStatement,
       currentProcess: args.currentProcess ?? null,
       currentSheetLink: args.currentSheetLink ?? null,
-      intendedUsers: args.intendedUsers,
       expectedBenefit: args.expectedBenefit,
     }),
     db.insert(ticketActivity).values({
@@ -242,7 +240,6 @@ async function main() {
         "Email to the purchase head, who maintains a personal Google Sheet of orders.",
       currentSheetLink:
         "https://docs.google.com/spreadsheets/d/1examplePurchaseOrders/edit",
-      intendedUsers: "Purchase team, store managers, accounts",
       expectedBenefit:
         "One place to raise, approve, and track POs; no lost approvals; vendor-wise pending view.",
       department: "LINKD",
@@ -264,7 +261,6 @@ async function main() {
         "Leave requests are on paper and attendance is reconciled manually every month, causing payroll errors.",
       currentProcess: "Paper leave forms + a monthly manual attendance reconciliation.",
       currentSheetLink: null,
-      intendedUsers: "All employees, HR, department heads",
       expectedBenefit:
         "Self-service leave, auto attendance capture, accurate payroll inputs.",
       department: "LD_SILK_MILLS",

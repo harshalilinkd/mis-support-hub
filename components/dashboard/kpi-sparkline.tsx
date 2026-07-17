@@ -14,7 +14,7 @@ import { useMounted, usePrefersReducedMotion } from "./chart-shell";
 export function KpiSparkline({
   data,
   color,
-  height = 34,
+  height = 24,
 }: {
   data: number[];
   color: string;

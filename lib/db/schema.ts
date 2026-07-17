@@ -361,8 +361,9 @@ export const requestDetails = pgTable("request_details", {
   problemStatement: text("problem_statement").notNull(),
   currentProcess: text("current_process"),
   currentSheetLink: text("current_sheet_link"),
-  intendedUsers: text("intended_users").notNull(),
   expectedBenefit: text("expected_benefit").notNull(),
+  // NOTE: no `intended_users` either — intake captures the problem and the benefit;
+  // who ends up using the system is worked out during the build, not at intake.
   // NOTE: no `urgency` / `target_date` here. A REQUEST mirrors the ISSUE flow (§5):
   // the requester states the need, MIS sets `tickets.priority` when they claim it,
   // and the delivery `deadline` below is set when they start work. The requester

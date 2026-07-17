@@ -170,9 +170,6 @@ export function RequestDetail({
             <p className="whitespace-pre-wrap break-words text-sm text-foreground">{request.currentProcess}</p>
           </Section>
         ) : null}
-        <Section title="Intended users">
-          <p className="text-sm text-foreground">{request.intendedUsers}</p>
-        </Section>
         <Section title="Expected benefit">
           <p className="whitespace-pre-wrap break-words text-sm text-foreground">{request.expectedBenefit}</p>
         </Section>

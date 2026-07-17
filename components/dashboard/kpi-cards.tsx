@@ -49,28 +49,28 @@ function Kpi({
   return (
     <div
       style={{ animationDelay: `${delay}ms` }}
-      className="enter-up group flex flex-col rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)] sm:p-5"
+      className="enter-up group flex flex-col rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-elevation)] transition-[transform,box-shadow,border-color] duration-200 will-change-transform hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-hover)] sm:p-4"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-sm font-medium text-text-muted">
           {label}
         </span>
         <div
-          className="grid size-8 shrink-0 place-items-center rounded-[10px] transition-transform duration-200 group-hover:scale-110"
+          className="grid size-7 shrink-0 place-items-center rounded-[8px] transition-transform duration-200 group-hover:scale-110"
           style={{
             backgroundColor: `color-mix(in srgb, ${tint} 14%, transparent)`,
             color: tint,
           }}
         >
-          <Icon className="size-4" />
+          <Icon className="size-3.5" />
         </div>
       </div>
-      <div className="mt-3 font-mono text-2xl font-semibold leading-none tabular-nums sm:text-[28px]">
+      <div className="mt-2 font-mono text-xl font-semibold leading-none tabular-nums sm:text-2xl">
         {value}
       </div>
-      <div className="mt-2 truncate text-xs text-text-muted">{sub}</div>
+      <div className="mt-1 truncate text-xs text-text-muted">{sub}</div>
       {/* Sparkline — the card's metric over the recent window, tinted to match. */}
-      <div className="-mx-1 mt-3">
+      <div className="-mx-1 mt-2">
         <KpiSparkline data={spark} color={tint} />
       </div>
     </div>

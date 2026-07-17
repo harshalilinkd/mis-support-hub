@@ -96,7 +96,6 @@ export function RequestForm({
       expectedBenefit: "",
       currentProcess: "",
       currentSheetLink: "",
-      intendedUsers: "",
       department: requester.department ?? undefined,
     },
   });
@@ -222,30 +221,17 @@ export function RequestForm({
           />
           <FieldError message={errors.currentProcess?.message} />
         </div>
-        {/* Two single-line fields pair into one row — half the height of stacking. */}
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="currentSheetLink" hint="optional">
-              Sheet / app link
-            </Label>
-            <Input
-              id="currentSheetLink"
-              placeholder="Link to the sheet you use now"
-              disabled={pending}
-              {...register("currentSheetLink")}
-            />
-            <FieldError message={errors.currentSheetLink?.message} />
-          </div>
-          <div>
-            <Label htmlFor="intendedUsers">Intended users</Label>
-            <Input
-              id="intendedUsers"
-              placeholder="e.g. Purchase team, store managers"
-              disabled={pending}
-              {...register("intendedUsers")}
-            />
-            <FieldError message={errors.intendedUsers?.message} />
-          </div>
+        <div>
+          <Label htmlFor="currentSheetLink" hint="optional">
+            Sheet / app link
+          </Label>
+          <Input
+            id="currentSheetLink"
+            placeholder="Link to the sheet you use now"
+            disabled={pending}
+            {...register("currentSheetLink")}
+          />
+          <FieldError message={errors.currentSheetLink?.message} />
         </div>
         {/* MIS sets the priority on claim and commits to a delivery date at
             start-work (§12.3) — the requester states the need, not the schedule. */}

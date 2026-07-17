@@ -85,6 +85,13 @@
       "when": 1784266327181,
       "tag": "0011_romantic_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784270978795,
+      "tag": "0012_light_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

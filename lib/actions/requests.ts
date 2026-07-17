@@ -99,7 +99,6 @@ export async function createRequest(
     problemStatement: d.problemStatement,
     currentProcess: d.currentProcess ?? null,
     currentSheetLink: d.currentSheetLink ?? null,
-    intendedUsers: d.intendedUsers,
     expectedBenefit: d.expectedBenefit,
     department: d.department,
   });

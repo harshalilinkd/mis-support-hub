@@ -213,11 +213,8 @@ export const createRequestSchema = z.object({
     .max(5000),
   currentProcess: optionalText(5000),
   currentSheetLink: optionalText(500),
-  intendedUsers: z
-    .string()
-    .trim()
-    .min(2, "Who will use it?")
-    .max(500),
+  // No intendedUsers: the requester describes the problem and the benefit; who ends
+  // up using the system is a build detail MIS works out with them, not intake.
   expectedBenefit: z
     .string()
     .trim()
