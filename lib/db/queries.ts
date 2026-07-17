@@ -19,9 +19,13 @@ import {
   type Department,
   type NotificationType,
   type Priority,
+  type ProgressLogType,
   type Role,
   type Status,
+  type TicketType,
   notifications,
+  progressLogs,
+  requestDetails,
   ticketActivity,
   ticketAttachments,
   ticketComments,
@@ -29,6 +33,7 @@ import {
   users,
 } from "./schema";
 import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
+import { assertStatusForType } from "@/lib/ticket-state";
 
 /* ------------------------------------------------------------------ *
  * Users
@@ -211,6 +216,8 @@ export async function releaseTicketsOfUser(
     .where(
       and(
         eq(tickets.assignedTo, userId),
+        // Only ISSUE tickets — requests have their own claim/assignment model (§12).
+        eq(tickets.type, "ISSUE"),
         isNull(tickets.deletedAt),
         sql`${tickets.status}::text <> 'CLOSED'`
       )
@@ -391,11 +398,15 @@ export async function createTicket(args: CreateTicketArgs) {
 export async function setTicketStatus(args: {
   ticketId: string;
   actorId: string;
+  /** The row's real type — asserted against, so this writer can't rubber-stamp a
+   *  cross-machine status onto the wrong ticket type (§12). */
+  type: TicketType;
   from: Status;
   to: Status;
   resolvedAt?: Date | null;
   resolvedBy?: string | null;
 }) {
+  assertStatusForType(args.type, args.to);
   const set: Partial<typeof tickets.$inferInsert> = { status: args.to };
   if (args.resolvedAt !== undefined) set.resolvedAt = args.resolvedAt;
   if (args.resolvedBy !== undefined) set.resolvedBy = args.resolvedBy;
@@ -556,6 +567,32 @@ export async function startTaskRow(args: {
       type: "STARTED",
       fromValue: args.fromStatus,
       toValue: args.deadline.toISOString(),
+    }),
+  ]);
+}
+
+/**
+ * Undo a claim: return a claimed-but-not-started ticket to the open pool, in one
+ * batch. Clears the assignee, the priority, and any deadline; the status is
+ * already OPEN and stays OPEN. Writes an UNCLAIMED activity row. The caller
+ * enforces staff + the §6 ownership lock (only the assignee releases their own
+ * claim) and that the ticket hasn't been started yet.
+ */
+export async function releaseTicketRow(args: {
+  ticketId: string;
+  actorId: string;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ assignedTo: null, priority: null, deadline: null })
+      .where(eq(tickets.id, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "UNCLAIMED",
+      fromValue: null,
+      toValue: null,
     }),
   ]);
 }
@@ -761,6 +798,8 @@ export interface TicketFilters {
   department?: Department;
   assigneeId?: string | "unassigned";
   search?: string;
+  /** Optional ISSUE|REQUEST filter (§12). Defaults to no filter when unset. */
+  type?: TicketType;
 }
 
 /** Raw single-row fetch (no joins) — for permission/state checks in actions. */
@@ -840,6 +879,9 @@ const ticketListSelect = {
 function ticketFilterConditions(filters: TicketFilters): SQL[] {
   // Soft-deleted tickets live only in the recycle bin — never in any list.
   const conds: SQL[] = [isNull(tickets.deletedAt)];
+  // Optional type filter (§12); no default here — issue-only surfaces add their
+  // own eq(type, ISSUE) so existing ISSUE behaviour is preserved.
+  if (filters.type) conds.push(eq(tickets.type, filters.type));
   if (filters.status) conds.push(eq(tickets.status, filters.status));
   if (filters.statuses?.length) {
     conds.push(inArray(tickets.status, filters.statuses));
@@ -865,9 +907,13 @@ function ticketFilterConditions(filters: TicketFilters): SQL[] {
   return conds;
 }
 
-/** USER visibility (§6): only their own tickets. */
+/** USER visibility (§6): only their own ISSUE tickets (requests have their own list). */
 export async function listMyTickets(userId: string, filters: TicketFilters = {}) {
-  const conds = [eq(tickets.createdBy, userId), ...ticketFilterConditions(filters)];
+  const conds = [
+    eq(tickets.createdBy, userId),
+    eq(tickets.type, "ISSUE"),
+    ...ticketFilterConditions(filters),
+  ];
   return db
     .select(ticketListSelectLite)
     .from(tickets)
@@ -890,7 +936,11 @@ export async function listAssignedToMe(userId: string) {
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
     .where(
-      and(eq(tickets.assignedTo, userId), isNull(tickets.deletedAt))
+      and(
+        eq(tickets.assignedTo, userId),
+        eq(tickets.type, "ISSUE"),
+        isNull(tickets.deletedAt)
+      )
     )
     .orderBy(desc(tickets.updatedAt));
 }
@@ -903,6 +953,7 @@ export async function countMyActiveTickets(userId: string): Promise<number> {
     .where(
       and(
         eq(tickets.createdBy, userId),
+        eq(tickets.type, "ISSUE"),
         isNull(tickets.deletedAt),
         inArray(tickets.status, ["OPEN", "IN_PROGRESS", "REOPENED"])
       )
@@ -918,6 +969,7 @@ export async function countAssignedActive(userId: string): Promise<number> {
     .where(
       and(
         eq(tickets.assignedTo, userId),
+        eq(tickets.type, "ISSUE"),
         isNull(tickets.deletedAt),
         inArray(tickets.status, ["OPEN", "IN_PROGRESS", "REOPENED"])
       )
@@ -925,9 +977,9 @@ export async function countAssignedActive(userId: string): Promise<number> {
   return row?.count ?? 0;
 }
 
-/** MIS visibility (§6): all tickets. Caller must enforce the staff role. */
+/** MIS visibility (§6): all ISSUE tickets. Caller must enforce the staff role. */
 export async function listAllTickets(filters: TicketFilters = {}) {
-  const conds = ticketFilterConditions(filters);
+  const conds = [eq(tickets.type, "ISSUE"), ...ticketFilterConditions(filters)];
   return db
     .select(ticketListSelect)
     .from(tickets)
@@ -950,7 +1002,7 @@ export async function listBoardTickets() {
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
-    .where(isNull(tickets.deletedAt))
+    .where(and(eq(tickets.type, "ISSUE"), isNull(tickets.deletedAt)))
     .orderBy(desc(tickets.createdAt));
 }
 
@@ -974,7 +1026,7 @@ export async function listTicketsForBulkDelete() {
     })
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
-    .where(isNull(tickets.deletedAt))
+    .where(and(eq(tickets.type, "ISSUE"), isNull(tickets.deletedAt)))
     .orderBy(desc(tickets.createdAt));
 }
 
@@ -987,12 +1039,16 @@ export async function countTicketsByTab(
   filters: TicketFilters = {}
 ): Promise<Record<TicketTabKey, number>> {
   // Count across every status — honor the facet filters but not the status tab.
-  const conds = ticketFilterConditions({
-    priority: filters.priority,
-    department: filters.department,
-    assigneeId: filters.assigneeId,
-    search: filters.search,
-  });
+  // Issue tabs only (§12): requests are counted by their own surfaces.
+  const conds = [
+    eq(tickets.type, "ISSUE"),
+    ...ticketFilterConditions({
+      priority: filters.priority,
+      department: filters.department,
+      assigneeId: filters.assigneeId,
+      search: filters.search,
+    }),
+  ];
   const rows = await db
     .select({
       status: tickets.status,
@@ -1050,7 +1106,7 @@ export async function getTicketByNumber(
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
     .leftJoin(resolverUser, eq(tickets.resolvedBy, resolverUser.id))
-    .where(and(eq(tickets.number, number), isNull(tickets.deletedAt)))
+    .where(and(eq(tickets.number, number), eq(tickets.type, "ISSUE"), isNull(tickets.deletedAt)))
     .limit(1);
 
   if (!ticket) return null;
@@ -1151,7 +1207,7 @@ export async function dashboardStats(): Promise<DashboardStats> {
       `.mapWith(Number),
     })
     .from(tickets)
-    .where(isNull(tickets.deletedAt));
+    .where(and(eq(tickets.type, "ISSUE"), isNull(tickets.deletedAt)));
 
   return (
     row ?? {
@@ -1181,6 +1237,7 @@ export async function ticketTrend(days = 30): Promise<TrendPoint[]> {
     .from(tickets)
     .where(
       and(
+        eq(tickets.type, "ISSUE"),
         isNull(tickets.deletedAt),
         sql`${tickets.createdAt} >= now() - (${days - 1} * interval '1 day')`
       )
@@ -1197,6 +1254,525 @@ export async function ticketTrend(days = 30): Promise<TrendPoint[]> {
     out.push({ date: key, created: map.get(key) ?? 0 });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * REQUEST tickets — "build me a new system" workflow (CLAUDE.md §12).
+ * Shares the tickets/comments/attachments/activity tables; the REQUEST-only
+ * brief + build state live in request_details, and progress updates in
+ * progress_logs. Every mutation is batched with its ticket_activity row (§12.5).
+ * ------------------------------------------------------------------ */
+const mdDeciderUser = alias(users, "md_decider");
+const claimerUser = alias(users, "claimer");
+const logAuthorUser = alias(users, "log_author");
+
+export interface CreateRequestArgs {
+  createdBy: string;
+  systemName: string;
+  problemStatement: string;
+  currentProcess?: string | null;
+  currentSheetLink?: string | null;
+  intendedUsers: string;
+  expectedBenefit: string;
+  urgency: Priority;
+  department: Department;
+  targetDate?: Date | null;
+}
+
+/** Create a REQUEST — number from request_seq (REQ-001…), status SUBMITTED. */
+export async function createRequestTicket(args: CreateRequestArgs) {
+  const id = crypto.randomUUID();
+  const [rows] = await db.batch([
+    db
+      .insert(tickets)
+      .values({
+        id,
+        number: sql`'REQ-' || lpad(nextval('request_seq')::text, 3, '0')`,
+        type: "REQUEST",
+        // Base ticket mirrors the brief so shared views render without a join.
+        title: args.systemName,
+        description: args.problemStatement,
+        department: args.department,
+        sheetLink: args.currentSheetLink ?? null,
+        status: "SUBMITTED",
+        // Priority is set by MIS on claim (§12.3); urgency lives in the brief.
+        priority: null,
+        createdBy: args.createdBy,
+      })
+      .returning(),
+    db.insert(requestDetails).values({
+      ticketId: id,
+      systemName: args.systemName,
+      problemStatement: args.problemStatement,
+      currentProcess: args.currentProcess ?? null,
+      currentSheetLink: args.currentSheetLink ?? null,
+      intendedUsers: args.intendedUsers,
+      expectedBenefit: args.expectedBenefit,
+      urgency: args.urgency,
+      targetDate: args.targetDate ?? null,
+    }),
+    db.insert(ticketActivity).values({
+      ticketId: id,
+      actorId: args.createdBy,
+      type: "SUBMITTED",
+    }),
+  ]);
+  return rows[0];
+}
+
+/** The request_details row for a ticket (state checks in actions). */
+export async function getRequestDetailsRow(ticketId: string) {
+  const [row] = await db
+    .select()
+    .from(requestDetails)
+    .where(eq(requestDetails.ticketId, ticketId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Optional server-side filters for the REQUEST list (§12.7). All default to off. */
+export interface RequestFilters {
+  /** Match any of these request stages. */
+  statuses?: Status[];
+  department?: Department;
+  /** Matches the request number or system name. */
+  search?: string;
+}
+
+/** Role-aware REQUEST list: a USER sees only their own, staff/MIS see all (§12.4). */
+export async function listRequests(
+  viewer: { id: string; role: Role },
+  filters: RequestFilters = {}
+) {
+  const conds = [eq(tickets.type, "REQUEST"), isNull(tickets.deletedAt)];
+  // §12.7 row-level visibility: a USER only ever sees requests they created.
+  if (viewer.role === "USER") conds.push(eq(tickets.createdBy, viewer.id));
+  if (filters.statuses?.length) conds.push(inArray(tickets.status, filters.statuses));
+  if (filters.department) conds.push(eq(tickets.department, filters.department));
+  const search = filters.search?.trim();
+  if (search) {
+    const like = `%${search}%`;
+    conds.push(
+      or(ilike(tickets.number, like), ilike(requestDetails.systemName, like))!
+    );
+  }
+  return db
+    .select({
+      id: tickets.id,
+      number: tickets.number,
+      systemName: requestDetails.systemName,
+      title: tickets.title,
+      department: tickets.department,
+      status: tickets.status,
+      priority: tickets.priority,
+      urgency: requestDetails.urgency,
+      revisionRound: requestDetails.revisionRound,
+      targetDate: requestDetails.targetDate,
+      deadline: requestDetails.deadline,
+      // Latest reported % from the progress logs — the board card's progress bar.
+      // Correlated so one query still feeds both the list and the board.
+      percentComplete: sql<number | null>`(
+        select pl.percent_complete from ${progressLogs} pl
+        where pl.ticket_id = ${tickets.id} and pl.percent_complete is not null
+        order by pl.created_at desc limit 1
+      )`.mapWith((v) => (v === null ? null : Number(v))),
+      createdAt: tickets.createdAt,
+      updatedAt: tickets.updatedAt,
+      createdById: tickets.createdBy,
+      createdByName: creatorUser.name,
+      createdByImage: creatorUser.image,
+      assignedToId: tickets.assignedTo,
+      assignedToName: assigneeUser.name,
+      assignedToImage: assigneeUser.image,
+    })
+    .from(tickets)
+    .innerJoin(requestDetails, eq(requestDetails.ticketId, tickets.id))
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
+    .where(and(...conds))
+    .orderBy(desc(tickets.updatedAt));
+}
+export type RequestListRow = Awaited<ReturnType<typeof listRequests>>[number];
+
+/**
+ * Full REQUEST detail: brief + MD decision + build state + progress logs +
+ * comments + attachments + activity. Enforces §6 visibility (a USER sees only
+ * their own). Returns null if not a REQUEST / not found / not visible.
+ */
+export async function getRequestByNumber(
+  number: string,
+  viewer?: { id: string; role: Role }
+) {
+  const [row] = await db
+    .select({
+      id: tickets.id,
+      number: tickets.number,
+      type: tickets.type,
+      title: tickets.title,
+      description: tickets.description,
+      department: tickets.department,
+      status: tickets.status,
+      priority: tickets.priority,
+      sheetLink: tickets.sheetLink,
+      createdAt: tickets.createdAt,
+      updatedAt: tickets.updatedAt,
+      createdById: tickets.createdBy,
+      createdByName: creatorUser.name,
+      createdByEmail: creatorUser.email,
+      createdByImage: creatorUser.image,
+      assignedToId: tickets.assignedTo,
+      assignedToName: assigneeUser.name,
+      assignedToImage: assigneeUser.image,
+      // request_details
+      systemName: requestDetails.systemName,
+      problemStatement: requestDetails.problemStatement,
+      currentProcess: requestDetails.currentProcess,
+      currentSheetLink: requestDetails.currentSheetLink,
+      intendedUsers: requestDetails.intendedUsers,
+      expectedBenefit: requestDetails.expectedBenefit,
+      urgency: requestDetails.urgency,
+      targetDate: requestDetails.targetDate,
+      mdDecision: requestDetails.mdDecision,
+      mdDecidedAt: requestDetails.mdDecidedAt,
+      mdRemark: requestDetails.mdRemark,
+      // The MD verdict is admin-recorded (§12.2); expose the recorder as the
+      // "decided by" for the shared detail view.
+      mdDecidedById: requestDetails.mdDecisionRecordedBy,
+      mdDecidedByName: mdDeciderUser.name,
+      claimedById: requestDetails.claimedBy,
+      claimedByName: claimerUser.name,
+      claimedAt: requestDetails.claimedAt,
+      deadline: requestDetails.deadline,
+      revisionRound: requestDetails.revisionRound,
+      completedAt: requestDetails.completedAt,
+      acceptedAt: requestDetails.acceptedAt,
+    })
+    .from(tickets)
+    .innerJoin(requestDetails, eq(requestDetails.ticketId, tickets.id))
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
+    .leftJoin(mdDeciderUser, eq(requestDetails.mdDecisionRecordedBy, mdDeciderUser.id))
+    .leftJoin(claimerUser, eq(requestDetails.claimedBy, claimerUser.id))
+    .where(
+      and(
+        eq(tickets.number, number),
+        eq(tickets.type, "REQUEST"),
+        isNull(tickets.deletedAt)
+      )
+    )
+    .limit(1);
+
+  if (!row) return null;
+  if (viewer && viewer.role === "USER" && row.createdById !== viewer.id) {
+    return null;
+  }
+
+  const [comments, attachments, activity, logs] = await Promise.all([
+    db
+      .select({
+        id: ticketComments.id,
+        body: ticketComments.body,
+        createdAt: ticketComments.createdAt,
+        authorId: ticketComments.authorId,
+        authorName: authorUser.name,
+        authorImage: authorUser.image,
+      })
+      .from(ticketComments)
+      .leftJoin(authorUser, eq(ticketComments.authorId, authorUser.id))
+      .where(eq(ticketComments.ticketId, row.id))
+      .orderBy(asc(ticketComments.createdAt)),
+    db
+      .select()
+      .from(ticketAttachments)
+      .where(eq(ticketAttachments.ticketId, row.id))
+      .orderBy(asc(ticketAttachments.createdAt)),
+    db
+      .select({
+        id: ticketActivity.id,
+        type: ticketActivity.type,
+        fromValue: ticketActivity.fromValue,
+        toValue: ticketActivity.toValue,
+        createdAt: ticketActivity.createdAt,
+        actorId: ticketActivity.actorId,
+        actorName: actorUser.name,
+      })
+      .from(ticketActivity)
+      .leftJoin(actorUser, eq(ticketActivity.actorId, actorUser.id))
+      .where(eq(ticketActivity.ticketId, row.id))
+      .orderBy(asc(ticketActivity.createdAt)),
+    db
+      .select({
+        id: progressLogs.id,
+        type: progressLogs.type,
+        body: progressLogs.body,
+        percentComplete: progressLogs.percentComplete,
+        createdAt: progressLogs.createdAt,
+        authorId: progressLogs.authorId,
+        authorName: logAuthorUser.name,
+        authorImage: logAuthorUser.image,
+      })
+      .from(progressLogs)
+      .leftJoin(logAuthorUser, eq(progressLogs.authorId, logAuthorUser.id))
+      .where(eq(progressLogs.ticketId, row.id))
+      .orderBy(asc(progressLogs.createdAt)),
+  ]);
+
+  return { ...row, comments, attachments, activity, progressLogs: logs };
+}
+
+export type RequestDetail = NonNullable<
+  Awaited<ReturnType<typeof getRequestByNumber>>
+>;
+
+/* ---- REQUEST transition writers (each batched with its activity row) ---- */
+
+/** A status-only transition + its activity row (review / send-for-MD / revive / start build). */
+export async function setRequestStatusRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  to: Status;
+  activity: (typeof ticketActivity.$inferInsert)["type"];
+}) {
+  // Never persist a status from the ISSUE state set on a REQUEST (§12).
+  assertStatusForType("REQUEST", args.to);
+  await db.batch([
+    db.update(tickets).set({ status: args.to }).where(eq(tickets.id, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: args.activity,
+      fromValue: args.from,
+      toValue: args.to,
+    }),
+  ]);
+}
+
+/** Record the (offline) MD decision on the admin's behalf → APPROVED or DROPPED. */
+export async function recordMdDecisionRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  decision: "APPROVED" | "REJECTED";
+  remark?: string | null;
+}) {
+  const approved = args.decision === "APPROVED";
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: approved ? "APPROVED" : "DROPPED" })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({
+        mdDecision: approved ? "APPROVED" : "REJECTED",
+        // Recorded by the acting admin on the MD's behalf (§12.2/§12.5).
+        mdDecisionRecordedBy: args.actorId,
+        mdDecidedAt: new Date(),
+        mdRemark: args.remark ?? null,
+      })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: approved ? "APPROVAL_RECORDED" : "REJECTION_RECORDED",
+      fromValue: args.from,
+      toValue: approved ? "APPROVED" : "DROPPED",
+    }),
+  ]);
+}
+
+/** Claim a REQUEST for the build: assignee + priority + deadline → CLAIMED. */
+export async function claimRequestRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  priority: Priority;
+  deadline: Date;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ assignedTo: args.actorId, priority: args.priority, status: "CLAIMED" })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ claimedBy: args.actorId, claimedAt: new Date(), deadline: args.deadline })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "CLAIMED",
+      fromValue: args.from,
+      toValue: "CLAIMED",
+    }),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "DEADLINE_SET",
+      toValue: args.deadline.toISOString(),
+    }),
+  ]);
+}
+
+/**
+ * Move a request's delivery deadline, batched with its DEADLINE_SET audit row so a
+ * date change is never silent (§12.5, P12). `from` is the previous deadline (null
+ * on the first set) so the timeline can read "13 Jul → 20 Jul".
+ */
+export async function updateRequestDeadlineRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Date | null;
+  to: Date;
+}) {
+  await db.batch([
+    db
+      .update(requestDetails)
+      .set({ deadline: args.to })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "DEADLINE_SET",
+      fromValue: args.from ? args.from.toISOString() : null,
+      toValue: args.to.toISOString(),
+    }),
+  ]);
+}
+
+/** Append a progress log (build updates / review sessions / blockers). */
+export async function addProgressLogRow(args: {
+  ticketId: string;
+  authorId: string;
+  type: ProgressLogType;
+  body: string;
+  percentComplete?: number | null;
+}) {
+  const [rows] = await db.batch([
+    db
+      .insert(progressLogs)
+      .values({
+        ticketId: args.ticketId,
+        authorId: args.authorId,
+        type: args.type,
+        body: args.body,
+        percentComplete: args.percentComplete ?? null,
+      })
+      .returning(),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.authorId,
+      type: "PROGRESS_LOGGED",
+      toValue: args.type,
+    }),
+  ]);
+  return rows[0];
+}
+
+/** MIS marks the build complete → IN_TESTING (hand to requester for UAT). */
+export async function markRequestCompleteRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  note?: string | null;
+}) {
+  await db.batch([
+    db.update(tickets).set({ status: "IN_TESTING" }).where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ completedAt: new Date() })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    ...(args.note
+      ? [
+          db.insert(ticketComments).values({
+            ticketId: args.ticketId,
+            authorId: args.actorId,
+            body: args.note,
+          }),
+        ]
+      : []),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "MARKED_COMPLETE",
+      fromValue: args.from,
+      toValue: "IN_TESTING",
+    }),
+  ]);
+}
+
+/** Requester asks for changes → CHANGES_REQUESTED; revision_round++ (§12.5). */
+export async function requestChangesRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+  body: string;
+  currentRound: number;
+}): Promise<{ commentId: string; round: number }> {
+  const nextRound = args.currentRound + 1;
+  // Client-side id so the caller can hang the requester's attachments off this
+  // exact comment — the comment IS the body of the change request.
+  const commentId = crypto.randomUUID();
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: "CHANGES_REQUESTED" })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ revisionRound: nextRound })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    // The requester's body becomes a comment so it reads in the thread.
+    db.insert(ticketComments).values({
+      id: commentId,
+      ticketId: args.ticketId,
+      authorId: args.actorId,
+      body: args.body,
+    }),
+    // The round number in to_value timestamps each attempt (§12.5).
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "CHANGES_REQUESTED",
+      fromValue: args.from,
+      toValue: String(nextRound),
+    }),
+  ]);
+  return { commentId, round: nextRound };
+}
+
+/** Requester accepts the build → CLOSED (only acceptance closes a request; §12.4). */
+export async function acceptRequestRow(args: {
+  ticketId: string;
+  actorId: string;
+  from: Status;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: "CLOSED", resolvedAt: new Date(), resolvedBy: args.actorId })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ acceptedAt: new Date() })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "ACCEPTED",
+      fromValue: args.from,
+      toValue: "CLOSED",
+    }),
+  ]);
+}
+
+/** Active MIS_ADMINs — recipients for "pending approval" (they record the MD call). */
+export async function listAdmins() {
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.role, "MIS_ADMIN"), eq(users.isActive, true)));
 }
 
 /* ------------------------------------------------------------------ *

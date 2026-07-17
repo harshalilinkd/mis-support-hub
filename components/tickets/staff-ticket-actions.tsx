@@ -2,10 +2,10 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Hand, Play } from "lucide-react";
+import { CheckCircle2, Hand, Play, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { updateStatus } from "@/lib/actions/tickets";
+import { releaseTicket, updateStatus } from "@/lib/actions/tickets";
 import type { Status } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
 import { ClaimDialog } from "./claim-dialog";
@@ -84,17 +84,33 @@ export function StaffTicketActions({
       ) : claimedNotStarted ? (
         <>
           <span className="text-sm text-text-muted">
-            You&apos;ve claimed this — set a deadline to start work.
+            You&apos;ve claimed this — set a deadline to start work, or release it
+            if you claimed it by mistake.
           </span>
-          <StartTaskDialog
-            ticketId={ticketId}
-            onDone={onMutate}
-            trigger={
-              <Button className="ml-auto" size="sm" disabled={pending}>
-                <Play className="size-4" /> Start task
-              </Button>
-            }
-          />
+          <div className="ml-auto flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                act(
+                  () => releaseTicket(ticketId),
+                  "Released — it's back in the open pool"
+                )
+              }
+            >
+              <Undo2 className="size-4" /> Release
+            </Button>
+            <StartTaskDialog
+              ticketId={ticketId}
+              onDone={onMutate}
+              trigger={
+                <Button size="sm" disabled={pending}>
+                  <Play className="size-4" /> Start task
+                </Button>
+              }
+            />
+          </div>
         </>
       ) : claimedByOther ? (
         <span className="text-sm text-text-muted">

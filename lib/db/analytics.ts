@@ -2,7 +2,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm
 
 import { db } from "./index";
 import type { Department, Priority } from "./schema";
-import { tickets, users } from "./schema";
+import { requestDetails, tickets, users } from "./schema";
 
 /**
  * Dashboard analytics — read-only aggregations for the insights page. Kept in a
@@ -44,12 +44,12 @@ export async function flowTrend(
     db
       .select({ day: dayOf(tickets.createdAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(gte(tickets.createdAt, since), isNull(tickets.deletedAt), deptEq(department)))
+      .where(and(gte(tickets.createdAt, since), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
       .groupBy(dayOf(tickets.createdAt)),
     db
       .select({ day: dayOf(tickets.resolvedAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, since), isNull(tickets.deletedAt), deptEq(department)))
+      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, since), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
       .groupBy(dayOf(tickets.resolvedAt)),
   ]);
 
@@ -70,7 +70,7 @@ export async function createdByDepartment(
   return db
     .select({ department: tickets.department, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt)))
+    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE")))
     .groupBy(tickets.department);
 }
 
@@ -83,7 +83,7 @@ export async function createdByPriority(
     .select({ priority: tickets.priority, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
     // Unset (null) priority = not triaged yet — excluded from the breakdown.
-    .where(and(gte(tickets.createdAt, startOfRange(days)), isNotNull(tickets.priority), isNull(tickets.deletedAt), deptEq(department)))
+    .where(and(gte(tickets.createdAt, startOfRange(days)), isNotNull(tickets.priority), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
     .groupBy(tickets.priority);
 }
 
@@ -99,8 +99,62 @@ export async function openAging(
   return db
     .select({ key: bucket, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), deptEq(department)))
+    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
     .groupBy(bucket);
+}
+
+/* ------------------------------------------------------------------ *
+ * REQUEST reporting (CLAUDE.md §12) — the request pipeline at a glance.
+ * ------------------------------------------------------------------ */
+
+export interface RequestStats {
+  awaitingApproval: number;
+  approvedUnclaimed: number;
+  inProgress: number;
+  inTesting: number;
+  /** Past its delivery date and still in flight (never closed/dropped). */
+  overdue: number;
+  /** Mean revision_round of accepted requests — "rounds to acceptance". */
+  avgRoundsToAcceptance: number;
+}
+
+/** One pass over the request pipeline for the dashboard KPI row. */
+export async function requestStats(department?: Department): Promise<RequestStats> {
+  const [row] = await db
+    .select({
+      awaitingApproval:
+        sql<number>`count(*) filter (where ${tickets.status} = 'PENDING_MD_APPROVAL')`.mapWith(Number),
+      // APPROVED means the verdict is in but nobody has claimed the build yet.
+      approvedUnclaimed:
+        sql<number>`count(*) filter (where ${tickets.status} = 'APPROVED')`.mapWith(Number),
+      inProgress:
+        sql<number>`count(*) filter (where ${tickets.status} = 'IN_PROGRESS')`.mapWith(Number),
+      inTesting:
+        sql<number>`count(*) filter (where ${tickets.status} = 'IN_TESTING')`.mapWith(Number),
+      overdue: sql<number>`count(*) filter (
+        where ${requestDetails.deadline} < current_date
+          and ${tickets.status} in ('CLAIMED','IN_PROGRESS','IN_TESTING','CHANGES_REQUESTED')
+      )`.mapWith(Number),
+      avgRoundsToAcceptance: sql<number>`coalesce(
+        avg(${requestDetails.revisionRound}) filter (where ${tickets.status} = 'CLOSED'), 0
+      )`.mapWith(Number),
+    })
+    .from(tickets)
+    .innerJoin(requestDetails, eq(requestDetails.ticketId, tickets.id))
+    .where(
+      and(eq(tickets.type, "REQUEST"), isNull(tickets.deletedAt), deptEq(department))
+    );
+
+  return (
+    row ?? {
+      awaitingApproval: 0,
+      approvedUnclaimed: 0,
+      inProgress: 0,
+      inTesting: 0,
+      overdue: 0,
+      avgRoundsToAcceptance: 0,
+    }
+  );
 }
 
 /** Active tickets per assignee — team workload, busiest first. */
@@ -111,7 +165,7 @@ export async function assigneeWorkload(
     .select({ id: users.id, name: users.name, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
     .innerJoin(users, eq(tickets.assignedTo, users.id))
-    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), deptEq(department)))
+    .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
     .groupBy(users.id, users.name)
     .orderBy(desc(sql`count(*)`));
 }

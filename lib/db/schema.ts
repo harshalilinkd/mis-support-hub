@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   pgEnum,
@@ -23,12 +24,27 @@ export const departmentEnum = pgEnum("department", [
   "VHAGAR",
   "LD_COTTON_MILLS",
 ]);
+// ISSUE (support ticket) vs REQUEST (build-a-new-system) — one unified `tickets`
+// model, two state machines chosen by `type` (CLAUDE.md §12).
+export const ticketTypeEnum = pgEnum("ticket_type", ["ISSUE", "REQUEST"]);
+// ONE status enum holding BOTH state sets. The applicable machine is picked by
+// ticket.type; a status from the wrong set is rejected server-side (§12).
 export const statusEnum = pgEnum("status", [
+  // ISSUE lifecycle (§5)
   "OPEN",
-  "IN_PROGRESS",
+  "IN_PROGRESS", // shared with REQUEST
   "RESOLVED",
-  "CLOSED",
+  "CLOSED", // shared with REQUEST
   "REOPENED",
+  // REQUEST lifecycle (§12.3) — IN_PROGRESS + CLOSED reused from above
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "PENDING_MD_APPROVAL",
+  "APPROVED",
+  "DROPPED",
+  "CLAIMED",
+  "IN_TESTING",
+  "CHANGES_REQUESTED",
 ]);
 export const priorityEnum = pgEnum("priority", [
   "LOW",
@@ -36,27 +52,59 @@ export const priorityEnum = pgEnum("priority", [
   "HIGH",
   "URGENT",
 ]);
+// MD's decision on a REQUEST (§12.2). PENDING until the MD (or an MIS_ADMIN
+// recording an offline decision) approves or rejects.
+export const mdDecisionEnum = pgEnum("md_decision", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+]);
+// The kind of progress log entry on a REQUEST build (§12.1).
+export const progressLogTypeEnum = pgEnum("progress_log_type", [
+  "UPDATE",
+  "REVIEW_SESSION",
+  "BLOCKER",
+]);
 
 export type Role = (typeof roleEnum.enumValues)[number];
 export type Department = (typeof departmentEnum.enumValues)[number];
+export type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 export type Status = (typeof statusEnum.enumValues)[number];
 export type Priority = (typeof priorityEnum.enumValues)[number];
+export type MdDecision = (typeof mdDecisionEnum.enumValues)[number];
+export type ProgressLogType = (typeof progressLogTypeEnum.enumValues)[number];
 
 /** ticket_activity.type is stored as text (CLAUDE.md §4) but constrained in TS. */
 export const ACTIVITY_TYPES = [
+  // ISSUE + shared
   "CREATED",
   "STATUS_CHANGED",
   "ASSIGNED",
   "CLAIMED",
+  "UNCLAIMED",
   "STARTED",
   "PRIORITY_CHANGED",
   "COMMENTED",
   "REOPENED",
   "EDITED",
+  // REQUEST lifecycle (§12.1) — CLAIMED reused from above. The approval verdict is
+  // recorded by an MIS_ADMIN on the MD's behalf (there is no MD role).
+  "SUBMITTED",
+  "MOVED_TO_REVIEW",
+  "SENT_FOR_APPROVAL",
+  "APPROVAL_RECORDED",
+  "REJECTION_RECORDED",
+  "DROPPED",
+  "REVIVED",
+  "DEADLINE_SET",
+  "PROGRESS_LOGGED",
+  "MARKED_COMPLETE",
+  "CHANGES_REQUESTED",
+  "ACCEPTED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
-/** In-app notification kinds (P8). */
+/** In-app notification kinds (P8, +REQUEST templates §12.6). */
 export const NOTIFICATION_TYPES = [
   "NEW_TICKET",
   "TICKET_RESOLVED",
@@ -66,15 +114,42 @@ export const NOTIFICATION_TYPES = [
   "TICKET_CLOSED",
   "TICKET_UPDATED",
   "NEW_COMMENT",
+  // REQUEST notifications (§12.6)
+  "REQUEST_SUBMITTED",
+  "REQUEST_PENDING_APPROVAL",
+  "REQUEST_DECISION_RECORDED",
+  "REQUEST_CLAIMED",
+  // Extends §12.6: P12 requires the requester be told when a delivery date moves
+  // ("deadline changes are never silent"). Reflect into §12.6 when §12 is written.
+  "REQUEST_DEADLINE_CHANGED",
+  "REQUEST_PROGRESS",
+  "REQUEST_READY_FOR_TESTING",
+  "REQUEST_CHANGES_REQUESTED",
+  "REQUEST_ACCEPTED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /* ------------------------------------------------------------------ *
- * Global sequential ticket number — MIS-1001, MIS-1002, ...
- * Numbers come from this sequence, never from a row count (CLAUDE.md §9).
+ * Sequential ticket numbers — never a row count (CLAUDE.md §9, §12).
+ *   ISSUE   → ticket_seq  → 'MIS-' || lpad(nextval, 3, '0')
+ *   REQUEST → request_seq → 'REQ-' || lpad(nextval, 3, '0')  → REQ-001, REQ-002, …
+ * The insert path picks the sequence by ticket.type.
+ *
+ * ticket_seq is the LIVE issue sequence and is deliberately left exactly as-is
+ * (§12) — note its declared start (1001) does NOT match the live numbering: the
+ * live sequence currently dispenses 1,2,3… so real issues read MIS-001…MIS-006.
+ * Do NOT "reconcile" startWith here; it would change live ISSUE numbering.
+ *
+ * KNOWN LIMIT (both sequences): Postgres lpad TRUNCATES past the pad width
+ * (lpad('1000',3,'0') → '100'), so either sequence collides on tickets.number
+ * once it passes 999. Pre-existing for ISSUE; flagged, not fixed in P10/P11.
  * ------------------------------------------------------------------ */
 export const ticketSeq = pgSequence("ticket_seq", {
   startWith: 1001,
+  increment: 1,
+});
+export const requestSeq = pgSequence("request_seq", {
+  startWith: 1,
   increment: 1,
 });
 
@@ -155,10 +230,14 @@ export const tickets = pgTable("tickets", {
   // (createTicket). No column default: numbers must come from the sequence,
   // never a row count (CLAUDE.md §9).
   number: text("number").notNull().unique(),
+  // ISSUE (support) vs REQUEST (build-a-new-system). Drives the numbering
+  // sequence (MIS-/REQ-) and which state machine applies (CLAUDE.md §12).
+  type: ticketTypeEnum("type").notNull().default("ISSUE"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   department: departmentEnum("department").notNull(),
   sheetLink: text("sheet_link"),
+  // Default OPEN suits an ISSUE; a REQUEST is inserted as SUBMITTED explicitly.
   status: statusEnum("status").notNull().default("OPEN"),
   // Nullable: a raised ticket has NO priority — the MIS team sets it when they
   // claim it. null = "not triaged yet" (shown as "Unset").
@@ -184,6 +263,7 @@ export const tickets = pgTable("tickets", {
     .$onUpdate(() => new Date()),
 }, (t) => [
   index("tickets_status_idx").on(t.status),
+  index("tickets_type_idx").on(t.type),
   index("tickets_assigned_to_idx").on(t.assignedTo),
   index("tickets_created_by_idx").on(t.createdBy),
   // Active-ticket access paths. Every list/count/analytics query filters
@@ -261,6 +341,66 @@ export const ticketActivity = pgTable("ticket_activity", {
     .defaultNow(),
 }, (t) => [index("ticket_activity_ticket_id_idx").on(t.ticketId)]);
 
+/* ------------------------------------------------------------------ *
+ * REQUEST-specific tables (CLAUDE.md §12.2). Only rows for tickets with
+ * type=REQUEST; the shared ticket/comment/attachment/activity tables carry
+ * everything else — no parallel table set.
+ * ------------------------------------------------------------------ */
+
+/** 1:1 with a REQUEST ticket — the intake brief + the MD-decision / build state. */
+export const requestDetails = pgTable("request_details", {
+  ticketId: uuid("ticket_id")
+    .primaryKey()
+    .references(() => tickets.id, { onDelete: "cascade" }),
+  // Intake brief (the requester fills these).
+  systemName: text("system_name").notNull(),
+  problemStatement: text("problem_statement").notNull(),
+  currentProcess: text("current_process"),
+  currentSheetLink: text("current_sheet_link"),
+  intendedUsers: text("intended_users").notNull(),
+  expectedBenefit: text("expected_benefit").notNull(),
+  urgency: priorityEnum("urgency").notNull(),
+  targetDate: date("target_date", { mode: "date" }),
+  // MD decision (§12.2). There is NO MD role/login — the approval is an offline
+  // formality an MIS_ADMIN records on the MD's behalf: `mdDecisionRecordedBy` is
+  // the admin who ticked it (defaults to the acting admin), `mdDecidedAt` is when,
+  // and `mdRemark` is optional even on reject. This admin + timestamp IS the
+  // accountability record for the MD formality (§12.5).
+  mdDecision: mdDecisionEnum("md_decision").notNull().default("PENDING"),
+  mdDecisionRecordedBy: uuid("md_decision_recorded_by").references(() => users.id),
+  mdDecidedAt: timestamp("md_decided_at", { withTimezone: true }),
+  mdRemark: text("md_remark"),
+  // Build state (set on claim / through the build).
+  claimedBy: uuid("claimed_by").references(() => users.id),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  deadline: date("deadline", { mode: "date" }),
+  // Source of truth for "how many times it came back" (§12.5).
+  revisionRound: integer("revision_round").notNull().default(0),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+});
+
+/** Progress updates / review-session notes / blockers logged during a build. */
+export const progressLogs = pgTable(
+  "progress_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id),
+    type: progressLogTypeEnum("type").notNull(),
+    body: text("body").notNull(),
+    percentComplete: integer("percent_complete"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("progress_logs_ticket_id_idx").on(t.ticketId)]
+);
+
 /** In-app notifications — one row per recipient per event (P8). */
 export const notifications = pgTable(
   "notifications",
@@ -297,5 +437,9 @@ export type TicketAttachment = typeof ticketAttachments.$inferSelect;
 export type NewTicketAttachment = typeof ticketAttachments.$inferInsert;
 export type TicketActivityRow = typeof ticketActivity.$inferSelect;
 export type NewTicketActivityRow = typeof ticketActivity.$inferInsert;
+export type RequestDetails = typeof requestDetails.$inferSelect;
+export type NewRequestDetails = typeof requestDetails.$inferInsert;
+export type ProgressLog = typeof progressLogs.$inferSelect;
+export type NewProgressLog = typeof progressLogs.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;

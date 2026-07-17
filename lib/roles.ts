@@ -9,7 +9,8 @@ export const STAFF_ROLES: Role[] = ["MIS_STAFF", "MIS_ADMIN"];
 /**
  * Roles offered in the admin role picker — two tiers only: normal users and the
  * MIS team (MIS_ADMIN). MIS_STAFF is retired (kept in the DB enum for any legacy
- * rows, but never assigned); the MIS team is MIS_ADMIN.
+ * rows, but never assigned); the MIS team is MIS_ADMIN. (There is no MD role —
+ * the REQUEST approval is an offline formality an admin records, §12.4.)
  */
 export const ROLES: Role[] = ["USER", "MIS_ADMIN"];
 

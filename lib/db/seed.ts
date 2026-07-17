@@ -1,12 +1,12 @@
 /**
- * Seed script — 3 users (one per role) + 2 sample tickets with activity rows,
- * so later phases have data to work with.
+ * Seed script — 3 users (one per role) + 2 sample ISSUE tickets + 2 sample
+ * REQUEST tickets at different stages, so later phases have data to work with.
  *
- * Run with:  npm run db:seed
+ * Run with:  npm run db:seed   (apply the migration first)
  *
  * Self-contained: it builds its own neon-http client after loading .env.local,
- * so it doesn't depend on import order. The ticket-creation logic mirrors
- * lib/db/queries.ts#createTicket (client-side id + db.batch for atomicity).
+ * so it doesn't depend on import order. The create logic mirrors
+ * lib/db/queries.ts (client-side id + db.batch for atomicity).
  */
 import { config } from "dotenv";
 
@@ -17,7 +17,13 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 
 import * as schema from "./schema";
-import { ticketActivity, tickets, users } from "./schema";
+import {
+  progressLogs,
+  requestDetails,
+  ticketActivity,
+  tickets,
+  users,
+} from "./schema";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set (expected in .env.local)");
@@ -25,11 +31,20 @@ if (!process.env.DATABASE_URL) {
 
 const db = drizzle(neon(process.env.DATABASE_URL), { schema });
 
+type Department = (typeof schema.departmentEnum.enumValues)[number];
+type Priority = (typeof schema.priorityEnum.enumValues)[number];
+
+/**
+ * ISSUE number from ticket_seq — deliberately UN-padded, exactly as before P10.
+ * Do not "align" this to the app's lpad(...,3,'0') form: ticket_seq is declared
+ * START WITH 1001, and Postgres lpad TRUNCATES ('1001' → '100'), so a padded seed
+ * emits MIS-100 twice on a fresh database and dies on the number unique index.
+ */
 async function createTicket(args: {
   title: string;
   description: string;
-  department: (typeof schema.departmentEnum.enumValues)[number];
-  priority: (typeof schema.priorityEnum.enumValues)[number];
+  department: Department;
+  priority: Priority;
   sheetLink?: string | null;
   createdBy: string;
 }) {
@@ -40,6 +55,7 @@ async function createTicket(args: {
       .values({
         id,
         number: sql`'MIS-' || nextval('ticket_seq')`,
+        type: "ISSUE",
         title: args.title,
         description: args.description,
         department: args.department,
@@ -55,6 +71,94 @@ async function createTicket(args: {
     }),
   ]);
   return rows[0];
+}
+
+/** Mirrors queries.ts#createRequestTicket: number from request_seq (REQ-001), status SUBMITTED. */
+async function createRequest(args: {
+  systemName: string;
+  problemStatement: string;
+  currentProcess?: string | null;
+  currentSheetLink?: string | null;
+  intendedUsers: string;
+  expectedBenefit: string;
+  urgency: Priority;
+  department: Department;
+  targetDate?: Date | null;
+  createdBy: string;
+}) {
+  const id = crypto.randomUUID();
+  const [rows] = await db.batch([
+    db
+      .insert(tickets)
+      .values({
+        id,
+        number: sql`'REQ-' || lpad(nextval('request_seq')::text, 3, '0')`,
+        type: "REQUEST",
+        title: args.systemName,
+        description: args.problemStatement,
+        department: args.department,
+        status: "SUBMITTED",
+        sheetLink: args.currentSheetLink ?? null,
+        createdBy: args.createdBy,
+      })
+      .returning(),
+    db.insert(requestDetails).values({
+      ticketId: id,
+      systemName: args.systemName,
+      problemStatement: args.problemStatement,
+      currentProcess: args.currentProcess ?? null,
+      currentSheetLink: args.currentSheetLink ?? null,
+      intendedUsers: args.intendedUsers,
+      expectedBenefit: args.expectedBenefit,
+      urgency: args.urgency,
+      targetDate: args.targetDate ?? null,
+    }),
+    db.insert(ticketActivity).values({
+      ticketId: id,
+      actorId: args.createdBy,
+      type: "SUBMITTED",
+    }),
+  ]);
+  return rows[0];
+}
+
+/** Move a REQUEST's status and record the matching activity row (same-tx audit, §12.5). */
+async function advanceRequest(
+  ticketId: string,
+  actorId: string,
+  from: (typeof schema.statusEnum.enumValues)[number],
+  to: (typeof schema.statusEnum.enumValues)[number],
+  activity: (typeof ticketActivity.$inferInsert)["type"]
+) {
+  await db.batch([
+    db.update(tickets).set({ status: to }).where(eq(tickets.id, ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId,
+      actorId,
+      type: activity,
+      fromValue: from,
+      toValue: to,
+    }),
+  ]);
+}
+
+/** One progress log + its PROGRESS_LOGGED audit row — mirrors addProgressLog. */
+async function logProgress(
+  ticketId: string,
+  authorId: string,
+  type: (typeof schema.progressLogTypeEnum.enumValues)[number],
+  percentComplete: number,
+  body: string
+) {
+  await db.batch([
+    db.insert(progressLogs).values({ ticketId, authorId, type, body, percentComplete }),
+    db.insert(ticketActivity).values({
+      ticketId,
+      actorId: authorId,
+      type: "PROGRESS_LOGGED",
+      toValue: type,
+    }),
+  ]);
 }
 
 async function main() {
@@ -77,59 +181,164 @@ async function main() {
   const user = byEmail.get("user@example.com")!;
   console.log(`  ✓ users: ${insertedUsers.map((u) => u.role).join(", ")}`);
 
-  // --- Tickets: seed once, so re-running doesn't pile up sample data ---
-  const existing = await db.select({ id: tickets.id }).from(tickets).limit(1);
-  if (existing.length > 0) {
-    console.log("  • tickets already present — skipping ticket seed.");
-    console.log("Seed complete.");
-    return;
+  // --- ISSUE tickets: seed once (skip if any issue already exists) ---
+  const existingIssues = await db
+    .select({ id: tickets.id })
+    .from(tickets)
+    .where(eq(tickets.type, "ISSUE"))
+    .limit(1);
+  if (existingIssues.length === 0) {
+    const t1 = await createTicket({
+      title: "AppSheet sync failing on VHAGAR production sheet",
+      description:
+        "The VHAGAR production-entry AppSheet stopped syncing this morning. New rows aren't reaching the master sheet. Please check the Apps Script trigger.",
+      department: "VHAGAR",
+      priority: "HIGH",
+      createdBy: user.id,
+      sheetLink:
+        "https://docs.google.com/spreadsheets/d/1exampleVHAGARproductionsheet/edit",
+    });
+
+    const t2 = await createTicket({
+      title: "Add a 'Courier AWB' column to the LINKD dispatch tracker",
+      description:
+        "Please add a Courier AWB column to the LINKD dispatch tracker and expose it in the dispatch AppSheet form.",
+      department: "LINKD",
+      priority: "MEDIUM",
+      createdBy: staff.id,
+      sheetLink:
+        "https://docs.google.com/spreadsheets/d/1exampleLINKDdispatchtracker/edit",
+    });
+
+    // Extra activity on t1: admin assigns it to staff, who starts work.
+    await db
+      .update(tickets)
+      .set({ assignedTo: staff.id, status: "IN_PROGRESS" })
+      .where(eq(tickets.id, t1.id));
+    await db.insert(ticketActivity).values([
+      { ticketId: t1.id, actorId: admin.id, type: "ASSIGNED", toValue: staff.name },
+      {
+        ticketId: t1.id,
+        actorId: staff.id,
+        type: "STATUS_CHANGED",
+        fromValue: "OPEN",
+        toValue: "IN_PROGRESS",
+      },
+    ]);
+    console.log(`  ✓ issues: ${t1.number} (VHAGAR), ${t2.number} (LINKD)`);
+  } else {
+    console.log("  • issue tickets already present — skipping issue seed.");
   }
 
-  const t1 = await createTicket({
-    title: "AppSheet sync failing on VHAGAR production sheet",
-    description:
-      "The VHAGAR production-entry AppSheet stopped syncing this morning. New rows aren't reaching the master sheet. Please check the Apps Script trigger.",
-    department: "VHAGAR",
-    priority: "HIGH",
-    createdBy: user.id,
-    sheetLink:
-      "https://docs.google.com/spreadsheets/d/1exampleVHAGARproductionsheet/edit",
-  });
+  // --- REQUEST tickets: seed once (skip if any request already exists) ---
+  const existingRequests = await db
+    .select({ id: tickets.id })
+    .from(tickets)
+    .where(eq(tickets.type, "REQUEST"))
+    .limit(1);
+  if (existingRequests.length === 0) {
+    // Request 1 — sitting at PENDING_MD_APPROVAL (awaiting the recorded verdict).
+    const r1 = await createRequest({
+      systemName: "Purchase Order System",
+      problemStatement:
+        "POs are raised over email and tracked in a messy sheet. We lose approvals and can't see pending orders per vendor.",
+      currentProcess:
+        "Email to the purchase head, who maintains a personal Google Sheet of orders.",
+      currentSheetLink:
+        "https://docs.google.com/spreadsheets/d/1examplePurchaseOrders/edit",
+      intendedUsers: "Purchase team, store managers, accounts",
+      expectedBenefit:
+        "One place to raise, approve, and track POs; no lost approvals; vendor-wise pending view.",
+      urgency: "HIGH",
+      department: "LINKD",
+      targetDate: null,
+      createdBy: user.id,
+    });
+    await advanceRequest(r1.id, staff.id, "SUBMITTED", "UNDER_REVIEW", "MOVED_TO_REVIEW");
+    await advanceRequest(
+      r1.id,
+      staff.id,
+      "UNDER_REVIEW",
+      "PENDING_MD_APPROVAL",
+      "SENT_FOR_APPROVAL"
+    );
 
-  const t2 = await createTicket({
-    title: "Add a 'Courier AWB' column to the LINKD dispatch tracker",
-    description:
-      "Please add a Courier AWB column to the LINKD dispatch tracker and expose it in the dispatch AppSheet form.",
-    department: "LINKD",
-    priority: "MEDIUM",
-    createdBy: staff.id,
-    sheetLink:
-      "https://docs.google.com/spreadsheets/d/1exampleLINKDdispatchtracker/edit",
-  });
+    // Request 2 — approved, claimed, and IN_PROGRESS with progress logs.
+    const r2 = await createRequest({
+      systemName: "HRMS Leave & Attendance",
+      problemStatement:
+        "Leave requests are on paper and attendance is reconciled manually every month, causing payroll errors.",
+      currentProcess: "Paper leave forms + a monthly manual attendance reconciliation.",
+      currentSheetLink: null,
+      intendedUsers: "All employees, HR, department heads",
+      expectedBenefit:
+        "Self-service leave, auto attendance capture, accurate payroll inputs.",
+      urgency: "URGENT",
+      department: "LD_SILK_MILLS",
+      targetDate: null,
+      createdBy: user.id,
+    });
+    await advanceRequest(r2.id, staff.id, "SUBMITTED", "UNDER_REVIEW", "MOVED_TO_REVIEW");
+    await advanceRequest(
+      r2.id,
+      staff.id,
+      "UNDER_REVIEW",
+      "PENDING_MD_APPROVAL",
+      "SENT_FOR_APPROVAL"
+    );
+    // Admin records the MD's approval (on the MD's behalf, §12.2/§12.5).
+    await db.batch([
+      db.update(tickets).set({ status: "APPROVED" }).where(eq(tickets.id, r2.id)),
+      db
+        .update(requestDetails)
+        .set({
+          mdDecision: "APPROVED",
+          mdDecisionRecordedBy: admin.id,
+          mdDecidedAt: new Date(),
+          mdRemark: "Approved in the Monday review — proceed.",
+        })
+        .where(eq(requestDetails.ticketId, r2.id)),
+      db.insert(ticketActivity).values({
+        ticketId: r2.id,
+        actorId: admin.id,
+        type: "APPROVAL_RECORDED",
+        fromValue: "PENDING_MD_APPROVAL",
+        toValue: "APPROVED",
+      }),
+    ]);
+    // Staff claims the build: assignee + priority + deadline.
+    const deadline = new Date();
+    deadline.setDate(deadline.getDate() + 21);
+    await db.batch([
+      db
+        .update(tickets)
+        .set({ status: "CLAIMED", assignedTo: staff.id, priority: "HIGH" })
+        .where(eq(tickets.id, r2.id)),
+      db
+        .update(requestDetails)
+        .set({ claimedBy: staff.id, claimedAt: new Date(), deadline })
+        .where(eq(requestDetails.ticketId, r2.id)),
+      db.insert(ticketActivity).values([
+        { ticketId: r2.id, actorId: staff.id, type: "CLAIMED", fromValue: "APPROVED", toValue: "CLAIMED" },
+        { ticketId: r2.id, actorId: staff.id, type: "DEADLINE_SET", toValue: deadline.toISOString() },
+      ]),
+    ]);
+    // Build starts + two progress logs.
+    await advanceRequest(r2.id, staff.id, "CLAIMED", "IN_PROGRESS", "STARTED");
+    // NOTE: one log per batch, deliberately. Postgres now() is the TRANSACTION
+    // timestamp, so batching both logs together stamps them identically and
+    // "latest progress" (order by created_at desc limit 1) becomes a coin flip.
+    // addProgressLog writes one log per call, so this mirrors real usage.
+    await logProgress(r2.id, staff.id, "UPDATE", 40,
+      "Data model drafted; leave-request form and approval flow built.");
+    await logProgress(r2.id, staff.id, "BLOCKER", 55,
+      "Waiting on the biometric device API credentials from IT to wire attendance capture.");
 
-  // Extra activity on t1: admin assigns it to staff, who starts work.
-  await db
-    .update(tickets)
-    .set({ assignedTo: staff.id, status: "IN_PROGRESS" })
-    .where(eq(tickets.id, t1.id));
-  await db.insert(ticketActivity).values([
-    {
-      ticketId: t1.id,
-      actorId: admin.id,
-      type: "ASSIGNED",
-      toValue: staff.name,
-    },
-    {
-      ticketId: t1.id,
-      actorId: staff.id,
-      type: "STATUS_CHANGED",
-      fromValue: "OPEN",
-      toValue: "IN_PROGRESS",
-    },
-  ]);
+    console.log(`  ✓ requests: ${r1.number} (PENDING_MD_APPROVAL), ${r2.number} (IN_PROGRESS + logs)`);
+  } else {
+    console.log("  • request tickets already present — skipping request seed.");
+  }
 
-  console.log(`  ✓ tickets: ${t1.number} (VHAGAR), ${t2.number} (LINKD)`);
-  console.log("  ✓ activity rows written");
   console.log("Seed complete.");
 }
 

@@ -65,7 +65,7 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
 - `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT
 
 Tables:
@@ -82,6 +82,7 @@ REOPENED (treated as active; behaves like IN_PROGRESS on the board). **Claiming
 and starting are two distinct steps** — a claimed ticket stays OPEN until it is
 explicitly started.
 - **Claim** (`claimTicket`): an MIS member takes ownership — **assigns the ticket to themselves and sets a priority**. It **stays OPEN** (NOT started/In Progress) and appears under "Assigned to Me". Writes a CLAIMED activity row. No deadline yet; the reporter is not notified (§8). The per-row Claim button, the detail action bar, and **bulk claim** all do this claim-only step. Never steals a ticket already claimed by someone else (§6).
+- **Release / undo a claim** (`releaseTicket`): a mis-claim escape hatch — the assignee sends a ticket they claimed by mistake **back to the open pool**. Clears the assignee, priority, and deadline; the ticket **stays OPEN** and is claimable again. Writes an UNCLAIMED activity row. **Assignee-locked** — even an MIS_ADMIN may release only a ticket assigned to themselves, never someone else's claim (§6). Allowed **only on a claimed-but-not-started ticket (OPEN)**: once started, the reporter has already been notified, so it's no longer a quiet undo. No notification is sent (a plain claim is quiet per §8, so releasing it is too).
 - **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date). This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
 - **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
 - Only the assignee/MIS may move to IN_PROGRESS/RESOLVED. Setting RESOLVED requires an assignee.
@@ -97,6 +98,7 @@ explicitly started.
 | See all tickets / dashboard / board | ✗ | ✓ | ✓ |
 | Claim (assign to self + priority; stays Open) | ✗ | ✓ | ✓ |
 | Start task (set deadline; Open → In Progress) — own claimed ticket | ✗ | ✓ | ✓ |
+| Release own claim (Open-only; back to unclaimed Open) — own claimed ticket | ✗ | ✓ | ✓ |
 | Change status / priority | ✗ | ✓ | ✓ |
 | Bulk claim | ✗ | ✓ | ✓ |
 | Take over a ticket assigned to someone else | ✗ | ✗ | ✓ |
@@ -160,3 +162,151 @@ language) — read it before any UI work. Load-bearing rules:
 Prompts are labelled P0–P9. UI-only phases must not touch schema/API. Schema phases
 must not touch styling. If a phase needs a new field or env var, STOP and ask before
 adding it — then reflect it back into §2/§4/§9 here.
+
+## 12. Two ticket types (AMENDS §4, §5, §6; EXTENDS §8)
+
+ONE unified ticket model with two types.
+- **ISSUE** — something is broken (the original support ticket). Uses the EXISTING
+  live MIS- issue sequence and format — do not change it, do not renumber existing
+  tickets.
+- **REQUEST** — "build me a new system" (Purchase, Sales, HRMS, …). Gets its OWN
+  separate sequence (REQ-), formatted to match the live issue format.
+
+Both types share: users, comments, attachments, activity log, notifications, roles,
+the detail-page shell, and the app shell. Do NOT create a parallel table set.
+`tickets` gains `type` (ISSUE|REQUEST, default ISSUE); its number is drawn from the
+issue sequence (ISSUE) or the request sequence (REQUEST). `status` is a single enum
+holding BOTH state sets; the machine applied is chosen by `type`; a status from the
+wrong type's set is rejected server-side.
+
+**Numbering (as built).** Both zero-pad to 3, matching the live issue format:
+- ISSUE → `'MIS-' || lpad(nextval('ticket_seq'), 3, '0')` → live rows read MIS-001…
+  `ticket_seq` is declared `START WITH 1001` but the live sequence dispenses 1,2,3…
+  Leave it alone: reconciling it would change live ISSUE numbering.
+- REQUEST → `'REQ-' || lpad(nextval('request_seq'), 3, '0')` → REQ-001, REQ-002, …
+  `request_seq` **starts at 1**.
+Numbers are never computed from a row count.
+
+> **KNOWN ISSUE — numbering ceiling (`docs/known-issues/0001`).** Postgres `lpad`
+> TRUNCATES past the pad width (`lpad('1000',3,'0')` → `'100'`), so BOTH sequences
+> collide on the `tickets.number` unique index once they pass 999. Pre-existing for
+> ISSUE; the same shape for REQUEST. **Tracked, not fixed** — needs a dedicated fix
+> before either count approaches ~900. A corollary: `lib/db/seed.ts` deliberately
+> keeps the UN-padded `'MIS-' || nextval('ticket_seq')`, because on a fresh database
+> `ticket_seq` starts at its declared 1001 and a padded seed emits MIS-100 twice.
+
+### 12.1 Enums
+- `role`: **UNCHANGED** — USER | MIS_STAFF | MIS_ADMIN. **THERE IS NO MD ROLE.** Do
+  not add one, and do not add any MD env var. (Note: `MIS_STAFF` is retired from the
+  admin role picker — the MIS team is `MIS_ADMIN` — so the staff/admin split in §12.4
+  is enforced in code but nominal in practice.)
+- request states (added to the `status` enum): SUBMITTED | UNDER_REVIEW |
+  PENDING_MD_APPROVAL | APPROVED | DROPPED | CLAIMED | IN_PROGRESS | IN_TESTING |
+  CHANGES_REQUESTED | CLOSED. (PENDING_MD_APPROVAL = waiting for the MD's verdict to
+  be RECORDED BY AN MIS_ADMIN; **the MD never logs in**.) IN_PROGRESS and CLOSED are
+  shared with the ISSUE set — which is exactly why the machine must be type-aware.
+- `ticket_type`: ISSUE | REQUEST (default ISSUE).
+- `md_decision`: PENDING | APPROVED | REJECTED (default PENDING).
+- `progress_log_type`: UPDATE | REVIEW_SESSION | BLOCKER
+- `activity.type` gains: SUBMITTED, MOVED_TO_REVIEW, SENT_FOR_APPROVAL,
+  APPROVAL_RECORDED, REJECTION_RECORDED, DROPPED, REVIVED, CLAIMED, DEADLINE_SET,
+  PROGRESS_LOGGED, MARKED_COMPLETE, CHANGES_REQUESTED, ACCEPTED
+
+### 12.2 New tables
+- `request_details` (1:1 with REQUEST tickets): ticket_id (pk, fk cascade),
+  system_name, problem_statement, current_process (nullable), current_sheet_link
+  (nullable), intended_users, expected_benefit, urgency (priority enum), **target_date
+  (date, nullable)**, md_decision (enum, default PENDING), **md_decision_recorded_by**
+  (fk users.id, nullable — the MIS_ADMIN who ticked on the MD's behalf; defaults to the
+  acting admin), md_decided_at (nullable), md_remark (text, nullable — **OPTIONAL even
+  on reject**), claimed_by (fk users.id, nullable), claimed_at (nullable), **deadline
+  (date, nullable)**, revision_round (int default 0), completed_at (nullable),
+  accepted_at (nullable). **There is NO `md_decided_by` column** — the recorder IS the
+  accountability record.
+- `progress_logs`: id, ticket_id (fk cascade), author_id (fk), type
+  (progress_log_type), body (text), percent_complete (int 0-100, nullable),
+  created_at. Index on ticket_id.
+
+### 12.3 REQUEST state machine
+SUBMITTED → UNDER_REVIEW (MIS_STAFF/ADMIN; internal discussion happens as comments)
+→ PENDING_MD_APPROVAL (MIS sends it up) → APPROVED or DROPPED.
+The APPROVED/DROPPED verdict is RECORDED BY AN MIS_ADMIN on the MD's behalf (writes
+md_decision, md_decision_recorded_by, md_decided_at, optional md_remark).
+APPROVED → CLAIMED (an MIS member self-claims: sets assigned_to, priority, deadline)
+→ IN_PROGRESS → IN_TESTING (MIS marks complete) → CLOSED (requester accepts) OR
+CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (loops,
+uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
+illegal and rejected server-side.
+
+### 12.4 REQUEST permissions
+| Action | Requester (USER) | MIS_STAFF | MIS_ADMIN |
+|---|---|---|---|
+| Submit a request | yes | yes | yes |
+| See own requests | yes | yes | yes |
+| See all requests | no | yes | yes |
+| Move to review / send for approval | no | yes | yes |
+| Record approval/rejection (on MD's behalf) | no | no | yes |
+| Revive a DROPPED request | no | no | yes |
+| Claim + set priority + deadline | no | yes | yes |
+| Change an in-flight deadline | no | yes (assignee) | yes |
+| Add progress log | no | yes (assignee) | yes |
+| Mark complete (→ IN_TESTING) | no | yes (assignee) | yes |
+| Request changes (→ CHANGES_REQUESTED) | yes (requester only) | no | yes |
+| Accept & close | yes (requester only) | no | no |
+| Comment | yes | yes | yes |
+
+MIS may NEVER force-close a request. Only the requester's acceptance closes it.
+
+### 12.5 Full auditability (hard requirement)
+Every transition, claim, approval/rejection record, deadline change, progress log,
+comment, and attachment writes a `ticket_activity` row (actor_id, from_value,
+to_value, created_at) in the SAME `db.batch` as the change. The recorded-by admin +
+timestamp on the approval decision IS the accountability record for the MD formality.
+`revision_round` is the source of truth for how many times a request came back; each
+increment is also an activity row, so every attempt is timestamped.
+
+### 12.6 REQUEST notifications (reuse the existing `notify()` dispatcher)
+- REQUEST_SUBMITTED → MIS team
+- REQUEST_PENDING_APPROVAL → MIS_ADMINs (they record the decision)
+- REQUEST_DECISION_RECORDED → requester + MIS team (approved or dropped; include the
+  remark when present)
+- REQUEST_CLAIMED → requester ("{member} is now building {number}, deadline {date}")
+- **REQUEST_DEADLINE_CHANGED → requester** (the assignee moved an in-flight delivery
+  date — a deadline change is never silent)
+- REQUEST_PROGRESS → requester (in-app by default)
+- REQUEST_READY_FOR_TESTING → requester
+- REQUEST_CHANGES_REQUESTED → assignee
+- REQUEST_ACCEPTED → assignee + MIS team
+
+Best-effort; a failed send must never roll back the DB mutation. Currently in-app
+only — the Resend email templates for these are not built yet.
+
+### 12.7 Routing (Hybrid)
+- **Shared, type-aware detail:** `/tickets/[number]` renders BOTH types, branching on
+  `type` to show issue vs request panels. One route, one deep-link pattern, used by
+  every notification link.
+- **Separate request surfaces:** a **single** "Request a system" nav entry → `/requests`
+  (the REQUEST-only list), plus `/requests/new` (the intake form), which is reached
+  from the list's header button + empty-state CTA and needs no nav entry of its own.
+  Issues keep /new ("Report an issue"), /my, /dashboard, and the issue board unchanged.
+- USER row-level visibility still applies: a USER sees only requests where
+  `created_by` = their id.
+- The request detail shows, in order: the journey strip (Submitted → Review → Approval
+  → Claimed → In progress → Testing → Closed), the claim/build panel, the brief, the
+  **Progress** section, then the **Conversation**. **Progress logs (structured MIS
+  records) and comments (free conversation) are separate concepts — never merge them.**
+
+### 12.8 Enforcement (as built)
+- `lib/ticket-state.ts` is the single source of truth and is unit-tested
+  (`lib/ticket-state.test.ts`):
+  - `assertStatusForType(type, status)` — throws on a status from the other type's set;
+    called by the status writers.
+  - `canTransition(type, from, to, actorRole, isRequester, isAssignee)` — §12.3 topology
+    AND §12.4 permissions. Every request action gates on it (via one `allows()` helper),
+    so the tests protect production. (A legacy `canTransition(from, to, type?)` overload
+    remains for the issue board's topology-only check.)
+- **Type isolation:** the ISSUE actions reject REQUEST ids, and every issue
+  list/count/analytics query filters `type = 'ISSUE'` — otherwise requests leak into
+  the issue lists/dashboard, and MIS could force-close a request through the ISSUE
+  machine (IN_PROGRESS is shared). `getTicketById` is deliberately NOT type-filtered —
+  the request actions call it and then check `type` themselves.

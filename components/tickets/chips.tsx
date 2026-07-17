@@ -1,12 +1,35 @@
-import type { Priority, Status } from "@/lib/db/schema";
+import type { Priority, Status, TicketType } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
-const STATUS_META: Record<Status, { label: string; color: string }> = {
+// Single source of truth for status label + colour across chips, list accents,
+// and cards. Both machines share this map (CLAUDE.md §5 + §12); reserved tokens
+// are reused and the chip label always disambiguates same-coloured states.
+export const STATUS_META: Record<Status, { label: string; color: string }> = {
+  // ISSUE
   OPEN: { label: "Open", color: "var(--status-open)" },
   IN_PROGRESS: { label: "In Progress", color: "var(--status-in-progress)" },
   REOPENED: { label: "Reopened", color: "var(--status-reopened)" },
   RESOLVED: { label: "Resolved", color: "var(--status-resolved)" },
   CLOSED: { label: "Closed", color: "var(--status-closed)" },
+  // REQUEST (§12.3)
+  SUBMITTED: { label: "Submitted", color: "var(--status-open)" },
+  UNDER_REVIEW: { label: "Under Review", color: "var(--status-in-progress)" },
+  PENDING_MD_APPROVAL: { label: "Pending MD", color: "var(--priority-high)" },
+  APPROVED: { label: "Approved", color: "var(--status-resolved)" },
+  DROPPED: { label: "Dropped", color: "var(--priority-urgent)" },
+  CLAIMED: { label: "Claimed", color: "var(--status-in-progress)" },
+  IN_TESTING: { label: "In Testing", color: "var(--priority-high)" },
+  CHANGES_REQUESTED: { label: "Changes Requested", color: "var(--priority-urgent)" },
+};
+
+/** The reserved colour for a status — used by list-row accents and cards. */
+export function statusColor(status: Status): string {
+  return STATUS_META[status].color;
+}
+
+const TYPE_META: Record<TicketType, { label: string; color: string }> = {
+  ISSUE: { label: "Issue", color: "var(--status-in-progress)" },
+  REQUEST: { label: "Request", color: "var(--priority-high)" },
 };
 
 const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
@@ -72,5 +95,17 @@ export function PriorityChip({
     );
   }
   const meta = PRIORITY_META[priority];
+  return <Chip label={meta.label} color={meta.color} className={className} />;
+}
+
+/** ISSUE vs REQUEST badge — distinguishes the two request types in shared views. */
+export function TypeChip({
+  type,
+  className,
+}: {
+  type: TicketType;
+  className?: string;
+}) {
+  const meta = TYPE_META[type];
   return <Chip label={meta.label} color={meta.color} className={className} />;
 }

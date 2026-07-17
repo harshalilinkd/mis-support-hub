@@ -27,6 +27,14 @@ export function formatRelative(value: Date | string): string {
 }
 
 /** Absolute, locale-formatted date-time (for tooltips). */
+/**
+ * Is this sheet/system value an actual link? The field accepts EITHER a URL or a
+ * plain system name (CLAUDE.md §1), so anything non-http(s) must render as text —
+ * never as an anchor. Shared by the issue "Link / Files" cell and the request
+ * detail so there is one rule, not two.
+ */
+export const isUrl = (v: string) => /^https?:\/\//i.test(v);
+
 export function formatDateTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });

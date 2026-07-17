@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { createNotification, listAssignableUsers } from "@/lib/db/queries";
+import {
+  createNotification,
+  getRequestDetailsRow,
+  listAdmins,
+  listAssignableUsers,
+} from "@/lib/db/queries";
 import { type NotificationType, tickets, users } from "@/lib/db/schema";
 import { emailProvider } from "./email";
 import type {
@@ -366,5 +371,275 @@ export async function sendCommentNotification(
     });
   } catch (e) {
     console.error("[sendCommentNotification]", e);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * REQUEST notifications (CLAUDE.md §12.6). Reuse createInApp — in-app is the
+ * persisted channel that drives the bell; all best-effort (§8).
+ * ------------------------------------------------------------------ */
+
+/** Fan out one in-app notice to every active MIS member (best-effort). */
+async function notifyTeam(
+  ticket: { id: string; number: string; title: string; createdBy: string },
+  type: NotificationType,
+  title: string,
+  body: string,
+  {
+    skipReporter = true,
+    skipUserId,
+  }: { skipReporter?: boolean; skipUserId?: string | null } = {}
+): Promise<void> {
+  const staff = await listAssignableUsers();
+  await Promise.all(
+    staff
+      // `skipUserId` avoids double-notifying someone who already got a tailored
+      // notice (e.g. the assignee on REQUEST_ACCEPTED).
+      .filter((s) => s.id !== skipUserId)
+      .filter((s) => !skipReporter || s.id !== ticket.createdBy)
+      .map((s) =>
+        createInApp({
+          userId: s.id,
+          type,
+          ticketId: ticket.id,
+          ticketNumber: ticket.number,
+          title,
+          body,
+        })
+      )
+  );
+}
+
+/** New request submitted → the whole MIS team (needs review). */
+export async function sendRequestSubmittedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    const who = reporter?.name ?? "Someone";
+    await notifyTeam(
+      ticket,
+      "REQUEST_SUBMITTED",
+      `New request ${ticket.number}`,
+      `${ticket.title}\nSubmitted by ${who} — needs review.`
+    );
+  } catch (e) {
+    console.error("[sendRequestSubmittedNotification]", e);
+  }
+}
+
+/** Sent for approval → the MIS admins (they record the MD's offline decision; §12.6). */
+export async function sendRequestPendingApprovalNotification(
+  ticketId: string
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const admins = await listAdmins();
+    await Promise.all(
+      admins.map((a) =>
+        createInApp({
+          userId: a.id,
+          type: "REQUEST_PENDING_APPROVAL",
+          ticketId: ticket.id,
+          ticketNumber: ticket.number,
+          title: `${ticket.number} is awaiting approval`,
+          body: `${ticket.title}\nConfirm with the MD, then record the decision.`,
+        })
+      )
+    );
+  } catch (e) {
+    console.error("[sendRequestPendingApprovalNotification]", e);
+  }
+}
+
+/** Decision recorded → the requester (and the MIS team), with the remark if any (§12.6). */
+export async function sendRequestDecisionRecordedNotification(
+  ticketId: string
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const details = await getRequestDetailsRow(ticket.id);
+    const approved = details?.mdDecision === "APPROVED";
+    const verb = approved ? "approved" : "dropped";
+    const remark = details?.mdRemark ? `\n“${details.mdRemark}”` : "";
+
+    const reporter = await loadUser(ticket.createdBy);
+    if (reporter) {
+      await createInApp({
+        userId: reporter.id,
+        type: "REQUEST_DECISION_RECORDED",
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        title: `${ticket.number} was ${verb}`,
+        body: `${ticket.title}${remark}`,
+      });
+    }
+    await notifyTeam(
+      ticket,
+      "REQUEST_DECISION_RECORDED",
+      `${ticket.number} was ${verb}`,
+      `${ticket.title}${remark}`
+    );
+  } catch (e) {
+    console.error("[sendRequestDecisionRecordedNotification]", e);
+  }
+}
+
+/** Claimed for the build → the requester ("{member} is building it, deadline {date}"). */
+export async function sendRequestClaimedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+    const worker = await loadUser(ticket.assignedTo);
+    const workerName = worker?.name ?? "An MIS member";
+    const details = await getRequestDetailsRow(ticket.id);
+    const eta = details?.deadline ? formatDeadline(details.deadline) : null;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "REQUEST_CLAIMED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${workerName} is now building ${ticket.number}`,
+      body: eta
+        ? `${ticket.title}\nTargeting delivery by ${eta}.`
+        : `${ticket.title}\nThe build has been claimed.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestClaimedNotification]", e);
+  }
+}
+
+/**
+ * Delivery date moved → the requester. A deadline change is never silent (P12):
+ * they were promised a date on claim, so they hear when it shifts.
+ */
+export async function sendRequestDeadlineChangedNotification(
+  ticketId: string,
+  previous: Date | null
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+    const details = await getRequestDetailsRow(ticket.id);
+    if (!details?.deadline) return;
+    const now = formatDeadline(details.deadline);
+    const was = previous ? formatDeadline(previous) : null;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "REQUEST_DEADLINE_CHANGED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} has a new delivery date`,
+      body: was
+        ? `${ticket.title}\nDelivery moved from ${was} to ${now}.`
+        : `${ticket.title}\nDelivery is now targeted for ${now}.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestDeadlineChangedNotification]", e);
+  }
+}
+
+/** Progress logged → the requester (in-app). */
+export async function sendRequestProgressNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "REQUEST_PROGRESS",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `Progress on ${ticket.number}`,
+      body: `${ticket.title}\nA new build update was posted.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestProgressNotification]", e);
+  }
+}
+
+/** Build complete → the requester ("please test {number}"). */
+export async function sendRequestReadyForTestingNotification(
+  ticketId: string
+): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "REQUEST_READY_FOR_TESTING",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} is ready to test`,
+      body: `${ticket.title}\nPlease try it, then accept it or request changes.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestReadyForTestingNotification]", e);
+  }
+}
+
+/** Requester asked for changes → the assignee. */
+export async function sendRequestChangesNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const worker = await loadUser(ticket.assignedTo);
+    if (!worker) return;
+    const reporter = await loadUser(ticket.createdBy);
+
+    await createInApp({
+      userId: worker.id,
+      type: "REQUEST_CHANGES_REQUESTED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `Changes requested on ${ticket.number}`,
+      body: `${ticket.title}\n${reporter?.name ?? "The requester"} asked for changes — see the note in the thread.`,
+    });
+  } catch (e) {
+    console.error("[sendRequestChangesNotification]", e);
+  }
+}
+
+/** Requester accepted → the assignee (and the MIS team). */
+export async function sendRequestAcceptedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    const who = reporter?.name ?? "The requester";
+    const worker = await loadUser(ticket.assignedTo);
+    if (worker) {
+      await createInApp({
+        userId: worker.id,
+        type: "REQUEST_ACCEPTED",
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        title: `${ticket.number} was accepted & closed`,
+        body: `${ticket.title}\n${who} accepted the build. Nicely done.`,
+      });
+    }
+    await notifyTeam(
+      ticket,
+      "REQUEST_ACCEPTED",
+      `${ticket.number} was accepted & closed`,
+      `${ticket.title}\n${who} accepted the build.`,
+      // The assignee already got the tailored notice above — don't send it twice.
+      { skipReporter: true, skipUserId: worker?.id ?? null }
+    );
+  } catch (e) {
+    console.error("[sendRequestAcceptedNotification]", e);
   }
 }

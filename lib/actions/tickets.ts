@@ -23,6 +23,7 @@ import {
   claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
+  releaseTicketSchema,
   reopenTicketSchema,
   startTaskSchema,
   updatePrioritySchema,
@@ -83,6 +84,11 @@ export async function updateStatus(
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   // Ownership lock (§6): a claimed ticket is the assignee's end-to-end — only
   // they change its status. No one else, not even another admin.
@@ -111,6 +117,7 @@ export async function updateStatus(
   await q.setTicketStatus({
     ticketId: ticket.id,
     actorId: user.id,
+    type: ticket.type,
     from,
     to,
     ...(to === "RESOLVED" ? { resolvedAt: new Date(), resolvedBy: user.id } : {}),
@@ -159,6 +166,10 @@ async function claimOne(
 > {
   const ticket = await q.getTicketById(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found." };
+  // §12: a REQUEST build is claimed via claimRequest (only once APPROVED).
+  if (ticket.type !== "ISSUE") {
+    return { ok: false, error: `${ticket.number} is a system request — claim it from the request page.` };
+  }
 
   if (ticket.status === "RESOLVED" || ticket.status === "CLOSED") {
     return { ok: false, error: `${ticket.number} is already resolved.` };
@@ -261,6 +272,11 @@ export async function startTask(input: {
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   // You start your OWN claimed ticket (§6): must be assigned, and to you.
   if (!ticket.assignedTo) {
@@ -285,6 +301,56 @@ export async function startTask(input: {
 
   // Work has actually started now — tell the reporter (priority + ETA; §8).
   await sendClaimNotification(ticket.id);
+
+  revalidateTicketRoutes(ticket.number);
+  return ok(undefined);
+}
+
+/**
+ * Undo a claim — the assignee sends a ticket they claimed by mistake back to the
+ * open pool (§5). Clears the assignee, priority, and deadline; the ticket stays
+ * OPEN and is claimable again. Assignee-locked: even an MIS_ADMIN may release only
+ * a ticket assigned to themselves, never someone else's claim (§6 ownership lock).
+ * Allowed only on a claimed-but-not-started ticket (OPEN) — once work has started
+ * the reporter was already notified, so it's no longer a quiet undo. No
+ * notification is sent (a plain claim is quiet, §8, so releasing it is too).
+ */
+export async function releaseTicket(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can release a ticket.");
+  }
+
+  const parsed = releaseTicketSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
+
+  // Ownership lock (§6): you release only your OWN claim — must be assigned, to you.
+  if (!ticket.assignedTo) {
+    return fail("This ticket isn't claimed.");
+  }
+  if (ticket.assignedTo !== user.id) {
+    const owner = await q.getUserById(ticket.assignedTo);
+    return fail(
+      `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can release it.`
+    );
+  }
+  // Only a claimed-but-not-started ticket (still OPEN) can be sent back to Open.
+  if (ticket.status !== "OPEN") {
+    return fail(
+      `${ticket.number} has already been started — it can't be released back to Open.`
+    );
+  }
+
+  await q.releaseTicketRow({ ticketId: ticket.id, actorId: user.id });
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);
@@ -352,6 +418,11 @@ export async function setPriority(
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   // Ownership lock (§6): only the assignee re-prioritises their claimed ticket.
   if (ticket.assignedTo && ticket.assignedTo !== user.id) {
@@ -386,6 +457,11 @@ export async function reopenTicket(ticketId: string): Promise<ActionResult> {
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   const isReporter = ticket.createdBy === user.id;
   const isAdmin = user.role === "MIS_ADMIN";
@@ -424,6 +500,11 @@ export async function confirmResolved(ticketId: string): Promise<ActionResult> {
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   const isReporter = ticket.createdBy === user.id;
   const isAdmin = user.role === "MIS_ADMIN";
@@ -437,6 +518,7 @@ export async function confirmResolved(ticketId: string): Promise<ActionResult> {
   await q.setTicketStatus({
     ticketId: ticket.id,
     actorId: user.id,
+    type: ticket.type,
     from: "RESOLVED",
     to: "CLOSED",
   });
@@ -460,6 +542,11 @@ export async function updateTicket(input: unknown): Promise<ActionResult> {
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
   if (!ticket) return fail("Ticket not found.");
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return fail(`${ticket.number} is a system request — use the request actions.`);
+  }
 
   const isReporter = ticket.createdBy === user.id;
   const isAdmin = user.role === "MIS_ADMIN";

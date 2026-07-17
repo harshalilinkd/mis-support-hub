@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { requireRole, STAFF_ROLES } from "@/lib/authz";
-import { createdByDepartment, flowTrend, openAging } from "@/lib/db/analytics";
+import { createdByDepartment, flowTrend, openAging, requestStats } from "@/lib/db/analytics";
 import { dashboardStats, listAllTickets } from "@/lib/db/queries";
 import type { Department } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import { ChartResolutionLine } from "@/components/dashboard/chart-resolution-lin
 import { ChartStatusDonut } from "@/components/dashboard/chart-status-donut";
 import { KpiCards, type KpiSparks } from "@/components/dashboard/kpi-cards";
 import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
+import { RequestKpiCards } from "@/components/dashboard/request-kpi-cards";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -73,6 +74,31 @@ export default async function DashboardPage({
   const department = (DEPARTMENTS as readonly string[]).includes(deptParam ?? "")
     ? (deptParam as Department)
     : undefined;
+
+  // §12: the dashboard reports on one pipeline at a time. Requests are a funnel of
+  // counts, so they get their own KPI row rather than the issue charts.
+  if (pick(sp.type) === "REQUEST") {
+    const reqStats = await requestStats(department);
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Dashboard"
+          description="System requests — the pipeline from submission to acceptance."
+        >
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <DashboardFilters />
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href="/requests" aria-label="View all requests">
+                <span className="hidden sm:inline">View requests</span>
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
+        </PageHeader>
+        <RequestKpiCards stats={reqStats} />
+      </div>
+    );
+  }
 
   const [stats, flow, byDept, aging, allTickets] = await Promise.all([
     dashboardStats(),

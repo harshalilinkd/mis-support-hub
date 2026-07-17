@@ -71,6 +71,13 @@
       "when": 1783760062273,
       "tag": "0009_redundant_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784115287283,
+      "tag": "0010_nifty_dagger",
+      "breakpoints": true
     }
   ]
 }

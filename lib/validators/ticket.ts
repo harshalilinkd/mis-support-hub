@@ -14,12 +14,28 @@ export const DEPARTMENTS = [
 
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
+export const TICKET_TYPES = ["ISSUE", "REQUEST"] as const;
+
+export const PROGRESS_LOG_TYPES = ["UPDATE", "REVIEW_SESSION", "BLOCKER"] as const;
+
+// Full status set (both machines). The applicable subset is enforced per ticket
+// type server-side via statusBelongsToType (lib/ticket-state.ts).
 export const STATUSES = [
+  // ISSUE (§5)
   "OPEN",
   "IN_PROGRESS",
   "RESOLVED",
   "CLOSED",
   "REOPENED",
+  // REQUEST (§12.3)
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "PENDING_MD_APPROVAL",
+  "APPROVED",
+  "DROPPED",
+  "CLAIMED",
+  "IN_TESTING",
+  "CHANGES_REQUESTED",
 ] as const;
 
 export const DEPARTMENT_LABELS: Record<(typeof DEPARTMENTS)[number], string> = {
@@ -72,6 +88,13 @@ export const reopenTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });
 export type ReopenTicketInput = z.infer<typeof reopenTicketSchema>;
+
+/** Undo a claim — the assignee sends their claimed-but-not-started ticket back
+ * to the open pool (§5). Assignee-locked in the action; body is just the id. */
+export const releaseTicketSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+export type ReleaseTicketInput = z.infer<typeof releaseTicketSchema>;
 
 export const claimTicketSchema = z.object({
   ticketId: z.string().uuid(),
@@ -154,3 +177,128 @@ export const ticketFiltersSchema = z.object({
   search: z.string().trim().max(200).optional(),
 });
 export type TicketFiltersInput = z.infer<typeof ticketFiltersSchema>;
+
+/* ------------------------------------------------------------------ *
+ * REQUEST ("build me a new system") — intake + workflow (CLAUDE.md §12)
+ * ------------------------------------------------------------------ */
+
+// An optional free-text field that normalizes "" → undefined.
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v ? v : undefined));
+
+// An optional "YYYY-MM-DD" date string ("" → undefined).
+const optionalDate = z
+  .string()
+  .trim()
+  .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), "Pick a valid date")
+  .optional()
+  .or(z.literal(""))
+  .transform((v) => (v ? v : undefined));
+
+/** Request intake — mirrors the request_details brief (§12.2). */
+export const createRequestSchema = z.object({
+  systemName: z
+    .string()
+    .trim()
+    .min(3, "Name the system (min 3 characters)")
+    .max(160, "Keep the name under 160 characters"),
+  problemStatement: z
+    .string()
+    .trim()
+    .min(10, "Describe the problem it solves (min 10 characters)")
+    .max(5000),
+  currentProcess: optionalText(5000),
+  currentSheetLink: optionalText(500),
+  intendedUsers: z
+    .string()
+    .trim()
+    .min(2, "Who will use it?")
+    .max(500),
+  expectedBenefit: z
+    .string()
+    .trim()
+    .min(5, "What's the expected benefit?")
+    .max(2000),
+  urgency: z.enum(PRIORITIES),
+  department: z.enum(DEPARTMENTS),
+  targetDate: optionalDate,
+});
+export type CreateRequestInput = z.infer<typeof createRequestSchema>;
+
+/** A bare transition action (move to review / send for MD approval / revive). */
+export const requestActionSchema = z.object({ ticketId: z.string().uuid() });
+export type RequestActionInput = z.infer<typeof requestActionSchema>;
+
+/** MD decision — an offline verdict RECORDED BY AN MIS_ADMIN on the MD's behalf
+ *  (§12.2). There is no MD role and the MD never logs in. */
+export const mdDecisionSchema = z.object({
+  ticketId: z.string().uuid(),
+  decision: z.enum(["APPROVED", "REJECTED"]),
+  // Optional even on reject (§12.2).
+  remark: optionalText(2000),
+});
+export type MdDecisionInput = z.infer<typeof mdDecisionSchema>;
+
+/** Claim a REQUEST for the build — sets assignee + priority + delivery deadline. */
+export const claimRequestSchema = z.object({
+  ticketId: z.string().uuid(),
+  priority: z.enum(PRIORITIES),
+  deadline: z
+    .string()
+    .trim()
+    .min(1, "Pick a delivery date")
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+});
+export type ClaimRequestInput = z.infer<typeof claimRequestSchema>;
+
+/** Change the delivery deadline on an in-flight request. Audited + the requester is
+ *  notified — a deadline move is never silent (P12). */
+export const updateDeadlineSchema = z.object({
+  ticketId: z.string().uuid(),
+  deadline: z
+    .string()
+    .trim()
+    .min(1, "Pick a delivery date")
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+});
+export type UpdateDeadlineInput = z.infer<typeof updateDeadlineSchema>;
+
+/** Add a progress log during the build (§12.2). */
+export const progressLogSchema = z.object({
+  ticketId: z.string().uuid(),
+  type: z.enum(PROGRESS_LOG_TYPES),
+  body: z.string().trim().min(1, "Add a note").max(5000),
+  percentComplete: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v),
+    z.coerce.number().int().min(0).max(100).optional()
+  ),
+});
+export type ProgressLogInput = z.infer<typeof progressLogSchema>;
+
+/** MIS marks the build complete → hands to the requester for UAT (→ IN_TESTING). */
+export const markCompleteSchema = z.object({
+  ticketId: z.string().uuid(),
+  note: optionalText(2000),
+});
+export type MarkCompleteInput = z.infer<typeof markCompleteSchema>;
+
+/** Requester asks for changes during UAT (→ CHANGES_REQUESTED, revision_round++). */
+export const requestChangesSchema = z.object({
+  ticketId: z.string().uuid(),
+  body: z
+    .string()
+    .trim()
+    .min(3, "Tell the team what needs to change")
+    .max(5000),
+});
+export type RequestChangesInput = z.infer<typeof requestChangesSchema>;
+
+/** Requester accepts the build → CLOSED (only the requester's acceptance closes). */
+export const acceptRequestSchema = z.object({ ticketId: z.string().uuid() });
+export type AcceptRequestInput = z.infer<typeof acceptRequestSchema>;

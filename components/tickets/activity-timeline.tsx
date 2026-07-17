@@ -42,6 +42,9 @@ function describe(a: ActivityRow): string {
       const due = a.toValue ? ` · due by ${formatDue(a.toValue)}` : "";
       return `${actor} started work${due}`;
     }
+    case "UNCLAIMED":
+      // Undid a claim — back to the unclaimed open pool (assignee/priority cleared).
+      return `${actor} released the ticket back to Open`;
     case "ASSIGNED":
       if (!a.toValue) return `${actor} unassigned it`;
       // A self-assignment reads as a claim (covers historical rows written before

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
   PlusCircle,
   Search,
   Settings,
+  Sparkles,
   Ticket,
   User as UserIcon,
 } from "lucide-react";
@@ -67,7 +68,11 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Tickets",
     items: [
       { href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" },
-      { href: "/new", label: "Raise Ticket", icon: PlusCircle },
+      { href: "/new", label: "Report an issue", icon: PlusCircle },
+      // REQUEST surface (§12.7) — visible to everyone; a USER sees only their own.
+      // One entry only: the list carries the "New request" button + empty-state CTA,
+      // so /requests/new needs no nav item of its own (it highlights this parent).
+      { href: "/requests", label: "Request a system", icon: Sparkles },
     ],
   },
   {
@@ -121,8 +126,18 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const sections = sectionsFor(user.role);
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(`${href}/`);
+  // Only the MOST specific matching nav item lights up. A plain prefix test would
+  // mark both "Requests" (/requests) and "Request a system" (/requests/new) active
+  // on /requests/new; taking the longest match keeps nested routes unambiguous
+  // while still highlighting a parent for its children (/tickets/MIS-001 → /tickets).
+  const activeHref = useMemo(() => {
+    const matches = NAV_SECTIONS.flatMap((s) => s.items)
+      .map((i) => i.href)
+      .filter((h) => pathname === h || pathname.startsWith(`${h}/`));
+    return matches.sort((a, b) => b.length - a.length)[0] ?? null;
+  }, [pathname]);
+
+  const isActive = (href: string) => href === activeHref;
 
   const badgeValue = (item: NavItem) =>
     item.badge === "myActive" && myActiveCount > 0 ? myActiveCount : null;

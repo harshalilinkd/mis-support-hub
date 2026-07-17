@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Status } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/session";
 import {
   TICKET_TABS,
@@ -25,19 +24,10 @@ import { formatDueDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityControl, StatusControl } from "@/components/dashboard/inline-controls";
-import { PriorityChip, StatusChip } from "./chips";
+import { PriorityChip, StatusChip, statusColor } from "./chips";
 import type { TicketCardData } from "./ticket-card";
 import { TicketLinkFiles } from "./ticket-link-files";
 import { TicketSheet } from "./ticket-sheet";
-
-/** Left status accent, mirrors the ticket color language used across the app. */
-const STATUS_BAR: Record<Status, string> = {
-  OPEN: "var(--status-open)",
-  IN_PROGRESS: "var(--status-in-progress)",
-  REOPENED: "var(--status-reopened)",
-  RESOLVED: "var(--status-resolved)",
-  CLOSED: "var(--status-closed)",
-};
 
 export function MyTicketsView({
   tickets,
@@ -195,7 +185,7 @@ export function MyTicketsView({
                   <span
                     aria-hidden
                     className="absolute inset-y-0 left-0 w-1"
-                    style={{ backgroundColor: STATUS_BAR[t.status] }}
+                    style={{ backgroundColor: statusColor(t.status) }}
                   />
                   {/* Line 1: number + title + status */}
                   <div className="flex items-center gap-2">
@@ -276,7 +266,7 @@ export function MyTicketsView({
                         <span
                           aria-hidden
                           className="size-1.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: STATUS_BAR[t.status] }}
+                          style={{ backgroundColor: statusColor(t.status) }}
                         />
                         <span className="font-mono text-xs text-foreground">
                           {t.number}

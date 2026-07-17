@@ -4,10 +4,10 @@ import { AudioLines, ExternalLink, FileText } from "lucide-react";
 
 import { isAudioType, isImageType } from "@/lib/attachments";
 import type { TicketAttachmentThumb } from "@/lib/db/queries";
+import { isUrl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const MAX_THUMBS = 3;
-const isUrl = (v: string) => /^https?:\/\//i.test(v);
 
 /**
  * Compact "Link / Files" cell for the ticket list tables: the sheet link/system

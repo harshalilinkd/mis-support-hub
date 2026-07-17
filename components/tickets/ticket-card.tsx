@@ -5,15 +5,7 @@ import { RelativeTime } from "@/components/relative-time";
 import type { TicketAttachmentThumb } from "@/lib/db/queries";
 import type { Department, Priority, Status } from "@/lib/db/schema";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
-import { PriorityChip, StatusChip } from "./chips";
-
-const STATUS_BAR: Record<Status, string> = {
-  OPEN: "var(--status-open)",
-  IN_PROGRESS: "var(--status-in-progress)",
-  REOPENED: "var(--status-reopened)",
-  RESOLVED: "var(--status-resolved)",
-  CLOSED: "var(--status-closed)",
-};
+import { PriorityChip, StatusChip, statusColor } from "./chips";
 
 export type TicketCardData = {
   id: string;
@@ -46,7 +38,7 @@ export function TicketCard({
       <span
         aria-hidden
         className="absolute inset-y-0 left-0 w-1"
-        style={{ backgroundColor: STATUS_BAR[ticket.status] }}
+        style={{ backgroundColor: statusColor(ticket.status) }}
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
