@@ -23,9 +23,28 @@ import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityChip, StatusChip, statusColor } from "./chips";
 import { RequestSheet } from "./request-sheet";
 
-type TabKey = "all" | "awaiting" | "in_progress" | "testing" | "closed" | "dropped";
+type TabKey =
+  | "all"
+  | "awaiting"
+  | "approved"
+  | "in_progress"
+  | "testing"
+  | "closed"
+  | "dropped";
 
-/** Stage tabs (§12.3). `statuses: null` = All. Every request stage lands in exactly one tab. */
+/**
+ * Stage tabs (§12.3). `statuses: null` = All. Every request stage lands in exactly
+ * one tab.
+ *
+ * "In progress" means the build has genuinely STARTED — an assignee committed to a
+ * delivery date via startWork (§12.3). Approved-but-unclaimed and claimed-but-not-
+ * started are NOT in progress: nobody has promised a date yet, so they get their own
+ * tab. That mirrors the board, whose Approved column holds both statuses for exactly
+ * the same reason.
+ *
+ * CHANGES_REQUESTED belongs here: that build started long ago (it has a deadline and
+ * has already been through testing) and is back in the build loop.
+ */
 const TABS: { key: TabKey; label: string; statuses: Status[] | null }[] = [
   { key: "all", label: "All", statuses: null },
   {
@@ -33,10 +52,11 @@ const TABS: { key: TabKey; label: string; statuses: Status[] | null }[] = [
     label: "Awaiting approval",
     statuses: ["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"],
   },
+  { key: "approved", label: "Approved", statuses: ["APPROVED", "CLAIMED"] },
   {
     key: "in_progress",
     label: "In progress",
-    statuses: ["APPROVED", "CLAIMED", "IN_PROGRESS", "CHANGES_REQUESTED"],
+    statuses: ["IN_PROGRESS", "CHANGES_REQUESTED"],
   },
   { key: "testing", label: "Testing", statuses: ["IN_TESTING"] },
   { key: "closed", label: "Closed", statuses: ["CLOSED"] },
