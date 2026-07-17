@@ -115,24 +115,36 @@ export function GenerativeField({
       ctx!.stroke();
     }
 
+    const loop = () => {
+      step();
+      raf = requestAnimationFrame(loop);
+    };
+    const start = () => {
+      if (animate && !raf && !document.hidden) raf = requestAnimationFrame(loop);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    // Don't burn frames on a tab nobody is looking at — this is first paint.
+    const onVisibility = () => (document.hidden ? stop() : start());
+
     resize();
     const ro = new ResizeObserver(() => resize());
     ro.observe(canvas);
 
     if (animate) {
-      const loop = () => {
-        step();
-        raf = requestAnimationFrame(loop);
-      };
-      raf = requestAnimationFrame(loop);
+      document.addEventListener("visibilitychange", onVisibility);
+      start();
     } else {
       // Static frame: advance a fixed, deterministic number of steps, then stop.
       for (let i = 0; i < 140; i++) step();
     }
 
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
       ro.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [seed, density, animate]);
 

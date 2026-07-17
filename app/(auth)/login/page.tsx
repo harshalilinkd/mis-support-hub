@@ -41,19 +41,21 @@ export default async function LoginPage({
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden bg-background p-6">
       {/*
-        Generative flow-field background — filled in P9 (design-system.md §Generative
-        accent): a deterministic, reduced-motion-aware canvas tinted with the cobalt
-        accent, rendered here behind the card. Left as an empty slot for now.
+        The ONE generative accent (design-system.md §9): a deterministic seeded
+        flow-field, cobalt-tinted at low opacity, strictly behind the card.
+        NOTE: this must NOT be `-z-10`. <main> is `position:relative; z-index:auto`,
+        so it creates no stacking context — a negative-z child paints behind main's
+        own `bg-background` and the field disappears. z-0 here + z-10 on the card
+        keeps the layering honest.
       */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10"
-      >
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
         <GenerativeField seed={42} density={850} />
       </div>
 
-      <div className="relative w-full max-w-sm space-y-6 rounded-[var(--radius-card)] border border-border bg-surface p-8 text-center shadow-[var(--shadow-elevation)]">
-        <div className="space-y-2">
+      {/* Card is fully opaque (bg-surface), so all text sits on solid surface — the
+          field can never eat into text contrast. Entrance = motion rule #1 only. */}
+      <div className="enter-up relative z-10 w-full max-w-sm space-y-6 rounded-[var(--radius-card)] border border-border bg-surface px-8 py-10 text-center shadow-[var(--shadow-popover)]">
+        <div className="enter-up space-y-2" style={{ animationDelay: "60ms" }}>
           <div className="mx-auto flex size-10 items-center justify-center rounded-[var(--radius-input)] bg-accent-soft text-primary">
             <Ticket className="size-5" />
           </div>
@@ -73,6 +75,8 @@ export default async function LoginPage({
         ) : null}
 
         <form
+          className="enter-up"
+          style={{ animationDelay: "120ms" }}
           action={async () => {
             "use server";
             await signIn("google", { redirectTo: "/" });
@@ -83,15 +87,17 @@ export default async function LoginPage({
           </Button>
         </form>
 
-        <div className="flex items-center gap-3">
+        <div className="enter-up flex items-center gap-3" style={{ animationDelay: "180ms" }}>
           <span className="h-px flex-1 bg-border" />
           <span className="text-xs text-text-muted">or</span>
           <span className="h-px flex-1 bg-border" />
         </div>
 
-        <CredentialsForm />
+        <div className="enter-up" style={{ animationDelay: "220ms" }}>
+          <CredentialsForm />
+        </div>
 
-        <p className="text-xs text-text-muted">
+        <p className="enter-up text-xs text-text-muted" style={{ animationDelay: "280ms" }}>
           Access is restricted to approved company domains.
         </p>
       </div>
