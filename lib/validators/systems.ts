@@ -38,21 +38,38 @@ const requiredUrl = z
   .url("Enter a full URL (https://…)")
   .max(2000);
 
-/** Optional URL: an empty string from an untouched input means "not set", not invalid. */
+/**
+ * An emptied optional field means "cleared" — resolve it to NULL, not undefined.
+ *
+ * The difference is load-bearing on the edit path: `updateSystem` strips undefined
+ * keys so a partial patch can't blank a column it never mentioned. An emptied field
+ * that became `undefined` was therefore indistinguishable from "not edited" —
+ * clearing a backend link silently did nothing while the UI reported success. null
+ * says "explicitly cleared" and survives the strip.
+ *
+ * The two chains reach null differently, and the asymmetry is deliberate. For a URL
+ * `.url()` rejects "", so an emptied field falls through to the literal branch. Notes
+ * has no such rejection — "" satisfied the string branch first and stayed "" — so it
+ * needs an explicit transform. (A `z.preprocess` would unify them, but it types the
+ * schema's INPUT as `unknown`, which breaks the react-hook-form resolver.)
+ */
+
+/** Optional URL: emptied = cleared; anything else must be a real URL. */
 const optionalUrl = z
   .string()
   .trim()
   .max(2000)
   .url("Enter a full URL (https://…)")
-  .optional()
-  .or(z.literal("").transform(() => undefined));
+  .nullish()
+  .or(z.literal("").transform(() => null));
 
+/** Same null-not-undefined contract as optionalUrl, so notes can be cleared too. */
 const optionalNotes = z
   .string()
   .trim()
   .max(5000)
-  .optional()
-  .or(z.literal("").transform(() => undefined));
+  .transform((v) => (v === "" ? null : v))
+  .nullish();
 
 /** One checklist tick. The label is NOT taken from the client — it's snapshotted server-side. */
 export const confirmationInputSchema = z.object({
