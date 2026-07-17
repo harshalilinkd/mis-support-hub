@@ -39,8 +39,14 @@ const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
   URGENT: { label: "Urgent", color: "var(--priority-urgent)" },
 };
 
-// Chips carry a colored dot AND a text label — never colour-only (design-system.md).
-function Chip({
+/**
+ * Chips carry a colored dot AND a text label — never colour-only (design-system.md).
+ *
+ * Exported so non-ticket domains can build their own chip on the SAME markup rather
+ * than duplicating it — see components/systems/system-chips.tsx (§13). The dot+label
+ * shape and the one chip radius live here and nowhere else.
+ */
+export function Chip({
   label,
   color,
   className,

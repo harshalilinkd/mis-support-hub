@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, ListX, Trash2, Users } from "lucide-react";
+import { ChevronRight, ListX, ShieldCheck, Trash2, Users } from "lucide-react";
 
 import { requireRole } from "@/lib/authz";
 import { PageHeader } from "@/components/shell/page-header";
@@ -28,6 +28,13 @@ const SECTIONS = [
     label: "Recycle Bin",
     description: "Restore deleted tickets or remove them permanently.",
     icon: Trash2,
+  },
+  {
+    href: "/settings/grantees",
+    label: "Access Grantees",
+    description:
+      "Who must be granted access before a system can be logged in the directory.",
+    icon: ShieldCheck,
   },
 ];
 

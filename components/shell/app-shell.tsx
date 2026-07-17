@@ -7,6 +7,7 @@ import {
   Inbox,
   KanbanSquare,
   LayoutDashboard,
+  Library,
   ListChecks,
   LogOut,
   Menu,
@@ -74,6 +75,16 @@ const NAV_SECTIONS: NavSection[] = [
       // so /requests/new needs no nav item of its own (it highlights this parent).
       { href: "/requests", label: "Request a system", icon: Sparkles },
     ],
+  },
+  {
+    // §13.3 — the systems directory is company-wide readable (the first
+    // authenticated read-all surface; a deliberate departure from §6's row-scoping).
+    // It needs its OWN ungated section: `sectionsFor` filters sections BEFORE items,
+    // so an entry inside staff-only Overview or admin-only Administration would be
+    // invisible to a USER no matter how the item itself is flagged. One entry only —
+    // /systems/new and /systems/[code] highlight this parent via longest-prefix match.
+    label: "Directory",
+    items: [{ href: "/systems", label: "Systems", icon: Library }],
   },
   {
     label: "Administration",
