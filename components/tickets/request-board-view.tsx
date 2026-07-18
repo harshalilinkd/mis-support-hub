@@ -170,8 +170,12 @@ const RequestCardContent = forwardRef<
         <div className="mt-2">
           <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
             <div
-              className="h-full rounded-full bg-[var(--status-in-progress)]"
-              style={{ width: `${r.percentComplete}%` }}
+              className="h-full rounded-full"
+              style={{
+                width: `${r.percentComplete}%`,
+                background:
+                  "linear-gradient(90deg, var(--accent-hover), var(--primary))",
+              }}
             />
           </div>
           <span className="mt-0.5 block text-right font-mono text-[10px] tabular-nums text-text-muted">

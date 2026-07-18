@@ -81,7 +81,11 @@ export function RequestProgress({
 
       {canLog ? (
         <div className={cn(latest && "mt-3")}>
-          <ProgressComposer ticketId={request.id} onDone={onMutate} />
+          <ProgressComposer
+            ticketId={request.id}
+            currentPercent={latest?.percentComplete ?? 0}
+            onDone={onMutate}
+          />
         </div>
       ) : null}
 
@@ -104,28 +108,57 @@ export function RequestProgress({
  * The entries below are history.
  */
 function CurrentProgress({ log }: { log: LogRow }) {
-  const pct = log.percentComplete ?? 0;
+  const pct = Math.max(0, Math.min(100, log.percentComplete ?? 0));
+  // Same-family cobalt only (design-system §10): a darker cobalt (--accent-hover)
+  // eases into --primary, then a white-tinted --primary brightens the leading edge.
+  // White mixes are shading, not a second hue.
+  const fill =
+    "linear-gradient(180deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0) 55%)," +
+    " linear-gradient(90deg, var(--accent-hover) 0%, var(--primary) 55%, color-mix(in srgb, var(--primary) 72%, #ffffff) 100%)";
+  const cometTint = "color-mix(in srgb, var(--primary) 72%, #ffffff)";
   return (
-    <div className="rounded-[var(--radius-input)] border border-border bg-surface p-3">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-sm font-medium text-foreground">Progress</span>
-        <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
-          {pct}%
+    <div className="rounded-[var(--radius-input)] border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <span className="font-mono text-3xl font-semibold leading-none tracking-tight tabular-nums text-foreground">
+          {pct}
+          <span className="ml-0.5 text-lg font-medium text-foreground">%</span>
         </span>
         <span className="text-xs text-text-muted">
-          · updated by {log.authorName ?? "the assignee"}{" "}
+          updated by {log.authorName ?? "the assignee"} ·{" "}
           <AbsoluteTime date={log.createdAt} />
         </span>
       </div>
-      <div
-        className="mt-2 h-2 overflow-hidden rounded-full bg-surface-muted"
-        role="img"
-        aria-label={`${pct}% complete`}
-      >
-        <div
-          className="h-full rounded-full bg-[var(--primary)] transition-[width] duration-300 motion-reduce:transition-none"
-          style={{ width: `${pct}%` }}
-        />
+
+      <div className="relative mt-3 h-3" role="img" aria-label={`${pct}% complete`}>
+        {/* Track + gradient fill */}
+        <div className="absolute inset-0 overflow-hidden rounded-full bg-surface-muted shadow-[inset_0_0_0_1px_rgb(16_24_40_/_0.04)]">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none"
+            style={{ width: `${pct}%`, background: fill }}
+          />
+        </div>
+        {/* Leading comet: a flush bright cap (never a slider handle) + a breathing
+            halo. Hidden at 0% — there's no edge to mark. */}
+        {pct > 0 ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 h-3 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-500 ease-out motion-reduce:transition-none"
+            style={{
+              left: `${pct}%`,
+              background: cometTint,
+              boxShadow:
+                "0 0 5px 0 color-mix(in srgb, var(--primary) 55%, transparent), 0 0 1.5px 0 color-mix(in srgb, var(--primary) 85%, #ffffff)",
+            }}
+          >
+            <span
+              className="progress-comet-halo absolute left-1/2 top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{
+                background:
+                  "radial-gradient(closest-side, color-mix(in srgb, var(--primary) 38%, transparent), transparent 70%)",
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -181,15 +214,22 @@ function ProgressEntry({ log }: { log: LogRow }) {
 
 function ProgressComposer({
   ticketId,
+  currentPercent,
   onDone,
 }: {
   ticketId: string;
+  /** The request's current % — every new log starts from here so it's a nudge,
+   *  not a re-entry, and the bar moves on each update (§12.2). */
+  currentPercent: number;
   onDone?: () => void;
 }) {
   const [type, setType] = useState<LogType>("UPDATE");
   const [body, setBody] = useState("");
-  const [withPercent, setWithPercent] = useState(false);
-  const [percent, setPercent] = useState(50);
+  // Updating the % is the DEFAULT — the point of a log is to move the needle. It
+  // stays optional (a blocker note may not change progress), but the assignee opts
+  // OUT, not in, and the slider starts at the current figure so a bump is one drag.
+  const [withPercent, setWithPercent] = useState(true);
+  const [percent, setPercent] = useState(currentPercent);
   const [pending, startTransition] = useTransition();
 
   const submit = () => {
@@ -208,11 +248,15 @@ function ProgressComposer({
         toast.error(res.error);
         return;
       }
-      toast.success("Progress logged");
+      toast.success(
+        withPercent ? `Progress logged — now ${percent}%` : "Progress logged"
+      );
       setBody("");
-      setWithPercent(false);
-      setPercent(50);
       setType("UPDATE");
+      // Keep %-reporting on and carry the figure forward, so the next log continues
+      // from where this one left it rather than snapping back.
+      setWithPercent(true);
+      setPercent((p) => (withPercent ? percent : p));
       onDone?.();
     });
   };
@@ -240,7 +284,7 @@ function ProgressComposer({
             disabled={pending}
             className="size-3.5 accent-[var(--primary)]"
           />
-          Report % complete
+          Update % complete
         </label>
         {withPercent ? (
           <div className="flex flex-1 items-center gap-2">

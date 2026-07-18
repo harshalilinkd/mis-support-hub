@@ -230,3 +230,23 @@
 .flow-fade {
   animation: flow-fade 1.15s ease-out both;
 }
+
+/* Progress bar: one bright "comet" point of light rides the leading edge of the
+   cobalt fill and breathes slowly — the single accent flourish on an otherwise
+   silent bar (design-system.md §Motion, one accent only). The reduced-motion block
+   above collapses the breath to a single static frame, leaving a calm glow. */
+@keyframes progress-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+.progress-comet-halo {
+  opacity: 0.6;
+  animation: progress-breathe 2.8s ease-in-out infinite;
+}
