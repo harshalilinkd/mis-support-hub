@@ -31,7 +31,7 @@ export default async function RequestsPage() {
           <Button asChild size="sm" className="shrink-0">
             <Link href="/requests/new">
               <Plus className="size-4" />
-              <span className="hidden sm:inline">New request</span>
+              New request
             </Link>
           </Button>
         </div>

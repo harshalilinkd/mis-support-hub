@@ -28,11 +28,15 @@ export default async function SystemsPage() {
         title="Systems"
         description="Every system MIS has built — links, owners, and where to find them."
       >
+        {/* The label stays at every width. On mobile this button sits on its own
+            full-width row under the description — the one place there's the MOST
+            room — and an icon-only "+" there is both ambiguous and nameless to a
+            screen reader. */}
         {canWrite ? (
           <Button asChild size="sm" className="shrink-0">
             <Link href="/systems/new">
               <Plus className="size-4" />
-              <span className="hidden sm:inline">Log a system</span>
+              Log a system
             </Link>
           </Button>
         ) : null}

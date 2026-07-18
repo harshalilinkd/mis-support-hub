@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 
 import { requireUser } from "@/lib/authz";
 import {
@@ -29,6 +31,10 @@ export default async function TicketDetailPage({
   const { number } = await params;
   const user = await requireUser();
   const viewer = { id: user.id, role: user.role };
+  const backUrl = isStaff(user.role) ? "/tickets" : "/my";
+  const backLabel = isStaff(user.role) ? "All Tickets" : "My Tickets";
+
+  let content: React.ReactNode;
 
   // ISSUE (MIS-…) and REQUEST (REQ-…) share this route (CLAUDE.md §12, Hybrid) —
   // render the type-appropriate detail. Both queries enforce §6 visibility.
@@ -43,7 +49,7 @@ export default async function TicketDetailPage({
     const [owners, grantees] = canBuild
       ? await Promise.all([listAssignableUsers(), listActiveGranteesRow()])
       : [[], []];
-    return (
+    content = (
       <RequestDetail
         request={request}
         currentUser={user}
@@ -51,10 +57,22 @@ export default async function TicketDetailPage({
         grantees={grantees.map((g) => ({ id: g.id, label: g.label }))}
       />
     );
+  } else {
+    const ticket = await getTicketByNumber(number, viewer);
+    if (!ticket) notFound();
+    content = <TicketDetail ticket={ticket} currentUser={user} />;
   }
 
-  const ticket = await getTicketByNumber(number, viewer);
-  if (!ticket) notFound();
-
-  return <TicketDetail ticket={ticket} currentUser={user} />;
+  return (
+    <div className="space-y-3">
+      <Link
+        href={backUrl}
+        className="inline-flex items-center gap-1 rounded-[6px] text-sm font-medium text-text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronLeft className="size-4" />
+        {backLabel}
+      </Link>
+      {content}
+    </div>
+  );
 }

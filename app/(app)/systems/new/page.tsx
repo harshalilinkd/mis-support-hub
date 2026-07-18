@@ -38,6 +38,8 @@ export default async function NewSystemPage({
       <PageHeader
         title="Log a system"
         description="So its links are never lost and anyone can find it."
+        backHref="/systems"
+        backLabel="Systems"
       />
       <SystemForm
         owners={owners}

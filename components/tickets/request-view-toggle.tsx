@@ -31,7 +31,10 @@ export function RequestViewToggle() {
             )}
           >
             <Icon className="size-4" />
-            <span className="hidden sm:inline">{v.label}</span>
+            {/* sr-only, not hidden: the icon-only toggle is a recognisable segmented
+                control at narrow widths, but `hidden` would leave each link with no
+                accessible name at all. */}
+            <span className="sr-only sm:not-sr-only">{v.label}</span>
           </Link>
         );
       })}
