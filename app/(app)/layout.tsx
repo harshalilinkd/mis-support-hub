@@ -9,6 +9,7 @@ import { toIso } from "@/lib/format";
 import { getCurrentUser } from "@/lib/session";
 import { AppShell } from "@/components/shell/app-shell";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { NotificationWatcher } from "@/components/notification-watcher";
 
 export default async function AppLayout({
   children,
@@ -38,6 +39,10 @@ export default async function AppLayout({
       {/* Keeps every screen's data fresh (poll + on-focus) so tickets raised on
           one screen appear on the MIS screen without a manual refresh. */}
       <AutoRefresh />
+      {/* The single notification detector: polls a light count endpoint even while
+          the tab is hidden, then chimes + toasts (visible) or fires an OS desktop
+          notification (backgrounded) and keeps the favicon badge current. */}
+      <NotificationWatcher initialUnread={unreadCount} />
       <AppShell
         user={user}
         notifications={notifications}

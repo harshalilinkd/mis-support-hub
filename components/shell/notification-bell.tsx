@@ -3,15 +3,21 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Volume2, VolumeX } from "lucide-react";
+import { Bell, MonitorSmartphone, Play, Volume2, VolumeX } from "lucide-react";
 
 import { markNotificationsRead } from "@/lib/actions/notifications";
 import {
   isSoundMuted,
-  playNotificationChime,
-  primeNotificationSound,
   setSoundMuted,
+  testNotificationChime,
 } from "@/lib/notification-sound";
+import {
+  type DesktopPermission,
+  desktopAlertsEnabled,
+  desktopPermission,
+  requestDesktopAlerts,
+  setDesktopAlertsEnabled,
+} from "@/lib/desktop-notification";
 import { cn } from "@/lib/utils";
 import { RelativeTime } from "@/components/relative-time";
 import { Button } from "@/components/ui/button";
@@ -41,21 +47,31 @@ export function NotificationBell({
   const [, startTransition] = useTransition();
   const [unread, setUnread] = useState(unreadCount);
   const [muted, setMuted] = useState(false);
+  const [pulse, setPulse] = useState(false);
+  const [desktopPerm, setDesktopPerm] = useState<DesktopPermission>("default");
+  const [desktopOn, setDesktopOn] = useState(false);
   const prevUnread = useRef(unreadCount);
 
   useEffect(() => setUnread(unreadCount), [unreadCount]);
 
-  // Reflect the stored mute preference and prime audio for the autoplay policy.
+  // Reflect stored prefs on mount. Audio priming + the actual chime/toast/desktop
+  // alerting now live in <NotificationWatcher> (the single detector); the bell is the
+  // visible control surface and the badge/list.
   useEffect(() => {
     setMuted(isSoundMuted());
-    return primeNotificationSound();
+    setDesktopPerm(desktopPermission());
+    setDesktopOn(desktopAlertsEnabled());
   }, []);
 
-  // Chime when the unread count rises (a new notification arrived) — never on the
-  // initial mount, and never when the count drops (marking notifications read).
+  // Pulse the bell when the unread count rises (visible-tab polish) — never on the
+  // initial mount, never when the count drops (marking read). When visible, the
+  // watcher's router.refresh() feeds this prop, so the pulse tracks the alert.
   useEffect(() => {
     if (unreadCount > prevUnread.current) {
-      playNotificationChime();
+      setPulse(true);
+      const t = setTimeout(() => setPulse(false), 1400);
+      prevUnread.current = unreadCount;
+      return () => clearTimeout(t);
     }
     prevUnread.current = unreadCount;
   }, [unreadCount]);
@@ -68,15 +84,41 @@ export function NotificationBell({
     });
   }
 
+  async function toggleDesktop() {
+    if (desktopPerm === "granted") {
+      const next = !desktopOn;
+      setDesktopAlertsEnabled(next);
+      setDesktopOn(next);
+      return;
+    }
+    // "default" → ask the OS (this click is the required gesture). "denied" is handled
+    // by disabling the button below, so we never reach here for it.
+    const result = await requestDesktopAlerts();
+    setDesktopPerm(result);
+    setDesktopOn(desktopAlertsEnabled());
+  }
+
   function handleOpenChange(open: boolean) {
-    if (open && unread > 0) {
-      setUnread(0); // optimistic
-      startTransition(async () => {
-        await markNotificationsRead();
-        router.refresh();
-      });
+    if (open) {
+      setPulse(false);
+      if (unread > 0) {
+        setUnread(0); // optimistic
+        startTransition(async () => {
+          await markNotificationsRead();
+          router.refresh();
+        });
+      }
     }
   }
+
+  const desktopLabel =
+    desktopPerm === "denied"
+      ? "Desktop alerts blocked — enable notifications in your browser settings"
+      : desktopPerm === "granted"
+        ? desktopOn
+          ? "Desktop alerts on — click to turn off"
+          : "Desktop alerts off — click to turn on"
+        : "Enable desktop alerts (get notified when this tab isn't focused)";
 
   return (
     <DropdownMenu onOpenChange={handleOpenChange}>
@@ -87,10 +129,17 @@ export function NotificationBell({
           aria-label={`Notifications${unread ? ` (${unread} unread)` : ""}`}
           className="relative"
         >
-          <Bell className="size-4" />
+          <Bell className={cn("size-4 transition-transform", pulse && "motion-safe:animate-pulse")} />
           {unread > 0 ? (
             <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-4 text-primary-foreground">
-              {unread > 9 ? "9+" : unread}
+              {/* A one-shot ping ring on arrival draws the eye to the badge. */}
+              {pulse ? (
+                <span
+                  aria-hidden
+                  className="absolute inset-0 rounded-full bg-primary motion-safe:animate-ping"
+                />
+              ) : null}
+              <span className="relative">{unread > 9 ? "9+" : unread}</span>
             </span>
           ) : null}
         </Button>
@@ -98,21 +147,55 @@ export function NotificationBell({
       <DropdownMenuContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-sm font-medium">Notifications</span>
-          <button
-            type="button"
-            onClick={toggleMute}
-            aria-label={
-              muted ? "Unmute notification sound" : "Mute notification sound"
-            }
-            title={muted ? "Sound off — click to unmute" : "Sound on — click to mute"}
-            className="grid size-6 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
-          >
-            {muted ? (
-              <VolumeX className="size-3.5" />
-            ) : (
-              <Volume2 className="size-3.5" />
-            )}
-          </button>
+          <div className="flex items-center gap-0.5">
+            {/* Test / unlock the chime — the click is also the gesture that unlocks
+                the AudioContext so later chimes aren't blocked by autoplay. */}
+            <button
+              type="button"
+              onClick={testNotificationChime}
+              aria-label="Test notification sound"
+              title="Test sound"
+              className="grid size-6 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
+            >
+              <Play className="size-3.5" />
+            </button>
+            {/* Desktop (OS) alerts — the only channel that reaches you when this tab
+                isn't focused. Hidden entirely where the browser has no support. */}
+            {desktopPerm !== "unsupported" ? (
+              <button
+                type="button"
+                onClick={toggleDesktop}
+                disabled={desktopPerm === "denied"}
+                aria-label={desktopLabel}
+                title={desktopLabel}
+                aria-pressed={desktopPerm === "granted" ? desktopOn : undefined}
+                className={cn(
+                  "grid size-6 place-items-center rounded-md transition-colors hover:bg-surface-muted",
+                  desktopPerm === "granted" && desktopOn
+                    ? "text-primary"
+                    : "text-text-muted hover:text-foreground",
+                  desktopPerm === "denied" && "cursor-not-allowed opacity-40"
+                )}
+              >
+                <MonitorSmartphone className="size-3.5" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-label={
+                muted ? "Unmute notification sound" : "Mute notification sound"
+              }
+              title={muted ? "Sound off — click to unmute" : "Sound on — click to mute"}
+              className="grid size-6 place-items-center rounded-md text-text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
+            >
+              {muted ? (
+                <VolumeX className="size-3.5" />
+              ) : (
+                <Volume2 className="size-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         {notifications.length === 0 ? (
           <div className="px-3 py-10 text-center text-sm text-text-muted">

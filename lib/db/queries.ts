@@ -1889,6 +1889,40 @@ export async function unreadNotificationCount(userId: string): Promise<number> {
 }
 
 /**
+ * The lightweight signal the client notification-watcher polls (even while the tab
+ * is hidden, where the RSC layout does NOT re-run): the current unread count plus
+ * the newest unread row's content, so an OS/desktop notification has something to
+ * say. ONE indexed query (notifications.userId), a fraction of the cost of
+ * re-rendering the whole layout — which is why the background poll hits this Route
+ * Handler instead of router.refresh(). Returns unread=0 / latest=null when caught up.
+ */
+export async function notificationSignal(userId: string): Promise<{
+  unread: number;
+  latest: { title: string; body: string | null; ticketNumber: string | null } | null;
+}> {
+  const [row] = await db
+    .select({
+      title: notifications.title,
+      body: notifications.body,
+      ticketNumber: notifications.ticketNumber,
+      unread:
+        sql<number>`(select count(*) from notifications where user_id = ${userId} and read_at is null)`.mapWith(
+          Number
+        ),
+    })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+    .orderBy(desc(notifications.createdAt))
+    .limit(1);
+  return {
+    unread: row?.unread ?? 0,
+    latest: row
+      ? { title: row.title, body: row.body, ticketNumber: row.ticketNumber }
+      : null,
+  };
+}
+
+/**
  * The topbar bell's data in ONE round-trip: the latest N notifications plus the
  * user's total unread count (a non-correlated scalar subquery Postgres evaluates
  * once, not per row). Replaces a separate listNotifications +
