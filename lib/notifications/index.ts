@@ -7,7 +7,12 @@ import {
   listAdmins,
   listAssignableUsers,
 } from "@/lib/db/queries";
-import { type NotificationType, tickets, users } from "@/lib/db/schema";
+import {
+  type NotificationType,
+  type Status,
+  tickets,
+  users,
+} from "@/lib/db/schema";
 import { emailProvider } from "./email";
 import type {
   NotificationChannel,
@@ -211,6 +216,47 @@ export async function sendClaimNotification(ticketId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[sendClaimNotification]", e);
+  }
+}
+
+/**
+ * Work STOPPED and the ticket went back to the open pool → tell the reporter (§8).
+ *
+ * §12.6's reversal rule, applied to issues. sendClaimNotification told them "X started
+ * working on MIS-004, expected by 18 Jul" — in-app AND email. If the assignee then
+ * releases it, that message is false: nobody is working on it and no date holds. Only
+ * fired when a START was announced (releaseNeedsNotice) — releasing an unstarted claim
+ * corrects nothing, because the claim was silent.
+ *
+ * The releaser is deliberately unnamed: the assignee has already been cleared by the
+ * time this runs, and a mis-start isn't worth naming anyone over.
+ */
+export async function sendTicketReleasedNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+
+    await createInApp({
+      userId: reporter.id,
+      type: "TICKET_RELEASED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} is back with the MIS team`,
+      body: `${ticket.title}
+Work has stopped for now and it's back in the queue — the date given earlier no longer applies.`,
+    });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "TICKET_RELEASED",
+        data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+      });
+    }
+  } catch (e) {
+    console.error("[sendTicketReleasedNotification]", e);
   }
 }
 
@@ -659,12 +705,19 @@ export async function sendRequestClaimedNotification(ticketId: string): Promise<
  * them "{member} has picked up {number}", so silence here would leave them believing
  * a build is under way that nobody owns. Best-effort like every other notify (§8).
  */
-export async function sendRequestReleasedNotification(ticketId: string): Promise<void> {
+export async function sendRequestReleasedNotification(
+  ticketId: string,
+  /** The status released FROM. A started build also had a delivery date promised. */
+  from?: Status
+): Promise<void> {
   try {
     const ticket = await loadTicket(ticketId);
     if (!ticket) return;
     const reporter = await loadUser(ticket.createdBy);
     if (!reporter) return;
+    // Releasing a STARTED build withdraws two things: who was building it AND the
+    // date startWork committed to. Releasing a mere claim withdraws only the first.
+    const wasStarted = from === "IN_PROGRESS" || from === "CHANGES_REQUESTED";
 
     await createInApp({
       userId: reporter.id,
@@ -672,7 +725,9 @@ export async function sendRequestReleasedNotification(ticketId: string): Promise
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       title: `${ticket.number} is back in the queue`,
-      body: `${ticket.title}\nIt's still approved — another MIS member will pick it up.`,
+      body: wasStarted
+        ? `${ticket.title}\nWork has stopped and the delivery date no longer applies. It's still approved — another MIS member will pick it up.`
+        : `${ticket.title}\nIt's still approved — another MIS member will pick it up.`,
     });
 
     // §12.6's reversal rule: the claim emailed the requester "{member} has picked up
@@ -683,7 +738,14 @@ export async function sendRequestReleasedNotification(ticketId: string): Promise
       await notify({
         to: { email: reporter.email, name: reporter.name },
         template: "REQUEST_RELEASED",
-        data: { number: ticket.number, title: ticket.title, appUrl: appUrl() },
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          // Present only when a delivery date had been promised — the template says so
+          // rather than silently dropping a commitment the requester was given.
+          ...(wasStarted ? { wasStarted: "1" } : {}),
+          appUrl: appUrl(),
+        },
       });
     }
   } catch (e) {

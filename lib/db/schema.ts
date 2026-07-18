@@ -128,6 +128,10 @@ export const NOTIFICATION_TYPES = [
   "TICKET_RESOLVED",
   "TICKET_ASSIGNED",
   "TICKET_CLAIMED",
+  // §8 + the §12.6 reversal rule: TICKET_CLAIMED is sent when work STARTS ("expected
+  // by X"), so abandoning that start must correct it. A release from OPEN stays silent
+  // — the claim itself was silent, so nothing needs correcting.
+  "TICKET_RELEASED",
   "TICKET_REOPENED",
   "TICKET_CLOSED",
   "TICKET_UPDATED",

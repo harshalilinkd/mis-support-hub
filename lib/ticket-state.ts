@@ -47,14 +47,21 @@ export const REQUEST_STATUS_TRANSITIONS: Record<Status, Status[]> = {
   UNDER_REVIEW: ["PENDING_MD_APPROVAL"],
   PENDING_MD_APPROVAL: ["APPROVED", "DROPPED"],
   APPROVED: ["CLAIMED"],
-  // CLAIMED → APPROVED is the mis-claim escape hatch (mirrors the ISSUE release,
-  // §5): the assignee sends a build they claimed by mistake back to the approved
-  // pool. Only from CLAIMED — once started, a delivery date has been promised, so
-  // it is no longer a quiet undo.
+  // → APPROVED is the release/undo hatch, mirroring the ISSUE release (§5): the
+  // assignee sends a build back to the approved pool. Reachable from CLAIMED (claimed
+  // by mistake) AND from IN_PROGRESS / CHANGES_REQUESTED (started by mistake, or
+  // handing back work already begun).
+  //
+  // §12.3 originally allowed it ONLY from CLAIMED, reasoning that once started "a
+  // delivery date has been promised, so it is no longer a quiet undo" — the same
+  // premise §5 used, and the same wrong conclusion. §12.6's reversal rule says an
+  // announced change needs its reversal ANNOUNCED, not forbidden. Forbidding it left a
+  // mis-started build with no way back: not releasable, not reassignable (§12.3 has no
+  // takeover), only markable complete.
   CLAIMED: ["IN_PROGRESS", "APPROVED"],
-  IN_PROGRESS: ["IN_TESTING"],
+  IN_PROGRESS: ["IN_TESTING", "APPROVED"],
   IN_TESTING: ["CHANGES_REQUESTED", "CLOSED"],
-  CHANGES_REQUESTED: ["IN_PROGRESS"],
+  CHANGES_REQUESTED: ["IN_PROGRESS", "APPROVED"],
   DROPPED: ["UNDER_REVIEW"],
   CLOSED: [],
   OPEN: [],
@@ -94,11 +101,13 @@ function requestActorAllows(
       return isAdmin;
     case "APPROVED->CLAIMED":
       return isStaff;
-    // Releasing a claim is ASSIGNEE-LOCKED, deliberately stricter than canBuild:
-    // even an MIS_ADMIN may only undo a claim they made themselves, never someone
-    // else's (mirrors the ISSUE release lock, §6). Taking a build off another
-    // member is a takeover, not an undo.
+    // Releasing is ASSIGNEE-LOCKED, deliberately stricter than canBuild: even an
+    // MIS_ADMIN may only undo a claim/start they made themselves, never someone
+    // else's (mirrors the ISSUE release lock, §6). Taking a build off another member
+    // is a takeover, not an undo.
     case "CLAIMED->APPROVED":
+    case "IN_PROGRESS->APPROVED":
+    case "CHANGES_REQUESTED->APPROVED":
       return isStaff && isAssignee;
     case "CLAIMED->IN_PROGRESS":
     case "IN_PROGRESS->IN_TESTING":
@@ -239,6 +248,49 @@ export const REQUEST_ACTIVE_STATUSES: Status[] = [
 
 /** Days a RESOLVED ticket waits before auto-CLOSE (CLAUDE.md §5; cron in a later phase). */
 export const AUTO_CLOSE_DAYS = 7;
+
+/**
+ * May this actor release an ISSUE back to the open pool? (§5.)
+ *
+ * ASSIGNEE-LOCKED — even an MIS_ADMIN releases only their own claim; taking a ticket
+ * off a colleague is a takeover, not an undo (§6).
+ *
+ * Allowed from OPEN (claimed, not started) AND from IN_PROGRESS/REOPENED (started by
+ * mistake). §5 originally forbade the latter, reasoning that the reporter had already
+ * been told work started, so it was "no longer a quiet undo". That premise is right and
+ * the conclusion was wrong: §12.6's reversal rule says an announced change needs its
+ * reversal ANNOUNCED, not forbidden. Forbidding it left a mis-started ticket with no
+ * exit but "Mark resolved" — resolving work nobody did, and asking the reporter to
+ * confirm a fix that doesn't exist. Releasing after a start therefore notifies the
+ * reporter (§8); releasing from OPEN stays silent, because the claim was silent too.
+ *
+ * Never from RESOLVED/CLOSED: the work is done and the reporter is mid-verification.
+ */
+export function canReleaseTicket(
+  isAssignee: boolean,
+  status: Status
+): boolean {
+  if (!isAssignee) return false;
+  return status === "OPEN" || status === "IN_PROGRESS" || status === "REOPENED";
+}
+
+/**
+ * Which REQUEST statuses can be released back to the approved pool (§12.3)?
+ * The topology + actor rule already encode this — this is the readable form the
+ * action and the button share, so neither re-derives the list.
+ */
+export const REQUEST_RELEASABLE_FROM: Status[] = [
+  "CLAIMED",
+  "IN_PROGRESS",
+  "CHANGES_REQUESTED",
+];
+
+/** Did releasing from this status falsify a notification the reporter already got? */
+export function releaseNeedsNotice(status: Status): boolean {
+  // A claim is quiet (§8) — releasing an unstarted ticket corrects nothing.
+  // Starting emails the reporter ("work started, expected by X"), so undoing it must say so.
+  return status === "IN_PROGRESS" || status === "REOPENED";
+}
 
 /**
  * May this actor log progress on a REQUEST? (§12.4 — "Add progress log: assignee".)

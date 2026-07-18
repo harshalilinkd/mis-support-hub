@@ -14,9 +14,14 @@ import {
   sendNewTicketNotification,
   sendReopenNotification,
   sendResolutionNotification,
+  sendTicketReleasedNotification,
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
-import { canTransition } from "@/lib/ticket-state";
+import {
+  canReleaseTicket,
+  canTransition,
+  releaseNeedsNotice,
+} from "@/lib/ticket-state";
 import {
   bulkClaimSchema,
   bulkDeleteSchema,
@@ -343,14 +348,24 @@ export async function releaseTicket(ticketId: string): Promise<ActionResult> {
       `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can release it.`
     );
   }
-  // Only a claimed-but-not-started ticket (still OPEN) can be sent back to Open.
-  if (ticket.status !== "OPEN") {
+  // OPEN (claimed, not started) or IN_PROGRESS/REOPENED (started by mistake) — but
+  // never once it's RESOLVED/CLOSED, where the reporter is mid-verification.
+  if (!canReleaseTicket(ticket.assignedTo === user.id, ticket.status)) {
     return fail(
-      `${ticket.number} has already been started — it can't be released back to Open.`
+      `${ticket.number} is ${ticket.status.toLowerCase()} — it can't be released back to Open.`
     );
   }
 
-  await q.releaseTicketRow({ ticketId: ticket.id, actorId: user.id });
+  const from = ticket.status;
+  await q.releaseTicketRow({ ticketId: ticket.id, actorId: user.id, from });
+
+  // §12.6's reversal rule, applied to issues. Starting told the reporter "work has
+  // started, expected by X" (in-app + email, §8) — so undoing a start has to correct
+  // that, or they keep believing someone is on it. Releasing an unstarted claim stays
+  // silent, because the claim itself was silent. Best-effort: never blocks the undo.
+  if (releaseNeedsNotice(from)) {
+    await sendTicketReleasedNotification(ticket.id);
+  }
 
   revalidateTicketRoutes(ticket.number);
   return ok(undefined);

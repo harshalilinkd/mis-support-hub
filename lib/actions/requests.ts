@@ -21,7 +21,11 @@ import {
   sendRequestSubmittedNotification,
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
-import { canLogProgress, canTransition } from "@/lib/ticket-state";
+import {
+  REQUEST_RELEASABLE_FROM,
+  canLogProgress,
+  canTransition,
+} from "@/lib/ticket-state";
 import {
   acceptRequestSchema,
   claimRequestSchema,
@@ -311,18 +315,27 @@ export async function releaseRequest(ticketId: string): Promise<ActionResult> {
       `${t.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can release it.`
     );
   }
-  if (t.status !== "CLAIMED") {
+  // CLAIMED (claimed by mistake) or IN_PROGRESS / CHANGES_REQUESTED (started by
+  // mistake, or handing back work already begun). Never once it's IN_TESTING or
+  // CLOSED — the requester is verifying, and only they close it (§12.4).
+  if (!REQUEST_RELEASABLE_FROM.includes(t.status)) {
     return fail(
-      `${t.number} has already been started — it can't be released back to the pool.`
+      `${t.number} is ${t.status.toLowerCase().replace(/_/g, " ")} — it can't be released back to the pool.`
     );
   }
+  // The tested gate (§12.3 topology + §12.4 assignee lock) — the checks above only
+  // produce friendlier errors.
   if (!allows(t, "APPROVED", user)) {
     return fail(`You can't release ${t.number}.`);
   }
 
-  await q.releaseRequestRow({ ticketId: t.id, actorId: user.id });
-  // The claim told the requester someone picked it up — correct that (§12.6).
-  await sendRequestReleasedNotification(t.id);
+  const from = t.status;
+  await q.releaseRequestRow({ ticketId: t.id, actorId: user.id, from });
+  // §12.6's reversal rule. A request CLAIM is announced ("{member} has picked up
+  // {number}"), unlike an issue claim — so every release here corrects something and
+  // always notifies. Releasing a STARTED build additionally withdraws the delivery
+  // date startWork promised.
+  await sendRequestReleasedNotification(t.id, from);
   revalidateRequestRoutes(t.number);
   return ok(undefined);
 }

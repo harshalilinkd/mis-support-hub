@@ -2,7 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { Role, Status } from "@/lib/db/schema";
-import { assertStatusForType, canLogProgress, canTransition } from "./ticket-state";
+import {
+  assertStatusForType,
+  canLogProgress,
+  canReleaseTicket,
+  canTransition,
+  releaseNeedsNotice,
+} from "./ticket-state";
 
 /**
  * Guardrail tests for the REQUEST state machine + §12.4 permissions (and a few
@@ -25,6 +31,9 @@ const LEGAL_REQUEST: Edge[] = [
   ["APPROVED", "CLAIMED", STAFF, false, false],
   ["CLAIMED", "APPROVED", STAFF, false, true], // release: own claim only
   ["CLAIMED", "APPROVED", ADMIN, false, true], // admin releasing their OWN claim
+  ["IN_PROGRESS", "APPROVED", STAFF, false, true], // release AFTER starting
+  ["IN_PROGRESS", "APPROVED", ADMIN, false, true],
+  ["CHANGES_REQUESTED", "APPROVED", STAFF, false, true], // hand back mid-revision
   ["CLAIMED", "IN_PROGRESS", STAFF, false, true], // assignee
   ["CLAIMED", "IN_PROGRESS", ADMIN, false, false], // admin may build
   ["IN_PROGRESS", "IN_TESTING", STAFF, false, true],
@@ -42,9 +51,11 @@ const ILLEGAL_TOPOLOGY: [Status, Status][] = [
   ["SUBMITTED", "IN_PROGRESS"],
   ["UNDER_REVIEW", "APPROVED"],
   ["APPROVED", "IN_PROGRESS"], // must pass through CLAIMED
-  ["IN_PROGRESS", "APPROVED"], // a started build can't be quietly released
-  ["IN_TESTING", "APPROVED"],
-  ["CHANGES_REQUESTED", "APPROVED"],
+  // NOTE: IN_PROGRESS→APPROVED and CHANGES_REQUESTED→APPROVED used to be listed here
+  // as illegal ("a started build can't be quietly released"). They are now the release
+  // hatch (§12.3) — a started build CAN be handed back, and the requester is told.
+  ["IN_TESTING", "APPROVED"], // the requester is verifying — no yanking it back
+  ["CLOSED", "APPROVED"],
   ["DROPPED", "IN_PROGRESS"], // DROPPED only revives to UNDER_REVIEW
   ["CLOSED", "IN_PROGRESS"],
   ["PENDING_MD_APPROVAL", "CLAIMED"],
@@ -74,6 +85,10 @@ const FORBIDDEN_ACTOR: Edge[] = [
   ["CLAIMED", "APPROVED", ADMIN, false, false],
   ["CLAIMED", "APPROVED", STAFF, false, false],
   ["CLAIMED", "APPROVED", USER, false, true],
+  // The lock holds in the started states too — release is an undo, never a takeover.
+  ["IN_PROGRESS", "APPROVED", ADMIN, false, false],
+  ["IN_PROGRESS", "APPROVED", STAFF, false, false],
+  ["CHANGES_REQUESTED", "APPROVED", ADMIN, false, false],
   // Build steps: the assigned staff (or admin) only — not a non-assignee staffer.
   ["CLAIMED", "IN_PROGRESS", STAFF, false, false],
   ["IN_PROGRESS", "IN_TESTING", STAFF, false, false],
@@ -149,23 +164,56 @@ test("a REQUEST can never reach the ISSUE terminal states (force-close regressio
   assert.throws(() => assertStatusForType("REQUEST", "RESOLVED"));
 });
 
-test("releasing a claim is assignee-locked and only before the build starts", () => {
-  // The mis-claim escape hatch (§12.3, mirrors the ISSUE release in §5).
-  // You may undo your OWN claim...
+test("a REQUEST can be released after it was started, and only by its assignee (§12.3)", () => {
+  // The mis-claim AND mis-start escape hatch, mirroring the ISSUE release (§5).
+  // You may undo your OWN claim, before or after starting...
   assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", STAFF, false, true), true);
   assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", ADMIN, false, true), true);
-  // ...but never someone else's. This is deliberately stricter than the build
-  // steps: an admin may start/complete anyone's build, yet must not yank a claim
-  // out from under the member who made it — that's a takeover, not an undo.
+  assert.equal(canTransition("REQUEST", "IN_PROGRESS", "APPROVED", STAFF, false, true), true);
+  assert.equal(canTransition("REQUEST", "CHANGES_REQUESTED", "APPROVED", STAFF, false, true), true);
+
+  // ...but never someone else's. Deliberately stricter than the build steps: an admin
+  // may start/complete anyone's build, yet must not yank a claim out from under the
+  // member who made it — that's a takeover, not an undo.
   assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", ADMIN, false, false), false);
-  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", STAFF, false, false), false);
+  assert.equal(canTransition("REQUEST", "IN_PROGRESS", "APPROVED", ADMIN, false, false), false);
+  assert.equal(canTransition("REQUEST", "CHANGES_REQUESTED", "APPROVED", STAFF, false, false), false);
   // A USER never releases, even if somehow flagged as the assignee.
-  assert.equal(canTransition("REQUEST", "CLAIMED", "APPROVED", USER, false, true), false);
-  // Once started, the requester has been promised a date — no quiet undo exists.
-  assert.equal(canTransition("REQUEST", "IN_PROGRESS", "APPROVED", ADMIN, true, true), false);
-  assert.equal(canTransition("REQUEST", "CHANGES_REQUESTED", "APPROVED", ADMIN, true, true), false);
+  assert.equal(canTransition("REQUEST", "IN_PROGRESS", "APPROVED", USER, false, true), false);
+
+  // Once handed over for testing it is the requester's call — MIS can't pull it back.
+  assert.equal(canTransition("REQUEST", "IN_TESTING", "APPROVED", ADMIN, true, true), false);
+  assert.equal(canTransition("REQUEST", "CLOSED", "APPROVED", ADMIN, true, true), false);
+
   // And releasing must never be a back door to the approval verdict itself.
   assert.equal(canTransition("REQUEST", "CLAIMED", "PENDING_MD_APPROVAL", ADMIN, false, true), false);
+});
+
+test("an ISSUE can be released after it was started, and only by its assignee (§5)", () => {
+  // Regression: §5 allowed release ONLY from OPEN, reasoning that once started the
+  // reporter had been notified so it was "no longer a quiet undo". That left a
+  // mis-started ticket with no exit but Mark resolved — resolving work nobody did.
+  // §12.6's reversal rule says announce the undo, don't forbid it.
+  assert.equal(canReleaseTicket(true, "OPEN"), true); // claimed, not started
+  assert.equal(canReleaseTicket(true, "IN_PROGRESS"), true); // started by mistake
+  assert.equal(canReleaseTicket(true, "REOPENED"), true);
+
+  // Assignee-locked (§6) — a release is an undo of YOUR claim, never a takeover.
+  assert.equal(canReleaseTicket(false, "OPEN"), false);
+  assert.equal(canReleaseTicket(false, "IN_PROGRESS"), false);
+
+  // Never once the work is done and the reporter is mid-verification.
+  assert.equal(canReleaseTicket(true, "RESOLVED"), false);
+  assert.equal(canReleaseTicket(true, "CLOSED"), false);
+});
+
+test("releasing announces itself only when the start was announced (§8/§12.6)", () => {
+  // The reversal rule gives DIFFERENT answers for the two undos, from one premise:
+  // an ISSUE claim is silent (§8), so releasing an unstarted ticket corrects nothing...
+  assert.equal(releaseNeedsNotice("OPEN"), false);
+  // ...but starting emails the reporter "expected by X", so abandoning it must say so.
+  assert.equal(releaseNeedsNotice("IN_PROGRESS"), true);
+  assert.equal(releaseNeedsNotice("REOPENED"), true);
 });
 
 test("only the member building it can log progress — no admin override (§12.4)", () => {

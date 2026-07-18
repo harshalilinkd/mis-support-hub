@@ -23,6 +23,7 @@ import {
   acceptRequest,
   moveToReview,
   recordApprovalDecision,
+  releaseRequest,
   reviveRequest,
   sendForApproval,
 } from "@/lib/actions/requests";
@@ -87,7 +88,15 @@ function blockReason(
   }
   // Shape is fine, so the actor isn't allowed (§12.4).
   if (to === "CLOSED") return "Only the requester can accept and close this request.";
-  if (to === "APPROVED" || (to === "DROPPED" && from === "PENDING_MD_APPROVAL")) {
+  if (to === "APPROVED") {
+    // Two moves land on Approved: recording the MD verdict (from Awaiting
+    // approval) and the assignee RELEASING a claimed/started build (§12.3). The
+    // refusal must name the real reason, not always cite MD approval.
+    return from === "PENDING_MD_APPROVAL"
+      ? "Only an MIS admin can record the approval decision."
+      : "Only the assignee can release this claim back to the pool.";
+  }
+  if (to === "DROPPED" && from === "PENDING_MD_APPROVAL") {
     return "Only an MIS admin can record the approval decision.";
   }
   if (to === "UNDER_REVIEW" && from === "DROPPED") {
@@ -297,7 +306,13 @@ export function RequestBoardView({
       }
       if (to === "PENDING_MD_APPROVAL") return sendForApproval(r.id);
       if (to === "APPROVED") {
-        return recordApprovalDecision({ ticketId: r.id, decision: "APPROVED" });
+        // The Approved column is the landing spot for two unrelated moves. From
+        // Awaiting approval it's the MD verdict being recorded; from a claimed or
+        // started build (In progress column) it's the assignee releasing it back
+        // to the pool (§12.3). Same column, different action — route by origin.
+        return r.status === "PENDING_MD_APPROVAL"
+          ? recordApprovalDecision({ ticketId: r.id, decision: "APPROVED" })
+          : releaseRequest(r.id);
       }
       if (to === "DROPPED") {
         return recordApprovalDecision({ ticketId: r.id, decision: "REJECTED" });

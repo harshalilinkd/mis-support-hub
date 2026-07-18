@@ -5,6 +5,8 @@ export type NotificationTemplate =
   | "TICKET_RESOLVED"
   | "TICKET_ASSIGNED"
   | "TICKET_CLAIMED"
+  // The reversal of TICKET_CLAIMED (work started) — see §12.6.
+  | "TICKET_RELEASED"
   | "TICKET_REOPENED"
   | "TICKET_CLOSED"
   | "NEW_COMMENT"

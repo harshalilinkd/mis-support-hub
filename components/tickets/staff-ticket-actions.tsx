@@ -70,16 +70,34 @@ export function StaffTicketActions({
           <span className="text-sm text-text-muted">
             You are working on this ticket.
           </span>
-          <Button
-            className="ml-auto"
-            size="sm"
-            disabled={pending}
-            onClick={() =>
-              act(() => updateStatus(ticketId, "RESOLVED"), "Ticket resolved")
-            }
-          >
-            <CheckCircle2 className="size-4" /> Mark resolved
-          </Button>
+          <div className="ml-auto flex gap-2">
+            {/* Released from IN_PROGRESS too, not just from a claim (§5). Starting by
+                mistake used to have no exit but "Mark resolved" — resolving work
+                nobody did. This tells the reporter work stopped (§12.6's reversal
+                rule), so the undo is honest rather than forbidden. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                act(
+                  () => releaseTicket(ticketId),
+                  "Released — the reporter has been told it's back in the queue"
+                )
+              }
+            >
+              <Undo2 className="size-4" /> Release
+            </Button>
+            <Button
+              size="sm"
+              disabled={pending}
+              onClick={() =>
+                act(() => updateStatus(ticketId, "RESOLVED"), "Ticket resolved")
+              }
+            >
+              <CheckCircle2 className="size-4" /> Mark resolved
+            </Button>
+          </div>
         </>
       ) : claimedNotStarted ? (
         <>

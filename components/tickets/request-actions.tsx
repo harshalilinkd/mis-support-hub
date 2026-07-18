@@ -26,6 +26,7 @@ import { AbsoluteTime } from "@/components/absolute-time";
 import type { RequestDetail } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { isStaff } from "@/lib/roles";
+import { REQUEST_RELEASABLE_FROM } from "@/lib/ticket-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -129,9 +130,14 @@ export function RequestActions({
     );
   }
   // Release is ASSIGNEE-LOCKED, not canBuild: an admin may start/work any build but
-  // may only undo a claim they made themselves (§12.4). Offering it any wider would
-  // dangle a button the server rejects.
-  if (s === "CLAIMED" && staff && isAssignee) {
+  // may only undo a claim/start they made themselves (§12.4). Offering it any wider
+  // would dangle a button the server rejects.
+  //
+  // Offered from CLAIMED **and** from the started states — a build started by mistake
+  // used to have no way back (§12.3 forbade it, and requests have no takeover), so the
+  // only exit was to mark it complete. Releasing a started build tells the requester
+  // the date no longer applies (§12.6's reversal rule).
+  if (REQUEST_RELEASABLE_FROM.includes(s) && staff && isAssignee) {
     buttons.push(
       <Button
         key="release"

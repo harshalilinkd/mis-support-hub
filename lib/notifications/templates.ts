@@ -71,6 +71,22 @@ export function renderTemplate(input: NotifyInput): {
           cta
         ),
       };
+    /**
+     * The correction to TICKET_CLAIMED (§8 + §12.6's reversal rule). That mail said
+     * "X started working on this, expected by DATE" — this one withdraws both halves.
+     * Never the word "released": that's our state name, and a reporter would read it
+     * as "cancelled". Their ticket is fine; it's back in the queue.
+     */
+    case "TICKET_RELEASED":
+      return {
+        subject: `${number} is back with the MIS team`,
+        html: shell(
+          `${number} is back with the MIS team`,
+          `<p style="margin:0;line-height:1.6">Work on <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — has stopped for now, and it's back in the queue to be picked up.</p>
+           <p style="margin:12px 0 0;line-height:1.6">This replaces the earlier note that someone had started on it, and <strong>the date given then no longer applies</strong>. Your ticket is still open — nothing is needed from you.</p>`,
+          cta
+        ),
+      };
     case "TICKET_REOPENED":
       return {
         subject: `${number} was reopened`,
@@ -193,7 +209,13 @@ export function renderTemplate(input: NotifyInput): {
         html: shell(
           `${number} is back with the MIS team`,
           `<p style="margin:0;line-height:1.6">The MIS member who picked up <strong>${escapeHtml(title)}</strong> has handed it back, so it is not currently being built.</p>
-           <p style="margin:12px 0 0;line-height:1.6">It is <strong>still approved</strong> and back in the queue to be picked up again — this replaces the earlier note that someone had started on it. Nothing is needed from you.</p>`,
+           <p style="margin:12px 0 0;line-height:1.6">It is <strong>still approved</strong> and back in the queue to be picked up again${
+             // A started build had a delivery date committed at start-work; releasing
+             // withdraws that too, and saying so is the whole point of this mail.
+             input.data.wasStarted
+               ? " — and <strong>the delivery date you were given no longer applies</strong>"
+               : ""
+           }. This replaces the earlier note about it. Nothing is needed from you.</p>`,
           requestCta
         ),
       };

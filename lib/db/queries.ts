@@ -566,27 +566,35 @@ export async function startTaskRow(args: {
 }
 
 /**
- * Undo a claim: return a claimed-but-not-started ticket to the open pool, in one
- * batch. Clears the assignee, the priority, and any deadline; the status is
- * already OPEN and stays OPEN. Writes an UNCLAIMED activity row. The caller
- * enforces staff + the §6 ownership lock (only the assignee releases their own
- * claim) and that the ticket hasn't been started yet.
+ * Undo a claim: return a ticket to the open pool, in one batch. Clears the assignee,
+ * the priority and any deadline, and forces the status back to OPEN.
+ *
+ * `from` is the status being left. It is recorded on the UNCLAIMED activity row so the
+ * timeline distinguishes the two undos: releasing a claim that never started (from
+ * OPEN — a no-op status-wise) versus abandoning work already begun (from IN_PROGRESS —
+ * which the reporter was told about, and is told about again, §8).
+ *
+ * The caller enforces staff + the §6 ownership lock (only the assignee releases their
+ * own claim) via canReleaseTicket.
  */
 export async function releaseTicketRow(args: {
   ticketId: string;
   actorId: string;
+  from: Status;
 }) {
   await db.batch([
     db
       .update(tickets)
-      .set({ assignedTo: null, priority: null, deadline: null })
+      // status back to OPEN explicitly: a release from IN_PROGRESS/REOPENED has to
+      // undo the start, not just the assignment. Harmless when already OPEN.
+      .set({ assignedTo: null, priority: null, deadline: null, status: "OPEN" })
       .where(eq(tickets.id, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
       actorId: args.actorId,
       type: "UNCLAIMED",
-      fromValue: null,
-      toValue: null,
+      fromValue: args.from,
+      toValue: "OPEN",
     }),
   ]);
 }
@@ -1613,7 +1621,13 @@ export async function claimRequestRow(args: {
  * activity row. The caller enforces staff + the assignee lock (§12.4) and that the
  * build hasn't started.
  */
-export async function releaseRequestRow(args: { ticketId: string; actorId: string }) {
+export async function releaseRequestRow(args: {
+  ticketId: string;
+  actorId: string;
+  /** The status being left — recorded on the UNCLAIMED row so the timeline can tell
+   *  "claimed by mistake" from "abandoned mid-build". */
+  from: Status;
+}) {
   assertStatusForType("REQUEST", "APPROVED");
   await db.batch([
     db
@@ -1628,7 +1642,7 @@ export async function releaseRequestRow(args: { ticketId: string; actorId: strin
       ticketId: args.ticketId,
       actorId: args.actorId,
       type: "UNCLAIMED",
-      fromValue: "CLAIMED",
+      fromValue: args.from,
       toValue: "APPROVED",
     }),
   ]);

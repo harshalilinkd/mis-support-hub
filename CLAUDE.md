@@ -82,7 +82,9 @@ REOPENED (treated as active; behaves like IN_PROGRESS on the board). **Claiming
 and starting are two distinct steps** — a claimed ticket stays OPEN until it is
 explicitly started.
 - **Claim** (`claimTicket`): an MIS member takes ownership — **assigns the ticket to themselves and sets a priority**. It **stays OPEN** (NOT started/In Progress) and appears under "Assigned to Me". Writes a CLAIMED activity row. No deadline yet; the reporter is not notified (§8). The per-row Claim button, the detail action bar, and **bulk claim** all do this claim-only step. Never steals a ticket already claimed by someone else (§6).
-- **Release / undo a claim** (`releaseTicket`): a mis-claim escape hatch — the assignee sends a ticket they claimed by mistake **back to the open pool**. Clears the assignee, priority, and deadline; the ticket **stays OPEN** and is claimable again. Writes an UNCLAIMED activity row. **Assignee-locked** — even an MIS_ADMIN may release only a ticket assigned to themselves, never someone else's claim (§6). Allowed **only on a claimed-but-not-started ticket (OPEN)**: once started, the reporter has already been notified, so it's no longer a quiet undo. No notification is sent (a plain claim is quiet per §8, so releasing it is too).
+- **Release / undo a claim** (`releaseTicket`): the mis-claim AND mis-start escape hatch — the assignee sends a ticket back to the **open pool**. Clears the assignee, priority and deadline, and forces the status back to **OPEN**; it is claimable again. Writes an UNCLAIMED activity row carrying the status it left (so the timeline distinguishes "never started" from "abandoned mid-work"). **Assignee-locked** — even an MIS_ADMIN may release only a ticket assigned to themselves, never someone else's claim (§6). Allowed from **OPEN, IN_PROGRESS and REOPENED**; never from RESOLVED/CLOSED, where the reporter is mid-verification. Gated by `canReleaseTicket` in `lib/ticket-state.ts` — one unit-tested predicate shared by the action and the button.
+  - **Notification is conditional, and the rule decides — not the status.** Releasing from OPEN is **silent**: the claim was silent (§8), so nothing needs correcting. Releasing from IN_PROGRESS/REOPENED **notifies the reporter** (`sendTicketReleasedNotification`, in-app + email): starting told them "work has started, expected by {date}", and abandoning it makes that false. `releaseNeedsNotice(status)` encodes exactly that. This is §12.6's reversal rule applied to issues.
+  > §5 originally forbade release once started, reasoning that the reporter had already been told so it was "no longer a quiet undo". The premise was right and the conclusion was backwards: the answer to "an announcement would be falsified" is to **announce the reversal**, not to ban it. Forbidding it left a mis-started ticket with **no exit but "Mark resolved"** — resolving work nobody did, then asking the reporter to confirm a fix that doesn't exist. Issues also forbade the very undo requests permit (§12.3), for no reason other than the rule not having been applied here yet.
 - **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date). This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
 - **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
 - Only the assignee/MIS may move to IN_PROGRESS/RESOLVED. Setting RESOLVED requires an assignee.
@@ -101,13 +103,23 @@ explicitly started.
 | Release own claim (Open-only; back to unclaimed Open) — own claimed ticket | ✗ | ✓ | ✓ |
 | Change status / priority | ✗ | ✓ | ✓ |
 | Bulk claim | ✗ | ✓ | ✓ |
-| Take over a ticket assigned to someone else | ✗ | ✗ | ✓ |
+| Take over a ticket assigned to someone else | ✗ | ✗ | **✗ — see below** |
 | Comment on a ticket they can see | ✓ | ✓ | ✓ |
 | Reopen own ticket / confirm resolved | ✓ | ✓ | ✓ |
 | Soft-delete a ticket | ✗ | ✓ | ✓ |
 | Recycle bin: restore / permanently delete | ✗ | ✗ | ✓ |
 | Manage users / change roles / bulk-add users | ✗ | ✗ | ✓ |
 Enforce on the server (in actions/queries), never trust the client. USER may only read tickets where `created_by = session.user.id`.
+
+> **There is NO takeover, for anyone.** This row previously read "✓" for MIS_ADMIN; the
+> code has always refused — `claimOne`: *"never steal a ticket already claimed by someone
+> else — not even as an admin. Once claimed, the assignee owns it end-to-end."* There is
+> also no `assignTicket`/reassign action, deliberately (see the note in
+> `lib/actions/tickets.ts`). The table was wrong, not the code, so the table is corrected.
+> The escape hatch is the assignee **releasing** it (§5) — now possible even after a start.
+> **Consequence, same shape as `docs/known-issues/0003` for requests:** if an assignee is
+> deactivated mid-work, their ticket cannot be released or reassigned by anyone, and its
+> only exit is an admin marking it resolved. Accepted, unhit, tracked there.
 
 ## 7. Auth rules
 Google SSO **and** email + password. Google is first-class SSO; passwords are an
@@ -169,6 +181,7 @@ stub (wire real WhatsApp Business API later). Notification functions (all
 best-effort — a failed send never rolls back or throws to the caller):
 - `sendNewTicketNotification` — new ticket → in-app to the whole MIS team (triage).
 - `sendClaimNotification` — **work started** → reporter (priority + ETA/deadline), in-app + email. Fired on **Start task** (or the combined claim & start), NOT on a plain claim — a claim that hasn't started yet is quiet.
+- `sendTicketReleasedNotification` — **work stopped** → reporter ("{number} is back with the MIS team"), in-app + email. The reversal of the above, fired ONLY when the release undoes a *started* ticket. Releasing an unstarted claim sends nothing, because the claim sent nothing. See §5 and §12.6's reversal rule.
 - `sendAssignmentNotification` — assigned → assignee, in-app + email.
 - `sendResolutionNotification` — RESOLVED/CLOSED → reporter ("please verify"), in-app + email.
 - `sendReopenNotification` — reopened → assignee, in-app + email.
@@ -290,18 +303,35 @@ CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (
 uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
 illegal and rejected server-side.
 
-**Release / undo a claim** (`releaseRequest`, CLAIMED → APPROVED): the mis-claim
-escape hatch, mirroring the ISSUE release (§5). The assignee sends a build they
-claimed by mistake **back to the approved pool** — clears assigned_to, priority,
-claimed_by/claimed_at and any deadline, so it looks exactly as it did on approval and
-is claimable again. Writes an UNCLAIMED activity row. **Assignee-locked** — even an
-MIS_ADMIN may release only a build assigned to themselves, never someone else's claim
-(deliberately stricter than the build steps: an admin may work anyone's build, but
-taking one off a colleague is a takeover, not an undo). Allowed **only while CLAIMED**:
-once started, a delivery date has been promised to the requester, so it's no longer a
-quiet correction. **Unlike an ISSUE release, this one notifies** — the claim already
-told the requester someone picked it up (§12.6), so silence would leave them believing
-a build is under way that nobody owns.
+**Release / undo a claim** (`releaseRequest`, → APPROVED): the mis-claim AND mis-start
+escape hatch, mirroring the ISSUE release (§5). The assignee sends a build **back to the
+approved pool** — clears assigned_to, priority, claimed_by/claimed_at and any deadline,
+so it looks exactly as it did on approval and is claimable again. Writes an UNCLAIMED
+activity row carrying the status it left, so the timeline tells "claimed by mistake"
+from "handed back mid-build".
+
+Allowed from **CLAIMED, IN_PROGRESS and CHANGES_REQUESTED** — the releasable set is
+`REQUEST_RELEASABLE_FROM` in `lib/ticket-state.ts`, shared by the action and the button.
+Never from **IN_TESTING or CLOSED**: the requester is verifying, and only their
+acceptance closes a request (§12.4) — MIS must not yank a build back from under them.
+
+**Assignee-locked** — even an MIS_ADMIN may release only a build assigned to themselves.
+Deliberately stricter than the build steps: an admin may work anyone's build, but taking
+one off a colleague is a takeover, not an undo.
+
+**It always notifies** (§12.6), unlike an ISSUE release from OPEN: a request claim is
+itself announced ("{member} has picked up {number}"), so every release corrects
+something. Releasing a *started* build withdraws more — the delivery date committed at
+start-work — and the notice says so explicitly.
+
+> §12.3 originally allowed release **only while CLAIMED**, reasoning that "once started, a
+> delivery date has been promised to the requester, so it's no longer a quiet correction."
+> That is §5's argument verbatim, and it is wrong the same way: §12.6's reversal rule says
+> an announced change needs its reversal **announced, not forbidden**. Forbidding it left a
+> mis-started build with no way back at all — not releasable, not reassignable (there is no
+> takeover), only markable complete, which hands the requester something to test that was
+> never built. Both modules now behave identically: **claim or start by mistake, hand it
+> back, and the person who was told gets told.**
 
 ### 12.4 REQUEST permissions
 | Action | Requester (USER) | MIS_STAFF | MIS_ADMIN |
@@ -377,8 +407,10 @@ instead of it, and every email deep-links to `{NEXT_PUBLIC_APP_URL}/tickets/{num
 (§12.7's one link pattern). With `RESEND_API_KEY` unset the provider warns and returns
 `{ok:false}` — it never throws, so an unconfigured environment degrades to in-app only.
 
-- REQUEST_RELEASED → requester (the claim was undone — "{number} is back with the MIS
-  team"). See the reversal rule below.
+- REQUEST_RELEASED → requester (the claim or start was undone — "{number} is back with
+  the MIS team"). When the build had been STARTED, the notice also withdraws the delivery
+  date start-work committed to — releasing takes back both facts, so it states both. See
+  the reversal rule below.
 - **REQUEST_REVIVED → requester + MIS team** (a DROPPED request was brought back —
   "{number} is back under review"). The reversal of REQUEST_DECISION_RECORDED's drop,
   to the same recipients. Required by the rule below the moment the drop started
