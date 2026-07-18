@@ -1020,6 +1020,7 @@ export async function listTicketsForBulkDelete() {
       id: tickets.id,
       number: tickets.number,
       title: tickets.title,
+      type: tickets.type,
       department: tickets.department,
       status: tickets.status,
       priority: tickets.priority,
@@ -1028,7 +1029,10 @@ export async function listTicketsForBulkDelete() {
     })
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
-    .where(and(eq(tickets.type, "ISSUE"), isNull(tickets.deletedAt)))
+    // Both types (the view splits them into Issues / Request System tabs). The
+    // delete itself is admin-only (§6) and type-agnostic — soft delete lives on the
+    // shared tickets row, so a request bins to the same recycle bin as an issue.
+    .where(isNull(tickets.deletedAt))
     .orderBy(desc(tickets.createdAt));
 }
 

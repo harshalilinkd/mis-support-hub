@@ -17,6 +17,7 @@ import { RequestActions } from "./request-actions";
 import { RequestLogSystem } from "./request-log-system";
 import type { GranteeOption } from "@/components/systems/system-form";
 import { RequestBuildPanel } from "./request-build-panel";
+import { RequestDelete } from "./request-delete";
 import { RequestHistory } from "./request-history";
 import { RequestJourney } from "./request-journey";
 import { RequestProgress } from "./request-progress";
@@ -72,27 +73,38 @@ export function RequestDetail({
   const approved = request.status === "APPROVED";
   const decided = dropped || approved;
 
+  // Delete = recycle-bin (§9). Admin any time; the requester may withdraw their own
+  // only while it's still SUBMITTED. Mirrors deleteTicket's server-side rule (§6).
+  const isAdmin = currentUser.role === "MIS_ADMIN";
+  const isRequester = request.createdById === currentUser.id;
+  const canDelete = isAdmin || (isRequester && request.status === "SUBMITTED");
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-text-muted">{request.number}</span>
-          <TypeChip type="REQUEST" />
-          <StatusChip status={request.status} />
-          <PriorityChip priority={request.priority} />
-          {/* Revision counter — the UAT loop is uncapped, so how many times it came
-              back is front-page information (§12.5). */}
-          {request.revisionRound > 0 ? (
-            <span
-              title={`Sent back for changes ${request.revisionRound} time(s)`}
-              className="inline-flex items-center rounded-[var(--radius-chip)] bg-[color-mix(in_srgb,var(--priority-high)_14%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--priority-high)]"
-            >
-              Round {request.revisionRound + 1}
-            </span>
-          ) : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm text-text-muted">{request.number}</span>
+            <TypeChip type="REQUEST" />
+            <StatusChip status={request.status} />
+            <PriorityChip priority={request.priority} />
+            {/* Revision counter — the UAT loop is uncapped, so how many times it came
+                back is front-page information (§12.5). */}
+            {request.revisionRound > 0 ? (
+              <span
+                title={`Sent back for changes ${request.revisionRound} time(s)`}
+                className="inline-flex items-center rounded-[var(--radius-chip)] bg-[color-mix(in_srgb,var(--priority-high)_14%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--priority-high)]"
+              >
+                Round {request.revisionRound + 1}
+              </span>
+            ) : null}
+          </div>
+          <h1 className="mt-2 font-display text-2xl font-semibold">{request.systemName}</h1>
         </div>
-        <h1 className="mt-2 font-display text-2xl font-semibold">{request.systemName}</h1>
+        {canDelete ? (
+          <RequestDelete ticketId={request.id} number={request.number} />
+        ) : null}
       </div>
 
       {/* The journey so far (§12.3) — current stage highlighted, done stages ticked. */}

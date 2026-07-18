@@ -620,17 +620,28 @@ export async function deleteTicket(ticketId: string): Promise<ActionResult> {
 
   const isReporter = ticket.createdBy === user.id;
   const isAdmin = user.role === "MIS_ADMIN";
-  const canDelete = isAdmin || (isReporter && ticket.status === "OPEN");
+  // The reporter may withdraw their own ticket only in its earliest state — OPEN for
+  // an issue, SUBMITTED for a request (before MIS has started reviewing it). An admin
+  // may bin either type at any stage.
+  const withdrawState = ticket.type === "REQUEST" ? "SUBMITTED" : "OPEN";
+  const canDelete = isAdmin || (isReporter && ticket.status === withdrawState);
   if (!canDelete) {
     return fail(
       isReporter
-        ? "You can only delete a ticket while it's still open."
-        : "Only the reporter or an MIS admin can delete this ticket."
+        ? ticket.type === "REQUEST"
+          ? "You can only withdraw a request before MIS starts reviewing it."
+          : "You can only delete a ticket while it's still open."
+        : "Only the reporter or an MIS admin can delete this."
     );
   }
 
   await q.softDeleteTicketById(ticket.id, user.id);
   revalidateTicketRoutes(ticket.number);
+  // A binned request must also leave the request lists/board (§12.7).
+  if (ticket.type === "REQUEST") {
+    revalidatePath("/requests");
+    revalidatePath("/requests/board");
+  }
   revalidateRecycleBin();
   return ok(undefined);
 }
@@ -665,6 +676,10 @@ export async function bulkDeleteTickets(input: {
 
   if (deleted > 0) {
     revalidateTicketRoutes();
+    // The bulk list mixes issues and requests (Settings → Bulk Delete), so refresh
+    // the request surfaces too rather than guessing which types were in the batch.
+    revalidatePath("/requests");
+    revalidatePath("/requests/board");
     revalidateRecycleBin();
   }
   return ok({ deleted, failed: parsed.data.ticketIds.length - deleted });

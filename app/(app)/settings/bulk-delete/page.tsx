@@ -17,6 +17,7 @@ export default async function BulkDeletePage() {
     id: r.id,
     number: r.number,
     title: r.title,
+    type: r.type,
     department: r.department,
     status: r.status,
     priority: r.priority,
@@ -30,7 +31,7 @@ export default async function BulkDeletePage() {
         backHref="/settings"
         backLabel="Settings"
         title="Bulk Delete"
-        description="Select multiple tickets and move them to the recycle bin at once. Deleted tickets can be restored from the Recycle Bin."
+        description="Select multiple issues or system requests and move them to the recycle bin at once. Deleted tickets can be restored from the Recycle Bin."
       />
       <BulkDeleteView tickets={tickets} />
     </div>

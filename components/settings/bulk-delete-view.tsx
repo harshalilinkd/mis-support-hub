@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { Inbox, Search, Trash2 } from "lucide-react";
 
-import type { Department, Priority, Status } from "@/lib/db/schema";
+import type { Department, Priority, Status, TicketType } from "@/lib/db/schema";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
+import { cn } from "@/lib/utils";
 import { AbsoluteTime } from "@/components/absolute-time";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 import { BulkDeleteDialog } from "@/components/tickets/bulk-delete-dialog";
@@ -25,12 +26,18 @@ export type BulkDeleteTicket = {
   id: string;
   number: string;
   title: string;
+  type: TicketType;
   department: Department;
   status: Status;
   priority: Priority | null;
   createdByName: string | null;
   createdAt: string; // ISO
 };
+
+const TYPE_TABS: { key: TicketType; label: string }[] = [
+  { key: "ISSUE", label: "Issues" },
+  { key: "REQUEST", label: "Request System" },
+];
 
 /**
  * Settings → Bulk Delete: pick multiple active tickets and move them to the
@@ -40,17 +47,26 @@ export type BulkDeleteTicket = {
 export function BulkDeleteView({ tickets }: { tickets: BulkDeleteTicket[] }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<TicketType>("ISSUE");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  const counts = useMemo(() => {
+    const c: Record<TicketType, number> = { ISSUE: 0, REQUEST: 0 };
+    for (const t of tickets) c[t.type] += 1;
+    return c;
+  }, [tickets]);
+
+  // Filter by the active type tab first, then the search box.
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return tickets;
     return tickets.filter(
       (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.number.toLowerCase().includes(q)
+        t.type === tab &&
+        (!q ||
+          t.title.toLowerCase().includes(q) ||
+          t.number.toLowerCase().includes(q))
     );
-  }, [tickets, query]);
+  }, [tickets, query, tab]);
 
   // Select-all reflects the currently-searched rows.
   const allChecked: boolean | "indeterminate" =
@@ -94,15 +110,49 @@ export function BulkDeleteView({ tickets }: { tickets: BulkDeleteTicket[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="relative sm:w-72">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tickets…"
-          className="pl-9"
-          aria-label="Search tickets"
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Issues / Request System — the same soft-delete + recycle bin covers both. */}
+        <div className="flex rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
+          {TYPE_TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "bg-accent-soft text-primary"
+                    : "text-foreground hover:bg-surface-muted"
+                )}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                    active
+                      ? "bg-primary/15 text-primary"
+                      : "bg-surface-muted text-text-muted"
+                  )}
+                >
+                  {counts[t.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search tickets…"
+            className="pl-9"
+            aria-label="Search tickets"
+          />
+        </div>
       </div>
 
       {selectedIds.size > 0 ? (
@@ -153,7 +203,11 @@ export function BulkDeleteView({ tickets }: { tickets: BulkDeleteTicket[] }) {
                   colSpan={8}
                   className="py-10 text-center text-sm text-text-muted"
                 >
-                  No tickets match your search.
+                  {counts[tab] === 0
+                    ? tab === "REQUEST"
+                      ? "No active system requests to delete."
+                      : "No active issues to delete."
+                    : "No tickets match your search."}
                 </TableCell>
               </TableRow>
             ) : null}
