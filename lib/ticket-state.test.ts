@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import type { Role, Status } from "@/lib/db/schema";
 import {
   assertStatusForType,
+  availableRequestMoves,
   canLogProgress,
   canReleaseTicket,
   canTransition,
   releaseNeedsNotice,
+  type RequestMoveId,
 } from "./ticket-state";
 
 /**
@@ -264,4 +266,104 @@ test("legacy 2/3-arg canTransition remains a pure topology check", () => {
   assert.equal(canTransition("OPEN", "CLOSED"), false);
   assert.equal(canTransition("SUBMITTED", "UNDER_REVIEW", "REQUEST"), true);
   assert.equal(canTransition("SUBMITTED", "CLOSED", "REQUEST"), false);
+});
+
+/* ------------------------------------------------------------------ *
+ * availableRequestMoves — the inline row control shares this with the detail bar,
+ * so its promise is: every move it offers is a transition the server permits.
+ * ------------------------------------------------------------------ */
+
+// The status transition each move performs (release is from→APPROVED, computed below).
+const MOVE_TARGET: Record<RequestMoveId, Status> = {
+  review: "UNDER_REVIEW",
+  sendApproval: "PENDING_MD_APPROVAL",
+  recordDecision: "APPROVED", // (or DROPPED — both are admin-only, same gate)
+  revive: "UNDER_REVIEW",
+  claim: "CLAIMED",
+  startBuild: "IN_PROGRESS",
+  release: "APPROVED",
+  resume: "IN_PROGRESS",
+  markComplete: "IN_TESTING",
+  accept: "CLOSED",
+  requestChanges: "CHANGES_REQUESTED",
+};
+
+const REQUEST_STATES: Status[] = [
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "PENDING_MD_APPROVAL",
+  "APPROVED",
+  "DROPPED",
+  "CLAIMED",
+  "IN_PROGRESS",
+  "IN_TESTING",
+  "CHANGES_REQUESTED",
+  "CLOSED",
+];
+
+const ALL_ROLES: Role[] = [USER, STAFF, ADMIN];
+
+test("availableRequestMoves never offers a move the server would reject", () => {
+  // Exhaustive matrix: every status × role × requester/assignee/assigned combo.
+  for (const status of REQUEST_STATES) {
+    for (const role of ALL_ROLES) {
+      for (const isRequester of [false, true]) {
+        for (const isAssignee of [false, true]) {
+          for (const assigned of [false, true]) {
+            const moves = availableRequestMoves(status, {
+              role,
+              isRequester,
+              isAssignee,
+              assigned,
+            });
+            for (const m of moves) {
+              const to = MOVE_TARGET[m.id];
+              assert.equal(
+                canTransition("REQUEST", status, to, role, isRequester, isAssignee),
+                true,
+                `${role} was offered "${m.id}" from ${status} (${status}→${to}) but the gate rejects it`
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+test("availableRequestMoves: the right moves for the right actor", () => {
+  const ids = (status: Status, ctx: Parameters<typeof availableRequestMoves>[1]) =>
+    availableRequestMoves(status, ctx).map((m) => m.id);
+  const staffCtx = { role: STAFF, isRequester: false, isAssignee: false, assigned: false };
+  const adminCtx = { role: ADMIN, isRequester: false, isAssignee: false, assigned: false };
+  const userCtx = { role: USER, isRequester: false, isAssignee: false, assigned: false };
+
+  // Staff advance the pipeline; a plain USER gets nothing on staff-only stages.
+  assert.deepEqual(ids("SUBMITTED", staffCtx), ["review"]);
+  assert.deepEqual(ids("SUBMITTED", userCtx), []);
+  assert.deepEqual(ids("UNDER_REVIEW", staffCtx), ["sendApproval"]);
+
+  // The MD decision is admin-only (recorded on their behalf).
+  assert.deepEqual(ids("PENDING_MD_APPROVAL", adminCtx), ["recordDecision"]);
+  assert.deepEqual(ids("PENDING_MD_APPROVAL", staffCtx), []);
+
+  // Claim shows only while unassigned; once assigned there's nothing to advance here.
+  assert.deepEqual(ids("APPROVED", staffCtx), ["claim"]);
+  assert.deepEqual(ids("APPROVED", { ...staffCtx, assigned: true }), []);
+
+  // Release is assignee-locked — an admin who isn't the assignee can't release it,
+  // but can still build (start) it.
+  const assigneeStaff = { role: STAFF, isRequester: false, isAssignee: true, assigned: true };
+  assert.deepEqual(ids("CLAIMED", assigneeStaff), ["startBuild", "release"]);
+  assert.deepEqual(ids("CLAIMED", { ...adminCtx, assigned: true }), ["startBuild"]);
+
+  // UAT gate: only the requester closes; requester or admin may send it back; a
+  // non-requester staff member gets no move at all.
+  const requester = { role: USER, isRequester: true, isAssignee: false, assigned: true };
+  assert.deepEqual(ids("IN_TESTING", requester), ["accept", "requestChanges"]);
+  assert.deepEqual(ids("IN_TESTING", { ...adminCtx, assigned: true }), ["requestChanges"]);
+  assert.deepEqual(ids("IN_TESTING", { ...staffCtx, assigned: true }), []);
+
+  // A closed request is terminal for everyone.
+  assert.deepEqual(ids("CLOSED", adminCtx), []);
 });

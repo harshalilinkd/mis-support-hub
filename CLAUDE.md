@@ -460,6 +460,13 @@ fill an inbox for no gain, and no earlier email is made false by it.
     AND §12.4 permissions. Every request action gates on it (via one `allows()` helper),
     so the tests protect production. (A legacy `canTransition(from, to, type?)` overload
     remains for the issue board's topology-only check.)
+  - `availableRequestMoves(status, {role, isRequester, isAssignee, assigned})` — the ONE
+    list of stage moves a viewer may make from a status, shared by the detail action bar
+    and the **inline stage control on the requests list** (`RequestStageControl`), so the
+    two can't drift. Each move is tagged `inline` (runs its server action from the row) or
+    `detail` (needs a priority/date/verdict/note → opens the detail, where the tested
+    dialog collects it). A unit test asserts every offered move is a transition
+    `canTransition` permits, so the row never shows a move the server rejects.
 - **Type isolation:** the ISSUE actions reject REQUEST ids, and every issue
   list/count/analytics query filters `type = 'ISSUE'` — otherwise requests leak into
   the issue lists/dashboard, and MIS could force-close a request through the ISSUE

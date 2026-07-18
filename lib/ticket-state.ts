@@ -320,3 +320,111 @@ export function canLogProgress(
   if (status !== "IN_PROGRESS") return false;
   return isStaffRole && isAssignee;
 }
+
+/* ------------------------------------------------------------------ *
+ * REQUEST stage moves — the ONE list of what a viewer may do from a given status,
+ * shared by the detail action bar and the inline row control on the requests list,
+ * so the two can't drift (the same convention as canReleaseTicket / canLogProgress).
+ * ------------------------------------------------------------------ */
+
+/** The stable ids of every REQUEST stage move (each maps to one server action). */
+export type RequestMoveId =
+  | "review" // → UNDER_REVIEW
+  | "sendApproval" // → PENDING_MD_APPROVAL
+  | "recordDecision" // → APPROVED | DROPPED (needs the verdict)
+  | "revive" // → UNDER_REVIEW
+  | "claim" // → CLAIMED (needs a priority)
+  | "startBuild" // → IN_PROGRESS (needs a delivery date)
+  | "release" // → APPROVED (undo a claim/start)
+  | "resume" // → IN_PROGRESS
+  | "markComplete" // → IN_TESTING (needs a handover note)
+  | "accept" // → CLOSED
+  | "requestChanges"; // → CHANGES_REQUESTED (needs a note)
+
+export type RequestMove = {
+  id: RequestMoveId;
+  label: string;
+  /**
+   * "inline" carries no extra input and runs its server action straight from the
+   * row; "detail" needs a priority / date / verdict / note, so the row opens the
+   * request's detail where the existing, tested dialog collects it.
+   */
+  kind: "inline" | "detail";
+};
+
+export type RequestMoveContext = {
+  role: Role;
+  /** The viewer created this request. */
+  isRequester: boolean;
+  /** The viewer is this request's current assignee. */
+  isAssignee: boolean;
+  /** The request currently has an assignee. */
+  assigned: boolean;
+};
+
+/**
+ * The stage moves a viewer may make from `status` (§12.3/§12.4). This is the exact
+ * union of what `RequestActions`, `RequestBuildPanel` and `RequestUatPanel` offer,
+ * and every entry corresponds to a transition `requestActorAllows` permits — so a
+ * move is never shown that the server would reject. Empty ⇒ render a read-only chip.
+ */
+export function availableRequestMoves(
+  status: Status,
+  ctx: RequestMoveContext
+): RequestMove[] {
+  const isAdmin = ctx.role === "MIS_ADMIN";
+  const isStaff = ctx.role === "MIS_STAFF" || isAdmin;
+  const canBuild = isAdmin || (isStaff && ctx.isAssignee);
+  const isAssigneeStaff = isStaff && ctx.isAssignee; // release is assignee-locked
+  const moves: RequestMove[] = [];
+
+  switch (status) {
+    case "SUBMITTED":
+      if (isStaff) moves.push({ id: "review", label: "Start review", kind: "inline" });
+      break;
+    case "UNDER_REVIEW":
+      if (isStaff)
+        moves.push({ id: "sendApproval", label: "Send for approval", kind: "inline" });
+      break;
+    case "PENDING_MD_APPROVAL":
+      if (isAdmin)
+        moves.push({ id: "recordDecision", label: "Record decision…", kind: "detail" });
+      break;
+    case "APPROVED":
+      // Claim is offered only while unassigned (RequestBuildPanel), and sets a priority.
+      if (isStaff && !ctx.assigned)
+        moves.push({ id: "claim", label: "Claim…", kind: "detail" });
+      break;
+    case "DROPPED":
+      if (isAdmin) moves.push({ id: "revive", label: "Revive", kind: "inline" });
+      break;
+    case "CLAIMED":
+      if (canBuild)
+        moves.push({ id: "startBuild", label: "Start building…", kind: "detail" });
+      if (isAssigneeStaff)
+        moves.push({ id: "release", label: "Release", kind: "inline" });
+      break;
+    case "IN_PROGRESS":
+      if (canBuild)
+        moves.push({ id: "markComplete", label: "Mark complete…", kind: "detail" });
+      if (isAssigneeStaff)
+        moves.push({ id: "release", label: "Release", kind: "inline" });
+      break;
+    case "CHANGES_REQUESTED":
+      if (canBuild) moves.push({ id: "resume", label: "Resume build", kind: "inline" });
+      if (isAssigneeStaff)
+        moves.push({ id: "release", label: "Release", kind: "inline" });
+      break;
+    case "IN_TESTING":
+      // Only the requester closes; the requester or an admin can send it back (§12.4).
+      if (ctx.isRequester)
+        moves.push({ id: "accept", label: "Accept & close", kind: "inline" });
+      if (ctx.isRequester || isAdmin)
+        moves.push({ id: "requestChanges", label: "Request changes…", kind: "detail" });
+      break;
+    // APPROVED-with-assignee, CLOSED: nothing to advance from here.
+    default:
+      break;
+  }
+  return moves;
+}

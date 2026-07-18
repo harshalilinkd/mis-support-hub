@@ -21,8 +21,9 @@ import type { Status } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
-import { PriorityChip, StatusChip, statusColor } from "./chips";
+import { PriorityChip, statusColor } from "./chips";
 import { RequestSheet } from "./request-sheet";
+import { RequestStageControl } from "./request-stage-control";
 
 type TabKey =
   | "all"
@@ -135,6 +136,14 @@ export function RequestsView({
   }, [searched, tab]);
 
   const open = (number: string) => setSelected(number);
+  // The viewer's relationship to a row — drives which inline stage moves show
+  // (§12.4). Shared by the desktop table and the mobile cards.
+  const stageCtx = (r: RequestListRow) => ({
+    role: currentUser.role,
+    isRequester: r.createdById === currentUser.id,
+    isAssignee: r.assignedToId === currentUser.id,
+    assigned: !!r.assignedToId,
+  });
   const onKeyOpen = (number: string) => (e: React.KeyboardEvent) => {
     if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -223,7 +232,15 @@ export function RequestsView({
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 font-mono text-xs font-semibold">{r.number}</span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.systemName}</span>
-                  <StatusChip status={r.status} className="shrink-0" />
+                  <span className="shrink-0">
+                    <RequestStageControl
+                      ticketId={r.id}
+                      number={r.number}
+                      status={r.status}
+                      ctx={stageCtx(r)}
+                      onOpenDetail={open}
+                    />
+                  </span>
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
                   <PriorityChip priority={r.priority} className="shrink-0" />
@@ -275,7 +292,15 @@ export function RequestsView({
                     <TableCell className="whitespace-nowrap text-sm text-foreground">
                       {DEPARTMENT_LABELS[r.department]}
                     </TableCell>
-                    <TableCell><StatusChip status={r.status} /></TableCell>
+                    <TableCell>
+                      <RequestStageControl
+                        ticketId={r.id}
+                        number={r.number}
+                        status={r.status}
+                        ctx={stageCtx(r)}
+                        onOpenDetail={open}
+                      />
+                    </TableCell>
                     <TableCell><PriorityChip priority={r.priority} /></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
