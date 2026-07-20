@@ -31,8 +31,13 @@ export default async function TicketDetailPage({
   const { number } = await params;
   const user = await requireUser();
   const viewer = { id: user.id, role: user.role };
-  const backUrl = isStaff(user.role) ? "/tickets" : "/my";
-  const backLabel = isStaff(user.role) ? "All Tickets" : "My Tickets";
+  // The back-link follows the PIPELINE, not just the role. This route is shared by
+  // both types (§12.7), so a fixed "/tickets" sent someone viewing REQ-005 "back" to
+  // the issue list — a list that does not contain it. Defaults are the ISSUE ones;
+  // the REQUEST branch below overrides them. Labels mirror the sidebar exactly
+  // (`sectionsFor` swaps "All Requests" → "My Requests" for a USER).
+  let backUrl = isStaff(user.role) ? "/tickets" : "/my";
+  let backLabel = isStaff(user.role) ? "All Issues" : "My Tickets";
 
   let content: React.ReactNode;
 
@@ -40,6 +45,8 @@ export default async function TicketDetailPage({
   // render the type-appropriate detail. Both queries enforce §6 visibility.
   const request = await getRequestByNumber(number, viewer);
   if (request) {
+    backUrl = "/requests";
+    backLabel = isStaff(user.role) ? "All Requests" : "My Requests";
     // §13.5's log-a-system prompt needs an owner list and the grantee checklist.
     // Fetched only on the REQUEST branch, and only for someone who could actually
     // log it — an issue detail or a plain requester pays nothing for this.

@@ -7,6 +7,7 @@ import { listRequests } from "@/lib/db/queries";
 import { isStaff } from "@/lib/roles";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
+import { ScopeToggle } from "@/components/dashboard/scope-toggle";
 import { RequestsView } from "@/components/tickets/requests-view";
 import { RequestViewToggle } from "@/components/tickets/request-view-toggle";
 
@@ -26,7 +27,10 @@ export default async function RequestsPage() {
             : "New-system requests you've submitted and their progress."
         }
       >
-        <div className="flex w-full items-center gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {/* Staff only — /tickets is staff-gated, so a USER must not be offered a
+              link that would just redirect them. They use the sidebar instead. */}
+          {isStaff(user.role) ? <ScopeToggle /> : null}
           <RequestViewToggle />
           <Button asChild size="sm" className="shrink-0">
             <Link href="/requests/new">

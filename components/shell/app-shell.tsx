@@ -48,50 +48,92 @@ type NavItem = {
 };
 
 type NavSection = {
-  label: string;
+  id: string;
+  /**
+   * Optional BY DESIGN. A header costs a text row + a gap, so it must earn that space
+   * by disambiguating something. Only the two pipelines do; a lone link is its own
+   * label, and "Directory → Systems" just says Systems twice. Unlabeled groups render
+   * as a bare run of links, separated by a rule instead of a word.
+   */
+  label?: string;
   staffOnly?: boolean;
   adminOnly?: boolean;
   items: NavItem[];
 };
 
-// Resequenced: Overview (Dashboard, Board) then Tickets (My Tickets, Raise Ticket).
+/**
+ * The two pipelines get their OWN sections (§5 issues, §12 requests). They used to
+ * share a "Tickets" section while the issue-only surfaces sat under a generic
+ * "Overview" ("All Tickets", "Board"), which made it impossible to tell at a glance
+ * which menu belonged to which pipeline. Each section now names its pipeline and the
+ * issue-only entries say "issue" outright.
+ *
+ * The two pipeline sections are deliberately UNGATED at the section level, with each
+ * item carrying its own flag: `sectionsFor` filters sections BEFORE items, so a
+ * staff-only section would hide its employee-facing entries entirely.
+ */
 const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Overview",
+    // The dashboard reports on BOTH pipelines (its own Issues/Requests toggle), so
+    // it stays above the split rather than living in either section. Unlabeled: an
+    // "Overview" header over one self-explanatory link is pure chrome.
+    id: "overview",
     staffOnly: true,
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, staffOnly: true },
-      { href: "/tickets", label: "All Tickets", icon: ListChecks, staffOnly: true },
-      { href: "/board", label: "Board", icon: KanbanSquare, staffOnly: true },
     ],
   },
   {
-    label: "Tickets",
+    id: "issues",
+    label: "Issues",
     items: [
-      { href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" },
+      { href: "/tickets", label: "All Issues", icon: ListChecks, staffOnly: true },
+      { href: "/board", label: "Issue Board", icon: KanbanSquare, staffOnly: true },
       { href: "/new", label: "Report an issue", icon: PlusCircle },
-      // REQUEST surface (§12.7) — visible to everyone; a USER sees only their own.
-      // One entry only: the list carries the "New request" button + empty-state CTA,
-      // so /requests/new needs no nav item of its own (it highlights this parent).
-      { href: "/requests", label: "Request a system", icon: Sparkles },
     ],
   },
   {
-    // §13.3 — the systems directory is company-wide readable (the first
-    // authenticated read-all surface; a deliberate departure from §6's row-scoping).
-    // It needs its OWN ungated section: `sectionsFor` filters sections BEFORE items,
-    // so an entry inside staff-only Overview or admin-only Administration would be
-    // invisible to a USER no matter how the item itself is flagged. One entry only —
-    // /systems/new and /systems/[code] highlight this parent via longest-prefix match.
-    label: "Directory",
-    items: [{ href: "/systems", label: "Systems", icon: Library }],
+    // REQUEST surfaces (§12.7) — visible to everyone; a USER sees only their own.
+    // /requests/new now has its own entry so "New request" mirrors "Report an issue";
+    // longest-prefix matching keeps it distinct from its /requests parent.
+    id: "requests",
+    label: "System Requests",
+    items: [
+      { href: "/requests", label: "All Requests", icon: Sparkles },
+      { href: "/requests/board", label: "Request Board", icon: KanbanSquare },
+      { href: "/requests/new", label: "New Request", icon: PlusCircle },
+    ],
   },
   {
-    label: "Administration",
-    adminOnly: true,
-    // Users / Bulk Delete / Recycle Bin now live inside the Settings screen
-    // rather than as separate sidebar entries.
+    // Personal work queue — deliberately OUTSIDE both pipelines, after them.
+    //
+    // Not just layout: for staff, /my renders MyWorkView with BOTH their assigned
+    // issues AND the requests they're building (§12.3), and the page says so —
+    // "Your work — issue tickets and the system requests you're building". Nesting it
+    // under Issues claimed it was an issue surface, which for its main audience is
+    // simply false. It answers "what's on my plate", a question that cuts across both
+    // pipelines, so it sits on its own between them and the tail group.
+    //
+    // (For a USER the page IS issue-only — listMyTickets filters type = 'ISSUE' — but
+    // their requests are one link up under "My Requests", so nothing is stranded.)
+    id: "mine",
+    items: [{ href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" }],
+  },
+  {
+    // The two former singleton sections, "Directory" and "Administration", merged into
+    // one unlabeled tail group — neither header disambiguated anything its own link
+    // didn't already say.
+    //
+    // The GROUP stays ungated while Settings carries adminOnly ITSELF, and that split
+    // is load-bearing: §13.3's systems directory is company-wide readable (the first
+    // authenticated read-all surface, a deliberate departure from §6's row-scoping),
+    // and `sectionsFor` filters sections BEFORE items — so an adminOnly group would
+    // hide Systems from every USER no matter how the item is flagged.
+    // /systems/new and /systems/[code] highlight this parent via longest-prefix match.
+    // Users / Bulk Delete / Recycle Bin live inside the Settings screen, not here.
+    id: "more",
     items: [
+      { href: "/systems", label: "Systems", icon: Library },
       { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
     ],
   },
@@ -108,16 +150,27 @@ function sectionsFor(role: Role) {
   const isAdmin = role === "MIS_ADMIN";
   const allow = (x: { staffOnly?: boolean; adminOnly?: boolean }) =>
     (!x.staffOnly || isStaff) && (!x.adminOnly || isAdmin);
-  return NAV_SECTIONS.filter(allow).map((s) => ({
-    ...s,
-    items: s.items.filter(allow).map((item) =>
-      // Staff don't raise tickets from here — /my is their assigned work queue,
-      // so "My Tickets" is misleading; show "Assigned to Me" for staff/admins.
-      item.href === "/my" && isStaff
-        ? { ...item, label: "Assigned to Me" }
-        : item
-    ),
-  }));
+  return NAV_SECTIONS.filter(allow)
+    .map((s) => ({
+      ...s,
+      items: s.items.filter(allow).map((item) => {
+        // Staff don't raise tickets from here — /my is their assigned work queue,
+        // so "My Tickets" is misleading; show "Assigned to Me" for staff/admins.
+        if (item.href === "/my" && isStaff) {
+          return { ...item, label: "Assigned to Me" };
+        }
+        // A USER only ever sees requests they raised (§12.7 row-level visibility), so
+        // "All Requests" would overpromise — matches the page's own title swap.
+        if (item.href === "/requests" && !isStaff) {
+          return { ...item, label: "My Requests" };
+        }
+        return item;
+      }),
+    }))
+    // Now that groups are ungated so their items can carry their own flags, a group
+    // can end up empty for a given role. Drop those — an empty group would still
+    // render its header or divider, i.e. a label for nothing.
+    .filter((s) => s.items.length > 0);
 }
 
 export function AppShell({
@@ -170,7 +223,7 @@ export function AppShell({
         title={item.label}
         onClick={onNavigate}
         className={cn(
-          "group flex items-center gap-3 rounded-[var(--radius-input)] px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "group flex items-center gap-2.5 rounded-[var(--radius-input)] px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           dense && "justify-center lg:justify-start",
           active
             ? "bg-accent-soft text-primary"
@@ -240,12 +293,18 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-          {sections.map((section) => (
-            <div key={section.label} className="space-y-1">
-              <div className="hidden px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">
-                {section.label}
-              </div>
+        <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+          {sections.map((section, i) => (
+            <div key={section.id} className="space-y-0.5">
+              {section.label ? (
+                <div className="hidden px-3 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">
+                  {section.label}
+                </div>
+              ) : i > 0 ? (
+                // An unlabeled tail group still needs to read as separate — a hairline
+                // does that in 1px where a header costs a whole text row.
+                <div className="mx-3 mb-2 border-t border-border" />
+              ) : null}
               {section.items.map((item) => (
                 <NavLink key={item.href} item={item} dense />
               ))}
@@ -276,12 +335,16 @@ export function AppShell({
               <div className="flex h-16 items-center border-b border-border px-4">
                 {brand}
               </div>
-              <nav className="space-y-5 p-3">
-                {sections.map((section) => (
-                  <div key={section.label} className="space-y-1">
-                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                      {section.label}
-                    </div>
+              <nav className="space-y-3 p-3">
+                {sections.map((section, i) => (
+                  <div key={section.id} className="space-y-0.5">
+                    {section.label ? (
+                      <div className="px-3 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                        {section.label}
+                      </div>
+                    ) : i > 0 ? (
+                      <div className="mx-3 mb-2 border-t border-border" />
+                    ) : null}
                     {section.items.map((item) => (
                       <NavLink
                         key={item.href}
