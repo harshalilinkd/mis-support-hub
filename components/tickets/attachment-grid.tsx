@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AudioLines, Download, FileText } from "lucide-react";
+import { AudioLines, Download, FileText, Maximize2, X } from "lucide-react";
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatBytes, isAudioType, isImageType } from "@/lib/attachments";
 import { AudioPlayer } from "./audio-player";
 
@@ -116,7 +121,15 @@ export function AttachmentGrid({
 
       <Dialog open={!!active} onOpenChange={(open) => !open && setActive(null)}>
         <DialogContent
-          className="max-w-3xl p-2"
+          // Image-first lightbox. The width overrides are load-bearing: the base
+          // DialogContent sets `sm:max-w-lg` (512px), and a bare `max-w-*` only
+          // replaces the UNPREFIXED width — so on a desktop screen the old
+          // `max-w-3xl` was silently beaten by `sm:max-w-lg` and a wide screenshot
+          // got crushed into 512px. We override every breakpoint and let the box
+          // size to the image (up to 96vw × 90vh), floating frameless on the
+          // backdrop so nothing steals room from the picture.
+          showCloseButton={false}
+          className="w-auto max-w-[96vw] gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-[96vw]"
           // Lightbox: clicking the backdrop or pressing Escape should dismiss
           // the image (nothing to lose) — opt out of the app-wide
           // close-only-via-X default by allowing the default dismiss.
@@ -127,12 +140,48 @@ export function AttachmentGrid({
             {active?.filename ?? "Attachment"}
           </DialogTitle>
           {active ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={active.url}
-              alt={active.filename}
-              className="mx-auto max-h-[80vh] w-auto rounded-[var(--radius-input)]"
-            />
+            <div className="relative flex flex-col items-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={active.url}
+                alt={active.filename}
+                className="max-h-[90vh] w-auto max-w-[96vw] rounded-[var(--radius-card)] object-contain shadow-2xl"
+              />
+              {/* Toolbar on a solid pill so the controls stay legible over any
+                  image. "Open full size" escapes the 96vw cap for pixel-level
+                  detail (a dense table screenshot); download + close beside it. */}
+              <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-full bg-black/60 p-1 backdrop-blur">
+                <a
+                  href={active.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open full size in a new tab"
+                  className="rounded-full p-1.5 text-white/90 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <Maximize2 className="size-4" />
+                </a>
+                <a
+                  href={active.url}
+                  download={active.filename}
+                  title="Download"
+                  className="rounded-full p-1.5 text-white/90 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <Download className="size-4" />
+                </a>
+                <DialogClose
+                  title="Close"
+                  className="rounded-full p-1.5 text-white/90 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <X className="size-4" />
+                  <span className="sr-only">Close</span>
+                </DialogClose>
+              </div>
+              {/* Filename caption — small, unobtrusive, helps when several similar
+                  screenshots are attached. */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 truncate rounded-b-[var(--radius-card)] bg-gradient-to-t from-black/70 to-transparent px-4 pb-2 pt-8 text-center text-xs font-medium text-white/90">
+                {active.filename}
+              </div>
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>

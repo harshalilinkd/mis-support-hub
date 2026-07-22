@@ -4,7 +4,6 @@ import { requireUser } from "@/lib/authz";
 import { listAssignedToMe, listMyTickets, listRequests } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
 import { PageHeader } from "@/components/shell/page-header";
-import { MyTicketsView } from "@/components/tickets/my-tickets-view";
 import { MyWorkView } from "@/components/tickets/my-work-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
@@ -17,11 +16,16 @@ export default async function MyTicketsPage() {
   const rows = isStaff
     ? await listAssignedToMe(user.id)
     : await listMyTickets(user.id);
-  // A claimed system request is that member's work too (§12.3) — it belongs in the
-  // same place as their tickets, in its own section.
+  // BOTH audiences get their requests here, so /my is one home for everything the
+  // viewer is involved with — not just issues:
+  //  • staff  → requests they're BUILDING (assigned to them, §12.3)
+  //  • USER   → requests they SUBMITTED (listRequests row-scopes a USER to their own,
+  //             §12.7), so it mirrors the issues-they-raised list beside it.
+  // Employees kept losing their requests because /my only listed issues; the combined
+  // MyWorkView (Issues | System Requests sub-tabs) is that missing surface.
   const myRequests = isStaff
     ? await listRequests({ id: user.id, role: user.role }, { assignedTo: user.id })
-    : [];
+    : await listRequests({ id: user.id, role: user.role });
 
   const tickets = rows.map((r) => ({
     id: r.id,
@@ -45,14 +49,19 @@ export default async function MyTicketsPage() {
         description={
           isStaff
             ? "Your work — issue tickets and the system requests you're building."
-            : "Tickets you've raised, most recent first."
+            : "Everything you've raised — issues you reported and system requests you submitted."
         }
       />
-      {isStaff ? (
-        <MyWorkView tickets={tickets} requests={myRequests} currentUser={user} />
-      ) : (
-        <MyTicketsView tickets={tickets} variant="raised" currentUser={user} />
-      )}
+      {/* Both roles use the combined view (Issues | System Requests sub-tabs). The
+          only difference is the ticket sub-view's variant: staff are working tickets
+          ASSIGNED to them (inline status/priority controls); a USER is looking at
+          tickets they RAISED (read-only chips, assignee column). */}
+      <MyWorkView
+        tickets={tickets}
+        requests={myRequests}
+        currentUser={user}
+        variant={isStaff ? "assigned" : "raised"}
+      />
     </div>
   );
 }

@@ -13,20 +13,29 @@ import type { TicketCardData } from "./ticket-card";
 type Section = "tickets" | "systems";
 
 /**
- * "Assigned to Me" for an MIS member: their issue queue and their system-request
- * builds are different work, so they get their own section rather than being mixed
- * into one list. Each section reuses the list that already owns it — MyTicketsView
- * (status tabs + inline controls) and RequestsView (stage tabs + request sheet) —
- * so there is no second implementation to drift.
+ * The combined "my involvement" view — issues and system requests are different work,
+ * so they get their own sub-tab rather than being mixed into one list. Each sub-tab
+ * reuses the list that already owns it — MyTicketsView (status tabs + inline controls)
+ * and RequestsView (stage tabs + request sheet) — so there is no second implementation
+ * to drift.
+ *
+ * Used for BOTH audiences, differing only by `variant` (which the ticket sub-view uses
+ * to decide raised-vs-assigned columns/controls):
+ *  • staff ("Assigned to Me") → issues assigned to them + requests they're building.
+ *  • USER  ("My Tickets")     → issues they raised + requests they submitted. Employees
+ *    used to lose their requests entirely because /my listed only issues; this is the
+ *    surface that fixes that.
  */
 export function MyWorkView({
   tickets,
   requests,
   currentUser,
+  variant = "assigned",
 }: {
   tickets: TicketCardData[];
   requests: RequestListRow[];
   currentUser: SessionUser;
+  variant?: "raised" | "assigned";
 }) {
   // Land on whichever section actually has work; tickets win a tie.
   const [section, setSection] = useState<Section>(() =>
@@ -34,8 +43,8 @@ export function MyWorkView({
   );
 
   const SECTIONS: { key: Section; label: string; icon: typeof Ticket; count: number }[] = [
-    { key: "tickets", label: "Tickets", icon: Ticket, count: tickets.length },
-    { key: "systems", label: "Systems", icon: Sparkles, count: requests.length },
+    { key: "tickets", label: "Issues", icon: Ticket, count: tickets.length },
+    { key: "systems", label: "System Requests", icon: Sparkles, count: requests.length },
   ];
 
   return (
@@ -71,7 +80,7 @@ export function MyWorkView({
       </div>
 
       {section === "tickets" ? (
-        <MyTicketsView tickets={tickets} variant="assigned" currentUser={currentUser} />
+        <MyTicketsView tickets={tickets} variant={variant} currentUser={currentUser} />
       ) : (
         <RequestsView requests={requests} currentUser={currentUser} />
       )}

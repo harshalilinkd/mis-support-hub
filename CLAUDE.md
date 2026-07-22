@@ -440,31 +440,45 @@ fill an inbox for no gain, and no earlier email is made false by it.
 - **Shared, type-aware detail:** `/tickets/[number]` renders BOTH types, branching on
   `type` to show issue vs request panels. One route, one deep-link pattern, used by
   every notification link.
-- **Separate request surfaces**, and the sidebar names the pipeline each one belongs to.
-  The nav is grouped by pipeline, NOT by surface kind — a generic "Overview" holding
-  "All Tickets" + "Board" made it impossible to tell at a glance which pipeline a menu
-  served, which is the confusion this grouping exists to remove. Issue-only entries say
-  "issue" outright:
-  - **Issues** — `/tickets` ("All Issues", staff), `/board` ("Issue Board", staff),
-    `/new` ("Report an issue").
-  - **System Requests** — `/requests` ("All Requests"; "My Requests" for a USER),
-    `/requests/board` ("Request Board"), `/requests/new` ("New Request"). `/requests/new`
-    now has its OWN entry so it mirrors "Report an issue"; it is still also reachable from
-    the list's header button + empty-state CTA. (This supersedes the earlier rule of a
-    *single* "Request a system" entry with no entry for the intake form.)
-  - `/my` sits **outside both groups**, after them. For staff it is not an issue surface:
-    it lists their assigned issues AND the requests they are building (§12.3), so nesting
-    it under Issues mislabelled it. `/dashboard` likewise sits above the split — it
-    reports on both pipelines via its own toggle.
+- **The sidebar is built PER ROLE** (`navSectionsFor(role)`), not one list filtered by
+  flags — the two audiences want genuinely different SHAPES, not the same menu with rows
+  hidden, and flag-filtering also can't reorder (an employee needs "My Tickets" at the
+  top, staff need it mid-list). Construction sets order and labels directly.
+  - **MIS staff / admin** get the pipeline-grouped triage nav, so it is obvious at a
+    glance which pipeline a menu serves (a generic "Overview" holding "All Tickets" +
+    "Board" made that impossible — the confusion this grouping removes). Issue-only
+    entries say "issue" outright:
+    - **Issues** — `/tickets` ("All Issues"), `/board` ("Issue Board"), `/new`
+      ("Report an issue").
+    - **System Requests** — `/requests` ("All Requests"), `/requests/board`
+      ("Request Board"), `/requests/new` ("New Request").
+    - `/dashboard` ("Dashboard") sits above the split (reports on both pipelines via its
+      own toggle); **"Assigned to Me"** (`/my`) sits below both — their cross-pipeline
+      work queue (assigned issues AND requests they are building, §12.3).
+    - Systems (§13.3) + admin-only Settings form an unlabeled tail group.
+  - **Employees (USER)** never triage, so they get a job-oriented nav, NOT the staff nav
+    with rows removed. The old approach left them a broken shape (a lone "Report an issue"
+    under an ISSUES header, their issue list orphaned at the bottom, a pointless "Request
+    Board" of their own 1–2 requests, and a redundant "My Requests"). Their nav is exactly
+    three jobs:
+    1. **My Tickets** (`/my`) — ONE home showing BOTH their issues and their requests
+       (see the `/my` note below). This is why employees have **no** "My Requests" or
+       "Request Board" link: the first is redundant with the sub-tab, the second is noise.
+    2. The two RAISE actions, kept deliberately distinct so "broken system" can't blur
+       into "new system" — **"Report an issue"** (`/new`) vs **"Request a system"**
+       (`/requests/new`).
+    3. **Systems** (`/systems`) — the company-wide directory (§13.3).
+  - **`/my` shows BOTH types for everyone** via `MyWorkView` (an Issues | System Requests
+    sub-tab pair, each reusing its real list — `MyTicketsView` / `RequestsView`). Its one
+    `variant` differs by role: staff see tickets ASSIGNED to them (inline controls), a USER
+    sees tickets they RAISED (read-only) + requests they submitted (row-scoped, §12.7).
+    (Previously `/my` was issue-only for a USER, which stranded their requests — the bug
+    this fixes.)
   - **Section headers are optional and must earn their space** (`label?` on `NavSection`).
-    A header costs a text row plus a gap, so it is used only where it disambiguates —
-    i.e. the two pipelines. Lone links (Dashboard, `/my`, Systems + Settings) render as
-    unlabeled groups separated by a hairline rule.
-  - **Pipeline groups stay UNGATED, with each item carrying its own role flag**, because
-    `sectionsFor` filters sections BEFORE items: a staffOnly group would hide its
-    employee-facing entries, and an adminOnly tail group would hide §13.3's company-wide
-    Systems directory from every USER. Groups that filter down to zero items are dropped,
-    so a header or rule never renders over nothing.
+    A header costs a text row plus a gap, so it is used only where it disambiguates — i.e.
+    the two staff pipelines. Lone links render as unlabeled groups separated by a hairline
+    rule. `sectionsFor` still drops any empty group as a safety net so a header/rule never
+    renders over nothing.
 - **A pipeline toggle on every list/board surface** (`ScopeToggle`) — the issue⇄request
   switch on `/tickets`, `/board`, `/requests`, `/requests/board`. It NAVIGATES rather than
   filtering in place, preserving the Table/Board choice across the switch. The two lists

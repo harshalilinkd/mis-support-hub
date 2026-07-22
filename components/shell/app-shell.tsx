@@ -42,8 +42,6 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  staffOnly?: boolean;
-  adminOnly?: boolean;
   badge?: "myActive";
 };
 
@@ -51,93 +49,98 @@ type NavSection = {
   id: string;
   /**
    * Optional BY DESIGN. A header costs a text row + a gap, so it must earn that space
-   * by disambiguating something. Only the two pipelines do; a lone link is its own
-   * label, and "Directory → Systems" just says Systems twice. Unlabeled groups render
-   * as a bare run of links, separated by a rule instead of a word.
+   * by disambiguating something. Only the two staff pipelines do; a lone link is its
+   * own label. Unlabeled groups render as a bare run of links split by a rule.
    */
   label?: string;
-  staffOnly?: boolean;
-  adminOnly?: boolean;
   items: NavItem[];
 };
 
 /**
- * The two pipelines get their OWN sections (§5 issues, §12 requests). They used to
- * share a "Tickets" section while the issue-only surfaces sat under a generic
- * "Overview" ("All Tickets", "Board"), which made it impossible to tell at a glance
- * which menu belonged to which pipeline. Each section now names its pipeline and the
- * issue-only entries say "issue" outright.
+ * The sidebar is built PER ROLE — not one list filtered by flags — because the two
+ * audiences want genuinely different SHAPES, not the same menu with rows hidden.
+ * (The flag approach also couldn't reorder: an employee needs "My Tickets" at the
+ * TOP, staff need it in the middle. Construction handles order and labels directly.)
  *
- * The two pipeline sections are deliberately UNGATED at the section level, with each
- * item carrying its own flag: `sectionsFor` filters sections BEFORE items, so a
- * staff-only section would hide its employee-facing entries entirely.
+ * EMPLOYEE — they never triage: no dashboard, no all-lists, no boards. Their whole job
+ * is "see what I raised" and "raise something", and the ONE thing that confused them
+ * was telling a broken-system report apart from a new-system request. So the nav is
+ * exactly those jobs, nothing else:
+ *   1. My Tickets (/my) — one home showing BOTH their issues and requests, via
+ *      MyWorkView's Issues | System Requests sub-tabs. (This is why the old "My
+ *      Requests" and "Request Board" links are gone for employees: redundant with the
+ *      sub-tab, and a kanban board of your own two requests is noise.)
+ *   2. The two RAISE actions, kept deliberately distinct so the confusion can't recur —
+ *      "Report an issue" (something's broken) vs "Request a system" (build a new one).
+ *   3. Systems — the company-wide directory (§13.3).
+ *
+ * MIS STAFF / ADMIN — the pipeline-grouped triage nav: Dashboard over both pipelines,
+ * then Issues and System Requests named outright, then "Assigned to Me" (their
+ * cross-pipeline work queue — assigned issues AND requests they're building, §12.3),
+ * then Systems + admin Settings.
  */
-const NAV_SECTIONS: NavSection[] = [
-  {
-    // The dashboard reports on BOTH pipelines (its own Issues/Requests toggle), so
-    // it stays above the split rather than living in either section. Unlabeled: an
-    // "Overview" header over one self-explanatory link is pure chrome.
-    id: "overview",
-    staffOnly: true,
-    items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, staffOnly: true },
-    ],
-  },
-  {
-    id: "issues",
-    label: "Issues",
-    items: [
-      { href: "/tickets", label: "All Issues", icon: ListChecks, staffOnly: true },
-      { href: "/board", label: "Issue Board", icon: KanbanSquare, staffOnly: true },
-      { href: "/new", label: "Report an issue", icon: PlusCircle },
-    ],
-  },
-  {
-    // REQUEST surfaces (§12.7) — visible to everyone; a USER sees only their own.
-    // /requests/new now has its own entry so "New request" mirrors "Report an issue";
-    // longest-prefix matching keeps it distinct from its /requests parent.
-    id: "requests",
-    label: "System Requests",
-    items: [
-      { href: "/requests", label: "All Requests", icon: Sparkles },
-      { href: "/requests/board", label: "Request Board", icon: KanbanSquare },
-      { href: "/requests/new", label: "New Request", icon: PlusCircle },
-    ],
-  },
-  {
-    // Personal work queue — deliberately OUTSIDE both pipelines, after them.
-    //
-    // Not just layout: for staff, /my renders MyWorkView with BOTH their assigned
-    // issues AND the requests they're building (§12.3), and the page says so —
-    // "Your work — issue tickets and the system requests you're building". Nesting it
-    // under Issues claimed it was an issue surface, which for its main audience is
-    // simply false. It answers "what's on my plate", a question that cuts across both
-    // pipelines, so it sits on its own between them and the tail group.
-    //
-    // (For a USER the page IS issue-only — listMyTickets filters type = 'ISSUE' — but
-    // their requests are one link up under "My Requests", so nothing is stranded.)
-    id: "mine",
-    items: [{ href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" }],
-  },
-  {
-    // The two former singleton sections, "Directory" and "Administration", merged into
-    // one unlabeled tail group — neither header disambiguated anything its own link
-    // didn't already say.
-    //
-    // The GROUP stays ungated while Settings carries adminOnly ITSELF, and that split
-    // is load-bearing: §13.3's systems directory is company-wide readable (the first
-    // authenticated read-all surface, a deliberate departure from §6's row-scoping),
-    // and `sectionsFor` filters sections BEFORE items — so an adminOnly group would
-    // hide Systems from every USER no matter how the item is flagged.
-    // /systems/new and /systems/[code] highlight this parent via longest-prefix match.
-    // Users / Bulk Delete / Recycle Bin live inside the Settings screen, not here.
-    id: "more",
-    items: [
-      { href: "/systems", label: "Systems", icon: Library },
-      { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
-    ],
-  },
-];
+function navSectionsFor(role: Role): NavSection[] {
+  if (role === "USER") {
+    return [
+      {
+        id: "home",
+        items: [{ href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" }],
+      },
+      {
+        id: "raise",
+        items: [
+          { href: "/new", label: "Report an issue", icon: PlusCircle },
+          { href: "/requests/new", label: "Request a system", icon: Sparkles },
+        ],
+      },
+      {
+        id: "directory",
+        items: [{ href: "/systems", label: "Systems", icon: Library }],
+      },
+    ];
+  }
+
+  const isAdmin = role === "MIS_ADMIN";
+  return [
+    {
+      id: "overview",
+      items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    },
+    {
+      id: "issues",
+      label: "Issues",
+      items: [
+        { href: "/tickets", label: "All Issues", icon: ListChecks },
+        { href: "/board", label: "Issue Board", icon: KanbanSquare },
+        { href: "/new", label: "Report an issue", icon: PlusCircle },
+      ],
+    },
+    {
+      id: "requests",
+      label: "System Requests",
+      items: [
+        { href: "/requests", label: "All Requests", icon: Sparkles },
+        { href: "/requests/board", label: "Request Board", icon: KanbanSquare },
+        { href: "/requests/new", label: "New Request", icon: PlusCircle },
+      ],
+    },
+    {
+      id: "mine",
+      items: [{ href: "/my", label: "Assigned to Me", icon: Inbox, badge: "myActive" }],
+    },
+    {
+      // Systems (company-wide, §13.3) + admin Settings — unlabeled tail. /systems/new
+      // and /systems/[code] highlight this parent via longest-prefix match.
+      id: "more",
+      items: [
+        { href: "/systems", label: "Systems", icon: Library },
+        ...(isAdmin
+          ? [{ href: "/settings", label: "Settings", icon: Settings } as NavItem]
+          : []),
+      ],
+    },
+  ];
+}
 
 const ROLE_LABELS: Record<Role, string> = {
   USER: "Employee",
@@ -146,31 +149,10 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 function sectionsFor(role: Role) {
-  const isStaff = role !== "USER";
-  const isAdmin = role === "MIS_ADMIN";
-  const allow = (x: { staffOnly?: boolean; adminOnly?: boolean }) =>
-    (!x.staffOnly || isStaff) && (!x.adminOnly || isAdmin);
-  return NAV_SECTIONS.filter(allow)
-    .map((s) => ({
-      ...s,
-      items: s.items.filter(allow).map((item) => {
-        // Staff don't raise tickets from here — /my is their assigned work queue,
-        // so "My Tickets" is misleading; show "Assigned to Me" for staff/admins.
-        if (item.href === "/my" && isStaff) {
-          return { ...item, label: "Assigned to Me" };
-        }
-        // A USER only ever sees requests they raised (§12.7 row-level visibility), so
-        // "All Requests" would overpromise — matches the page's own title swap.
-        if (item.href === "/requests" && !isStaff) {
-          return { ...item, label: "My Requests" };
-        }
-        return item;
-      }),
-    }))
-    // Now that groups are ungated so their items can carry their own flags, a group
-    // can end up empty for a given role. Drop those — an empty group would still
-    // render its header or divider, i.e. a label for nothing.
-    .filter((s) => s.items.length > 0);
+  // Per-role construction already yields the right items in the right order; the
+  // filter is a safety net so a group that is somehow empty never renders a bare
+  // header or divider over nothing.
+  return navSectionsFor(role).filter((s) => s.items.length > 0);
 }
 
 export function AppShell({
@@ -188,18 +170,19 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const sections = sectionsFor(user.role);
+  const sections = useMemo(() => sectionsFor(user.role), [user.role]);
 
   // Only the MOST specific matching nav item lights up. A plain prefix test would
   // mark both "Requests" (/requests) and "Request a system" (/requests/new) active
   // on /requests/new; taking the longest match keeps nested routes unambiguous
   // while still highlighting a parent for its children (/tickets/MIS-001 → /tickets).
   const activeHref = useMemo(() => {
-    const matches = NAV_SECTIONS.flatMap((s) => s.items)
+    const matches = sections
+      .flatMap((s) => s.items)
       .map((i) => i.href)
       .filter((h) => pathname === h || pathname.startsWith(`${h}/`));
     return matches.sort((a, b) => b.length - a.length)[0] ?? null;
-  }, [pathname]);
+  }, [pathname, sections]);
 
   const isActive = (href: string) => href === activeHref;
 
