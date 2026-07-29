@@ -17,7 +17,7 @@ export default async function GranteesPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
         title="Access grantees"
-        description="Who must be granted access before a system can be logged."
+        description="This is NOT about who can log into the app. It's the sharing checklist for the Systems directory: before MIS can log a built system, they must confirm everyone listed here has been given access to it (e.g. shared on the Google Sheet). To add or manage people who sign into the app, use Settings → Users or Access requests."
       />
       <GranteesView grantees={grantees} />
     </div>

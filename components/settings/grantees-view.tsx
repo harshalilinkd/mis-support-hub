@@ -54,7 +54,9 @@ export function GranteesView({ grantees }: { grantees: AccessGrantee[] }) {
       <div className="rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)]">
         <h2 className="text-sm font-semibold">Add a grantee</h2>
         <p className="mt-1 text-xs text-text-muted">
-          Everyone listed here must be confirmed before any system can be logged.
+          These are people who must be given access to every system MIS builds (e.g.
+          shared on the Sheet) — <strong>not</strong> app users. A system can&apos;t be
+          logged in the directory until each active name here is confirmed.
         </p>
         <div className="mt-3 flex gap-2">
           <Input

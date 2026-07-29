@@ -21,7 +21,7 @@ const SECTIONS = [
     href: "/settings/access-requests",
     label: "Access requests",
     description:
-      "Approve or reject people who signed in with Google and are waiting to be let in.",
+      "Let people IN: approve or reject those who signed in with Google and are waiting for access.",
     icon: UserPlus,
     // A pending count lights this card up (filled at render time).
     badge: "pendingAccess" as const,
@@ -30,7 +30,7 @@ const SECTIONS = [
     href: "/settings/users",
     label: "Users",
     description:
-      "Manage accounts, roles, and departments; add users in bulk.",
+      "The app's login accounts — add users (single or bulk), change roles and departments.",
     icon: Users,
   },
   {
@@ -50,7 +50,7 @@ const SECTIONS = [
     href: "/settings/grantees",
     label: "Access Grantees",
     description:
-      "Who must be granted access before a system can be logged in the directory.",
+      "Not app login — the 'must be shared with' checklist enforced when logging a system in the directory.",
     icon: ShieldCheck,
   },
 ];
