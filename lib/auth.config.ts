@@ -19,6 +19,11 @@ export const authConfig = {
   providers: [Google({ allowDangerousEmailAccountLinking: true })],
   pages: {
     signIn: "/login",
+    // Route auth errors to our own /login (which reads ?error= and shows friendly
+    // copy) instead of Auth.js's default /api/auth/error page. This is what lets a
+    // refused Google sign-in see "we've sent a request to the MIS team" (§7) rather
+    // than a bare "You do not have permission to sign in."
+    error: "/login",
   },
   session: { strategy: "jwt" },
   // App-specific cookie name so we never read a foreign/stale
