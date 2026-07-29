@@ -26,7 +26,12 @@ export type NotificationTemplate =
   | "REQUEST_DEADLINE_CHANGED"
   | "REQUEST_READY_FOR_TESTING"
   | "REQUEST_CHANGES_REQUESTED"
-  | "REQUEST_ACCEPTED";
+  | "REQUEST_ACCEPTED"
+  // Access requests (§7). ACCESS_REQUESTED → admins ("someone asked to be let in");
+  // ACCESS_APPROVED → the new user ("you're in — sign in with Google"). These do NOT
+  // deep-link to a ticket, so they build their own CTA from appUrl.
+  | "ACCESS_REQUESTED"
+  | "ACCESS_APPROVED";
 
 export interface NotifyRecipient {
   email?: string | null;

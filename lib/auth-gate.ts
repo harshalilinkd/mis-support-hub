@@ -42,6 +42,47 @@ export function canSignIn(args: {
   if (args.user) return args.user.isActive;
 
   // Unknown account: admitted only as a bootstrap admin. Everyone else must be
-  // invited by an admin first (Settings → Users).
+  // invited by an admin first (Settings → Users) — or now, request access (below).
   return isBootstrap;
+}
+
+/**
+ * Should a REFUSED Google sign-in record an access request (§7)?
+ *
+ * This is the SECOND onboarding path: instead of a dead-end for a stranger, their
+ * first Google sign-in files a request an admin can approve. It is a pure decision,
+ * unit-tested like `canSignIn`, because it runs at the same security boundary — and
+ * it must never fire for anyone who could actually get in, or for anyone whose
+ * refusal is deliberate.
+ *
+ * True ONLY when ALL hold:
+ *  - the provider is Google (the password door stays invite-only, §7 — and a stranger
+ *    has no password anyway);
+ *  - there is an email to key the request on;
+ *  - there is NO existing `users` row — a deactivated or demoted member is NOT a new
+ *    person knocking; their refusal was an admin's choice and must not reopen as a
+ *    "request" (that would let a removed user nag their way back in);
+ *  - they are not a bootstrap admin (ADMIN_EMAILS get in directly, so there's nothing
+ *    to request);
+ *  - the optional domain filter allows them — if an admin restricted sign-in to a
+ *    domain, an out-of-domain stranger shouldn't be able to queue a request either.
+ *
+ * The caller still returns false from `signIn` regardless; recording the request is a
+ * best-effort SIDE EFFECT and never itself admits anyone. §7's guarantee — a login
+ * attempt writes no `users` row — is untouched.
+ */
+export function shouldRequestAccess(args: {
+  provider: string;
+  email: string;
+  user: { isActive: boolean } | null;
+  adminEmails: string[];
+  domainAllowed: boolean;
+}): boolean {
+  const email = args.email.trim().toLowerCase();
+  if (args.provider !== "google") return false;
+  if (!email) return false;
+  if (args.user) return false;
+  if (args.adminEmails.includes(email)) return false;
+  if (!args.domainAllowed) return false;
+  return true;
 }

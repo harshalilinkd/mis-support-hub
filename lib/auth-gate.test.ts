@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canSignIn } from "./auth-gate";
+import { canSignIn, shouldRequestAccess } from "./auth-gate";
 
 /**
  * Guardrail tests for the invite-only sign-in gate (CLAUDE.md §7). Pure — no DB.
@@ -74,4 +74,60 @@ test("the domain filter restricts invited users but never the bootstrap admin", 
   // and a deactivated bootstrap admin stays out.
   assert.equal(canSignIn({ email: "stranger@evil.com", user: null, adminEmails: ADMINS, ...blocked }), false);
   assert.equal(canSignIn({ email: "boss@gmail.com", user: inactive, adminEmails: ADMINS, ...blocked }), false);
+});
+
+/* ---------------- shouldRequestAccess (§7, the request-to-join path) ------------- */
+
+const google = { provider: "google" };
+
+test("a genuine new Google stranger's refused sign-in files a request", () => {
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "new@gmail.com", user: null, adminEmails: ADMINS, ...open }),
+    true
+  );
+  // Case/whitespace from the provider profile must not matter.
+  assert.equal(
+    shouldRequestAccess({ ...google, email: " New@Gmail.com ", user: null, adminEmails: [], ...open }),
+    true
+  );
+});
+
+test("a deactivated or demoted member never re-requests their way back in", () => {
+  // The critical one: a removed user's refusal is an admin's choice. Turning it into
+  // a fresh 'request' would let them nag to be re-approved — exactly what §7 forbids.
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "gone@gmail.com", user: inactive, adminEmails: [], ...open }),
+    false
+  );
+  // An active member with a row doesn't request either — they just sign in.
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "nikita@gmail.com", user: active, adminEmails: [], ...open }),
+    false
+  );
+});
+
+test("a bootstrap admin gets in directly, so files no request", () => {
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "boss@gmail.com", user: null, adminEmails: ADMINS, ...open }),
+    false
+  );
+});
+
+test("only Google files a request — the password door stays invite-only", () => {
+  assert.equal(
+    shouldRequestAccess({ provider: "credentials", email: "new@gmail.com", user: null, adminEmails: [], ...open }),
+    false
+  );
+});
+
+test("the domain filter also blocks queuing a request, and empty email files none", () => {
+  const blocked = { domainAllowed: false };
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "new@evil.com", user: null, adminEmails: ADMINS, ...blocked }),
+    false
+  );
+  assert.equal(
+    shouldRequestAccess({ ...google, email: "", user: null, adminEmails: [], ...open }),
+    false
+  );
 });

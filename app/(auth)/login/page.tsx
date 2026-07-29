@@ -13,10 +13,12 @@ export const metadata: Metadata = {
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
-  // Invite-only (§7): almost always an account MIS hasn't added yet, so say what
-  // to do about it rather than just refusing.
+  // Invite-only (§7). A first-time Google sign-in now ALSO files an access request
+  // for an admin to approve (recorded server-side on this denied attempt), so the
+  // copy points at that path rather than just refusing. A deactivated member sees the
+  // same message; "if this is your first time" keeps it accurate for both.
   AccessDenied:
-    "This account doesn't have access yet. Ask the MIS team to add you, then sign in again.",
+    "This account doesn't have access yet. If this is your first time signing in with Google, we've sent a request to the MIS team — you'll get an email once an admin approves it.",
   Configuration:
     "Sign-in is misconfigured. Please contact the MIS team.",
   Verification: "That sign-in link is invalid or has expired.",
@@ -100,7 +102,8 @@ export default async function LoginPage({
         </div>
 
         <p className="enter-up text-xs text-text-muted" style={{ animationDelay: "280ms" }}>
-          Access is limited to accounts set up by the MIS team.
+          New here? Sign in with Google and the MIS team will be asked to approve your
+          access.
         </p>
       </div>
     </main>

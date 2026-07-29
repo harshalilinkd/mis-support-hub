@@ -5,10 +5,11 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import { authConfig } from "./auth.config";
-import { canSignIn } from "./auth-gate";
+import { canSignIn, shouldRequestAccess } from "./auth-gate";
 import { db } from "./db";
-import { getUserByEmail, getUserById } from "./db/queries";
+import { getUserByEmail, getUserById, recordAccessRequest } from "./db/queries";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
+import { sendAccessRequestedNotification } from "./notifications";
 import { signInSchema } from "./validators/auth";
 
 const adminEmails = (process.env.ADMIN_EMAILS ?? "")
@@ -82,10 +83,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // bootstrap can be exempted from it — see lib/auth-gate.ts.
       const domainAllowed = (await authConfig.callbacks!.signIn!(params)) !== false;
       // The decision itself is a pure, unit-tested function (lib/auth-gate.ts) —
-      // this callback only gathers the facts. A refused sign-in surfaces on the
-      // login page as error=AccessDenied ("ask the MIS team to add you").
+      // this callback only gathers the facts.
       const dbUser = email ? await getUserByEmail(email) : null;
-      return canSignIn({ email, user: dbUser, adminEmails, domainAllowed });
+      const allowed = canSignIn({ email, user: dbUser, adminEmails, domainAllowed });
+      if (allowed) return true;
+
+      // Refused — but a genuinely-new Google account is offered the request-to-join
+      // path (§7): record a PENDING request and alert the admins, then STILL deny.
+      // Recording writes to access_requests, never `users`, so §7's guarantee that a
+      // login attempt mints no account is untouched. Wrapped best-effort: a failure
+      // here must never turn a denied sign-in into a thrown error page.
+      const provider = params.account?.provider ?? "";
+      if (
+        shouldRequestAccess({ provider, email, user: dbUser, adminEmails, domainAllowed })
+      ) {
+        try {
+          const name =
+            params.profile?.name ?? params.user?.name ?? null;
+          const image =
+            (params.profile?.picture as string | undefined) ??
+            params.user?.image ??
+            null;
+          const { created } = await recordAccessRequest({ email, name, image });
+          // Notify admins only when a NEW request appears — not on every repeat login
+          // while it's still pending.
+          if (created) {
+            await sendAccessRequestedNotification({ email, name });
+          }
+        } catch (e) {
+          console.error("[signIn:recordAccessRequest]", e);
+        }
+      }
+      // The login page reads error=AccessDenied and now explains the request path.
+      return false;
     },
     // Read the authoritative role from the DB on sign-in, and (idempotently)
     // promote ADMIN_EMAILS to MIS_ADMIN on every sign-in — matches CLAUDE.md §7

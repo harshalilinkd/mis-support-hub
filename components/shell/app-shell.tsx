@@ -42,7 +42,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  badge?: "myActive";
+  badge?: "myActive" | "pendingAccess";
 };
 
 type NavSection = {
@@ -135,7 +135,14 @@ function navSectionsFor(role: Role): NavSection[] {
       items: [
         { href: "/systems", label: "Systems", icon: Library },
         ...(isAdmin
-          ? [{ href: "/settings", label: "Settings", icon: Settings } as NavItem]
+          ? [
+              {
+                href: "/settings",
+                label: "Settings",
+                icon: Settings,
+                badge: "pendingAccess",
+              } as NavItem,
+            ]
           : []),
       ],
     },
@@ -160,12 +167,14 @@ export function AppShell({
   notifications,
   unreadCount,
   myActiveCount = 0,
+  pendingAccessCount = 0,
   children,
 }: {
   user: SessionUser;
   notifications: BellNotification[];
   unreadCount: number;
   myActiveCount?: number;
+  pendingAccessCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -186,8 +195,12 @@ export function AppShell({
 
   const isActive = (href: string) => href === activeHref;
 
-  const badgeValue = (item: NavItem) =>
-    item.badge === "myActive" && myActiveCount > 0 ? myActiveCount : null;
+  const badgeValue = (item: NavItem) => {
+    if (item.badge === "myActive") return myActiveCount > 0 ? myActiveCount : null;
+    if (item.badge === "pendingAccess")
+      return pendingAccessCount > 0 ? pendingAccessCount : null;
+    return null;
+  };
 
   function NavLink({
     item,

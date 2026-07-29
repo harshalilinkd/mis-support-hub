@@ -82,6 +82,14 @@ export const systemStatusEnum = pgEnum("system_status", [
   "ARCHIVED",
 ]);
 
+// Google-SSO access requests (§7): a stranger's first sign-in records a PENDING
+// request instead of a users row; an admin's approval is what creates the user.
+export const accessRequestStatusEnum = pgEnum("access_request_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+]);
+
 export type Role = (typeof roleEnum.enumValues)[number];
 export type Department = (typeof departmentEnum.enumValues)[number];
 export type TicketType = (typeof ticketTypeEnum.enumValues)[number];
@@ -91,6 +99,8 @@ export type MdDecision = (typeof mdDecisionEnum.enumValues)[number];
 export type ProgressLogType = (typeof progressLogTypeEnum.enumValues)[number];
 export type SystemType = (typeof systemTypeEnum.enumValues)[number];
 export type SystemStatus = (typeof systemStatusEnum.enumValues)[number];
+export type AccessRequestStatus =
+  (typeof accessRequestStatusEnum.enumValues)[number];
 
 /** ticket_activity.type is stored as text (CLAUDE.md §4) but constrained in TS. */
 export const ACTIVITY_TYPES = [
@@ -156,6 +166,10 @@ export const NOTIFICATION_TYPES = [
   // (reviveRequest) must be announced too — otherwise the drop mail sits in the
   // requester's inbox asserting a dead request that is in fact back under review.
   "REQUEST_REVIVED",
+  // Access requests (§7). ACCESS_REQUESTED → admins (a stranger asked to be let in);
+  // ACCESS_APPROVED → the new user's welcome, seen on their first sign-in.
+  "ACCESS_REQUESTED",
+  "ACCESS_APPROVED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -572,6 +586,40 @@ export const accessGrantees = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("access_grantees_is_active_idx").on(t.isActive)]
+);
+
+/**
+ * Google-SSO access requests (§7). A stranger's first Google sign-in records a row
+ * here instead of a `users` row — it grants NOTHING. Only an MIS_ADMIN approval
+ * creates the actual `users` row (default role USER), so §7's invariant holds:
+ * "account creation belongs to MIS_ADMIN actions only."
+ *
+ * `email` is unique so a repeat sign-in refreshes the existing request rather than
+ * piling up duplicates. A REJECTED row is sticky — a declined stranger's retry does
+ * not silently re-open it (an admin can clear it). The password door is untouched:
+ * strangers have no password, and self-service password signup is the exact hole §7
+ * closed — requests come ONLY from Google.
+ */
+export const accessRequests = pgTable(
+  "access_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull().unique(),
+    // Snapshotted from the Google profile at request time (may be null).
+    name: text("name"),
+    image: text("image"),
+    status: accessRequestStatusEnum("status").notNull().default("PENDING"),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Who approved/rejected + when — the accountability trail (nullable while PENDING).
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    // The users row an approval created — links the request to the account it minted.
+    // No cascade: deleting the user must not erase the audit that they were approved.
+    createdUserId: uuid("created_user_id").references(() => users.id),
+  },
+  (t) => [index("access_requests_status_idx").on(t.status)]
 );
 
 /* ------------------------------------------------------------------ *

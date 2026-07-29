@@ -40,7 +40,8 @@ Do NOT use Prisma, do NOT use an ORM other than Drizzle, do NOT store files in t
   /(app)/dashboard/page.tsx         # MIS: KPI cards + charts
   /(app)/board/page.tsx             # MIS: Kanban
   /(app)/profile/page.tsx           # edit name/department + set/change password
-  /(app)/settings/page.tsx          # admin: Settings landing (cards → the 3 tools below)
+  /(app)/settings/page.tsx          # admin: Settings landing (cards → the tools below)
+  /(app)/settings/access-requests/page.tsx # admin: approve/reject Google request-to-join (§7)
   /(app)/settings/users/page.tsx    # admin: user management + bulk add
   /(app)/settings/bulk-delete/page.tsx # admin: multi-select active tickets → soft-delete
   /(app)/settings/recycle-bin/page.tsx # admin: soft-deleted tickets (restore / purge)
@@ -66,7 +67,8 @@ Enums:
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
 - `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
-- `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT
+- `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | **ACCESS_REQUESTED** (→ admins) | **ACCESS_APPROVED** (→ the new user)
+- `access_request_status`: PENDING | APPROVED | REJECTED (§7)
 
 Tables:
 - `users`: id (uuid), name, email (unique), email_verified, image, **password_hash (nullable — bcrypt; null = Google-only)**, role (default USER), **department (nullable)**, is_active (bool, default true), created_at. Auth.js adapter also owns `accounts`, `sessions`, `verification_tokens`.
@@ -74,7 +76,8 @@ Tables:
 - `ticket_comments`: id, ticket_id (fk, cascade), author_id (fk), body, created_at. Index on ticket_id.
 - `ticket_attachments`: id, ticket_id (fk, cascade), comment_id (fk, nullable), url (Vercel Blob), filename, content_type, size_bytes, uploaded_by (fk), created_at.
 - `ticket_activity`: id, ticket_id (fk, cascade), actor_id (fk), type (see enum above), from_value (nullable), to_value (nullable), created_at. **Audit trail — write a row on EVERY mutation.** Index on ticket_id.
-- `notifications`: id, user_id (fk, cascade), type (see enum), ticket_id (fk, nullable), ticket_number, title, body (nullable), read_at (nullable), created_at. One row per recipient per event. Index on user_id.
+- `notifications`: id, user_id (fk, cascade), type (see enum), ticket_id (fk, nullable), ticket_number (nullable), title, body (nullable), read_at (nullable), created_at. One row per recipient per event. Index on user_id. (ACCESS_* notifications have null ticket_id/ticket_number — they aren't about a ticket.)
+- `access_requests` (§7): id (uuid), email (unique), name (nullable), image (nullable), status (`access_request_status`, default PENDING), requested_at, **decided_by (fk users.id, nullable), decided_at (nullable)** — the accountability trail, **created_user_id (fk users.id, nullable — the account an approval minted; no cascade, so deleting the user keeps the audit)**. Index on status. Written by a refused Google sign-in (grants nothing); the `users` row is minted only by an MIS_ADMIN approval.
 
 ## 5. Ticket lifecycle (state machine)
 OPEN → IN_PROGRESS → RESOLVED → CLOSED. From RESOLVED the reporter may reopen →
@@ -109,6 +112,7 @@ explicitly started.
 | Soft-delete a ticket | ✗ | ✓ | ✓ |
 | Recycle bin: restore / permanently delete | ✗ | ✗ | ✓ |
 | Manage users / change roles / bulk-add users | ✗ | ✗ | ✓ |
+| Approve / reject Google access requests (§7) | ✗ | ✗ | ✓ |
 Enforce on the server (in actions/queries), never trust the client. USER may only read tickets where `created_by = session.user.id`.
 
 > **There is NO takeover, for anyone.** This row previously read "✓" for MIS_ADMIN; the
@@ -128,8 +132,26 @@ additional door (`bcryptjs` verify against `users.password_hash`).
 **The app is INVITE-ONLY — membership is the gate, not the email domain.** You may
 sign in only if a `users` row already exists for your email (an admin created it in
 Settings → Users) and `is_active` is true. An unknown Google account is refused
-(`AccessDenied`, and the login page tells them to ask MIS to add them) — it does NOT
-self-provision.
+(`AccessDenied`) — it does NOT self-provision.
+
+**Two admin-mediated ways to onboard (both end at an MIS_ADMIN action):**
+1. An admin creates the account directly — Settings → Users (single or bulk add).
+2. **Request-to-join (§7, Google only):** a stranger's first Google sign-in is still
+   refused, but instead of a dead-end it records a **PENDING `access_requests` row**
+   (name/email/photo from the Google profile) and alerts every admin (in-app + email).
+   An admin **approves** → this creates the `users` row as **USER (Employee)**, active;
+   the admin changes role/department afterwards in Users. **Reject** is sticky (a
+   declined stranger's retry does not re-open it; an admin can clear it). The requester
+   is emailed on approval (they have no in-app presence until then).
+
+   **This does NOT weaken the invariant below.** A login attempt writes an
+   `access_requests` row, which grants NOTHING — it is a knock on the door. The ONLY
+   thing that inserts a `users` row is the admin approval action
+   (`approveAccessRequest` → `approveAccessRequestTx`). So "account creation belongs to
+   MIS_ADMIN actions only" still holds exactly. The request path is Google-only on
+   purpose: the **password door stays invite-only** (a stranger has no password, and a
+   public password signup was the exact hole closed below). Tables/enum:
+   `access_requests` + `access_request_status` (§4).
 > **Why not the domain allowlist (as originally specified):** it cannot gate this
 > organisation. The team signs in with **personal Gmail**, not a Workspace domain
 > (15 of 18 users are @gmail.com), so `ALLOWED_EMAIL_DOMAINS="gmail.com"` would admit
@@ -143,18 +165,29 @@ first sign-in, and are promoted to MIS_ADMIN on every sign-in (idempotent, never
 downgrades). Without it a fresh deployment with an empty `users` table would admit
 nobody — an unrecoverable lockout, since the only way in is a UI you can't reach.
 
-**There is NO self-service sign-up.** Admins create accounts with a password (bulk
-add in Settings → Users); a user sets/changes their own password in Profile once
-they're in. A public `registerWithPassword` action used to exist and defeated the gate
-entirely — the invite check asks "does a `users` row exist?", and that action was an
-unauthenticated way to make one exist, so any stranger could mint an active USER row
-and sign in through the password door while the Google door was bolted. Closing only
-one door is not closing the door: **any new path that can INSERT a `users` row is a
-sign-in bypass.** Account creation belongs to MIS_ADMIN actions only.
+**There is NO self-service sign-up that mints an account.** Admins create accounts with
+a password (bulk add in Settings → Users); a user sets/changes their own password in
+Profile once they're in. A public `registerWithPassword` action used to exist and
+defeated the gate entirely — the invite check asks "does a `users` row exist?", and
+that action was an unauthenticated way to make one exist, so any stranger could mint an
+active USER row and sign in through the password door while the Google door was bolted.
+Closing only one door is not closing the door: **any new path that can INSERT a `users`
+row is a sign-in bypass.** Account creation belongs to MIS_ADMIN actions only — and the
+request-to-join path above respects this precisely because it inserts into
+`access_requests`, never `users`; the `users` insert is gated behind admin approval.
 
-The decision itself lives in `lib/auth-gate.ts` (`canSignIn`) — a pure, unit-tested
-function (`lib/auth-gate.test.ts`), same convention as `lib/ticket-state.ts`. Two
-orderings in it are load-bearing:
+The decision itself lives in `lib/auth-gate.ts` — pure, unit-tested functions
+(`lib/auth-gate.test.ts`), same convention as `lib/ticket-state.ts`:
+- `canSignIn(...)` — the invite gate. Two orderings in it are load-bearing (below).
+- `shouldRequestAccess(...)` — whether a REFUSED sign-in should file a request. True
+  ONLY for a genuinely-new Google account (provider google, email present, **no
+  existing `users` row**, not a bootstrap admin, domain allowed). The "no existing row"
+  clause is load-bearing: a **deactivated or demoted member must not re-request their
+  way back in** — their refusal was an admin's decision, not a newcomer knocking.
+  Recording the request is a best-effort side effect in the `signIn` callback; the
+  callback still returns false, so the `users`-writes-nothing guarantee is untouched.
+
+Two orderings in `canSignIn` are load-bearing:
 - An existing row's `is_active` is checked BEFORE `ADMIN_EMAILS`, so deactivating a
   bootstrap admin still locks them out (otherwise removing an admin would silently do
   nothing).
@@ -188,6 +221,8 @@ best-effort — a failed send never rolls back or throws to the caller):
 - `sendClosureNotification` — reporter confirmed → assignee ("closed for good"), in-app + email.
 - `sendEditNotification` — reporter edited after work started → assignee, in-app only.
 - `sendCommentNotification` — new comment → the other party, in-app only (email off by default).
+- `sendAccessRequestedNotification` — a stranger's Google request-to-join (§7) → every MIS_ADMIN, in-app + email. Fired once, only when a NEW pending request appears (not on repeat logins while pending).
+- `sendAccessApprovedNotification` — an admin approved a request (§7) → the new user, email (they have no in-app presence until they sign in) + a welcome notice waiting in their bell.
 
 ## 9. Conventions
 - All writes go through Server Actions in `/lib/actions`, validated with a matching zod schema in `/lib/validators`. Return typed results `{ ok: true, data } | { ok: false, error }` (`lib/actions/result.ts`).

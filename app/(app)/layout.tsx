@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import {
   countAssignedActive,
   countMyActiveTickets,
+  countPendingAccessRequests,
   listNotificationsWithUnread,
 } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
@@ -20,9 +21,12 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   const isStaff = user.role === "MIS_STAFF" || user.role === "MIS_ADMIN";
-  const [notif, myActiveCount] = await Promise.all([
+  const isAdmin = user.role === "MIS_ADMIN";
+  const [notif, myActiveCount, pendingAccessCount] = await Promise.all([
     listNotificationsWithUnread(user.id),
     isStaff ? countAssignedActive(user.id) : countMyActiveTickets(user.id),
+    // Only admins see Settings / the access-requests queue, so only they pay for it.
+    isAdmin ? countPendingAccessRequests() : Promise.resolve(0),
   ]);
   const unreadCount = notif.unread;
   const notifications = notif.rows.map((n) => ({
@@ -48,6 +52,7 @@ export default async function AppLayout({
         notifications={notifications}
         unreadCount={unreadCount}
         myActiveCount={myActiveCount}
+        pendingAccessCount={pendingAccessCount}
       >
         {children}
       </AppShell>

@@ -267,5 +267,39 @@ export function renderTemplate(input: NotifyInput): {
           requestCta
         ),
       };
+
+    /* ---------------- Access requests (§7) ----------------
+     * These aren't about a ticket, so they build their own CTA from appUrl rather than
+     * the shared /tickets/{number} link.
+     */
+    case "ACCESS_REQUESTED": {
+      const who = input.data.requesterName || input.data.requesterEmail || "Someone";
+      const reviewCta = appUrl
+        ? { href: `${appUrl}/settings/access-requests`, label: "Review requests" }
+        : undefined;
+      return {
+        subject: `Access request from ${who}`,
+        html: shell(
+          "Someone is requesting access",
+          `<p style="margin:0;line-height:1.6"><strong>${escapeHtml(who)}</strong>${input.data.requesterEmail ? ` (${escapeHtml(input.data.requesterEmail)})` : ""} tried to sign in with Google and is asking for access to the MIS Support Hub.</p>
+           <p style="margin:12px 0 0;line-height:1.6">Approve them to create their account (they start as an Employee — you can change their role afterwards), or reject the request.</p>`,
+          reviewCta
+        ),
+      };
+    }
+    case "ACCESS_APPROVED": {
+      const signInCta = appUrl
+        ? { href: `${appUrl}/login`, label: "Sign in" }
+        : undefined;
+      return {
+        subject: "Your access to MIS Support Hub is approved",
+        html: shell(
+          "You're in 🎉",
+          `<p style="margin:0;line-height:1.6">Hi ${escapeHtml(input.data.name || "there")}, your request to access the <strong>MIS Support Hub</strong> has been approved.</p>
+           <p style="margin:12px 0 0;line-height:1.6">Sign in with the same Google account to raise and track tickets and system requests.</p>`,
+          signInCta
+        ),
+      };
+    }
   }
 }

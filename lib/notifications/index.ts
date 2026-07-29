@@ -7,6 +7,7 @@ import {
   listAdmins,
   listAssignableUsers,
 } from "@/lib/db/queries";
+import type { NotifyRecipient } from "./types";
 import {
   type NotificationType,
   type Status,
@@ -945,5 +946,78 @@ export async function sendRequestAcceptedNotification(ticketId: string): Promise
     );
   } catch (e) {
     console.error("[sendRequestAcceptedNotification]", e);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Access requests (§7). Unlike the ticket notifiers these carry no ticket, so they
+ * call createNotification directly (ticketId null) rather than createInApp. Chosen
+ * channels reflect the user's decision: admins get in-app + email; the approved user
+ * gets an email (they have no in-app presence until they sign in) plus a welcome
+ * notice waiting in their bell. All best-effort (§8).
+ * ------------------------------------------------------------------ */
+
+/** A refused Google stranger asked to join → alert every admin (in-app + email). */
+export async function sendAccessRequestedNotification(request: {
+  email: string;
+  name: string | null;
+}): Promise<void> {
+  try {
+    const admins = await listAdmins();
+    const who = request.name || request.email;
+    await Promise.all(
+      admins.map((a) =>
+        createNotification({
+          userId: a.id,
+          type: "ACCESS_REQUESTED",
+          title: "New access request",
+          body: `${who} (${request.email}) is asking to access the hub. Review it in Settings → Access requests.`,
+        }).catch((e) => console.error("[access-requested:in-app]", e))
+      )
+    );
+    await Promise.all(
+      admins
+        .filter((a) => a.email)
+        .map((a) =>
+          notify({
+            to: { email: a.email, name: a.name },
+            template: "ACCESS_REQUESTED",
+            data: {
+              requesterName: request.name ?? "",
+              requesterEmail: request.email,
+              appUrl: appUrl(),
+            },
+          })
+        )
+    );
+  } catch (e) {
+    console.error("[sendAccessRequestedNotification]", e);
+  }
+}
+
+/** An admin approved a request → tell the new user they're in (email + in-app welcome). */
+export async function sendAccessApprovedNotification(newUser: {
+  id: string;
+  email: string;
+  name: string | null;
+}): Promise<void> {
+  try {
+    await createNotification({
+      userId: newUser.id,
+      type: "ACCESS_APPROVED",
+      title: "Welcome to MIS Support Hub",
+      body: "Your access was approved. Raise an issue or request a system whenever you need MIS.",
+    }).catch((e) => console.error("[access-approved:in-app]", e));
+
+    const to: NotifyRecipient = { email: newUser.email, name: newUser.name };
+    if (newUser.email) {
+      await notify({
+        to,
+        template: "ACCESS_APPROVED",
+        data: { name: newUser.name ?? "", appUrl: appUrl() },
+      });
+    }
+  } catch (e) {
+    console.error("[sendAccessApprovedNotification]", e);
   }
 }

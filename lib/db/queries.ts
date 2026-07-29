@@ -36,6 +36,7 @@ import {
   accessGrantees,
   systemAccessConfirmations,
   systems,
+  accessRequests,
 } from "./schema";
 import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
 import { assertStatusForType } from "@/lib/ticket-state";
@@ -1852,6 +1853,171 @@ export async function listAdmins() {
     .select({ id: users.id, name: users.name, email: users.email })
     .from(users)
     .where(and(eq(users.role, "MIS_ADMIN"), eq(users.isActive, true)));
+}
+
+/* ------------------------------------------------------------------ *
+ * Access requests (§7) — the Google request-to-join path. A refused sign-in
+ * files a row here (grants nothing); an MIS_ADMIN approval mints the users row.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Record (or refresh) a pending access request for a refused Google sign-in.
+ * Returns `{ created: true }` only when a genuinely NEW pending row was made, so the
+ * caller notifies admins once — not on every repeat login while it's still pending.
+ *
+ * A REJECTED or APPROVED row is left untouched (sticky): a declined stranger can't
+ * re-open their request by signing in again, and an approved one already has a user.
+ */
+export async function recordAccessRequest(input: {
+  email: string;
+  name: string | null;
+  image: string | null;
+}): Promise<{ created: boolean }> {
+  const email = input.email.trim().toLowerCase();
+  if (!email) return { created: false };
+
+  const [existing] = await db
+    .select({ id: accessRequests.id, status: accessRequests.status })
+    .from(accessRequests)
+    .where(eq(accessRequests.email, email))
+    .limit(1);
+
+  if (existing) {
+    // Only a still-pending request refreshes its snapshot; a decided one is final.
+    if (existing.status === "PENDING") {
+      await db
+        .update(accessRequests)
+        .set({ name: input.name, image: input.image, requestedAt: new Date() })
+        .where(eq(accessRequests.id, existing.id));
+    }
+    return { created: false };
+  }
+
+  // onConflictDoNothing guards the two-logins-at-once race — the SELECT above can miss
+  // a row a concurrent request just inserted; better a rare duplicate-suppressed insert
+  // than a unique-violation throw on the login path.
+  await db
+    .insert(accessRequests)
+    .values({ email, name: input.name, image: input.image })
+    .onConflictDoNothing();
+  return { created: true };
+}
+
+const accessDecider = alias(users, "access_decider");
+
+/** All access requests for the admin screen — pending first, then most-recent. */
+export async function listAccessRequests() {
+  return db
+    .select({
+      id: accessRequests.id,
+      email: accessRequests.email,
+      name: accessRequests.name,
+      image: accessRequests.image,
+      status: accessRequests.status,
+      requestedAt: accessRequests.requestedAt,
+      decidedAt: accessRequests.decidedAt,
+      decidedByName: accessDecider.name,
+      createdUserId: accessRequests.createdUserId,
+    })
+    .from(accessRequests)
+    .leftJoin(accessDecider, eq(accessRequests.decidedBy, accessDecider.id))
+    .orderBy(
+      // PENDING (needs action) floats to the top; within a status, newest first.
+      sql`case when ${accessRequests.status} = 'PENDING' then 0 else 1 end`,
+      desc(accessRequests.requestedAt)
+    );
+}
+
+export type AccessRequestRow = Awaited<
+  ReturnType<typeof listAccessRequests>
+>[number];
+
+/** Count of pending requests — drives the Settings badge. */
+export async function countPendingAccessRequests(): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
+    .from(accessRequests)
+    .where(eq(accessRequests.status, "PENDING"));
+  return row?.count ?? 0;
+}
+
+export async function getAccessRequestById(id: string) {
+  const [row] = await db
+    .select()
+    .from(accessRequests)
+    .where(eq(accessRequests.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Approve a request: create the users row (role USER, active, Google-only — no
+ * password) AND mark the request APPROVED, in ONE batch (neon-http has no interactive
+ * transactions, §2). The id is generated app-side so the batch can write
+ * `created_user_id` without reading the insert's return value — same pattern as
+ * `createRequestTicket`.
+ *
+ * This is the ONLY new path that inserts a `users` row, and it is reachable only from
+ * an MIS_ADMIN action — so §7's "account creation belongs to MIS_ADMIN actions only"
+ * still holds.
+ */
+export async function approveAccessRequestTx(args: {
+  requestId: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  adminId: string;
+}): Promise<{ userId: string }> {
+  const userId = crypto.randomUUID();
+  await db.batch([
+    db.insert(users).values({
+      id: userId,
+      email: args.email.trim().toLowerCase(),
+      name: args.name,
+      image: args.image,
+      role: "USER",
+      isActive: true,
+    }),
+    db
+      .update(accessRequests)
+      .set({
+        status: "APPROVED",
+        decidedBy: args.adminId,
+        decidedAt: new Date(),
+        createdUserId: userId,
+      })
+      .where(eq(accessRequests.id, args.requestId)),
+  ]);
+  return { userId };
+}
+
+/**
+ * Approve a request whose email ALREADY has a users row (an admin added them via
+ * Settings between request and approval): just link + mark APPROVED, never a second
+ * insert (which would hit the unique-email constraint).
+ */
+export async function linkApprovedAccessRequest(args: {
+  requestId: string;
+  existingUserId: string;
+  adminId: string;
+}) {
+  await db
+    .update(accessRequests)
+    .set({
+      status: "APPROVED",
+      decidedBy: args.adminId,
+      decidedAt: new Date(),
+      createdUserId: args.existingUserId,
+    })
+    .where(eq(accessRequests.id, args.requestId));
+}
+
+/** Reject a request — status REJECTED + the accountability trail. */
+export async function rejectAccessRequest(requestId: string, adminId: string) {
+  await db
+    .update(accessRequests)
+    .set({ status: "REJECTED", decidedBy: adminId, decidedAt: new Date() })
+    .where(eq(accessRequests.id, requestId));
 }
 
 /* ------------------------------------------------------------------ *
