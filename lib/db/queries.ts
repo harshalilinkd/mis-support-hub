@@ -297,11 +297,17 @@ async function getOrCreateDeletedPlaceholderId(): Promise<string> {
 }
 
 /**
- * Reassign a user's ticket history to the "Deleted user" placeholder, then delete
- * the account — in one atomic batch (neon-http has no interactive transactions,
- * CLAUDE.md §9). Tickets/comments/activity/attachments are preserved but
- * reattributed; open assignments are cleared. accounts/sessions/notifications
- * cascade. Caller must enforce MIS_ADMIN and block self-deletion.
+ * Reassign everything a user is referenced by to the "Deleted user" placeholder, then
+ * delete the account — in one atomic batch (neon-http has no interactive transactions,
+ * CLAUDE.md §9). History (tickets, comments, activity, attachments, progress logs,
+ * request decisions, systems, grantee confirmations) is preserved but reattributed;
+ * *current* assignments (ticket assignee, request builder) are cleared, mirroring a
+ * release. accounts/sessions/notifications cascade. Caller enforces MIS_ADMIN and
+ * blocks self-deletion.
+ *
+ * EVERY non-cascade FK to `users.id` must be handled here — a missed one throws a
+ * foreign-key violation and the whole delete fails with a generic error. When a new
+ * table references users.id, add its column to this batch.
  */
 export async function reassignReferencesAndDeleteUser(userId: string) {
   const placeholderId = await getOrCreateDeletedPlaceholderId();
@@ -311,6 +317,7 @@ export async function reassignReferencesAndDeleteUser(userId: string) {
   }
 
   await db.batch([
+    // --- Tickets (issues AND requests share this table, §12) ---
     db
       .update(tickets)
       .set({ createdBy: placeholderId })
@@ -323,6 +330,11 @@ export async function reassignReferencesAndDeleteUser(userId: string) {
       .update(tickets)
       .set({ resolvedBy: placeholderId })
       .where(eq(tickets.resolvedBy, userId)),
+    // Who soft-deleted a ticket (audit) — reattribute, don't orphan.
+    db
+      .update(tickets)
+      .set({ deletedBy: placeholderId })
+      .where(eq(tickets.deletedBy, userId)),
     db
       .update(ticketComments)
       .set({ authorId: placeholderId })
@@ -335,6 +347,46 @@ export async function reassignReferencesAndDeleteUser(userId: string) {
       .update(ticketAttachments)
       .set({ uploadedBy: placeholderId })
       .where(eq(ticketAttachments.uploadedBy, userId)),
+    // --- Requests (§12) ---
+    // The recorded-on-MD's-behalf decision is an accountability record — keep it,
+    // reattributed. The build assignment is CURRENT state — clear it, mirroring the
+    // assignedTo → null above (deleting the assignee unassigns their build).
+    db
+      .update(requestDetails)
+      .set({ mdDecisionRecordedBy: placeholderId })
+      .where(eq(requestDetails.mdDecisionRecordedBy, userId)),
+    db
+      .update(requestDetails)
+      .set({ claimedBy: null })
+      .where(eq(requestDetails.claimedBy, userId)),
+    db
+      .update(progressLogs)
+      .set({ authorId: placeholderId })
+      .where(eq(progressLogs.authorId, userId)),
+    // --- Systems directory (§13). owner/logger/confirmedBy are NOT NULL, so they
+    // must be reattributed to the placeholder (an admin can reassign ownership after). ---
+    db
+      .update(systems)
+      .set({ ownerId: placeholderId })
+      .where(eq(systems.ownerId, userId)),
+    db
+      .update(systems)
+      .set({ loggedBy: placeholderId })
+      .where(eq(systems.loggedBy, userId)),
+    db
+      .update(systemAccessConfirmations)
+      .set({ confirmedBy: placeholderId })
+      .where(eq(systemAccessConfirmations.confirmedBy, userId)),
+    // --- Access requests (§7). Keep the decision audit (placeholder); null the link
+    // to the account being deleted (createdUserId pointed AT this user). ---
+    db
+      .update(accessRequests)
+      .set({ decidedBy: placeholderId })
+      .where(eq(accessRequests.decidedBy, userId)),
+    db
+      .update(accessRequests)
+      .set({ createdUserId: null })
+      .where(eq(accessRequests.createdUserId, userId)),
     db.delete(users).where(eq(users.id, userId)),
   ]);
 }

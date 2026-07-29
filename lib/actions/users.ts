@@ -383,7 +383,10 @@ export async function adminDeleteUser(userId: string): Promise<ActionResult> {
 
   try {
     await reassignReferencesAndDeleteUser(parsed.data.userId);
-  } catch {
+  } catch (e) {
+    // Log the real cause (almost always an unhandled FK reference to users.id) so a
+    // future failure is diagnosable instead of a silent generic message.
+    console.error("[adminDeleteUser]", e);
     return fail("Could not delete this user. Please try again.");
   }
 
