@@ -230,6 +230,24 @@ export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 export const requestActionSchema = z.object({ ticketId: z.string().uuid() });
 export type RequestActionInput = z.infer<typeof requestActionSchema>;
 
+/**
+ * Move a misfiled ticket to the other module (ISSUE ⇄ REQUEST) (§12).
+ * `expectedBenefit` is REQUIRED only when moving an ISSUE → REQUEST (a request must
+ * have one; the issue's title/description map to system name / problem statement). A
+ * REQUEST → ISSUE move needs no extra field, so it stays optional here and the action
+ * enforces the direction-specific rule.
+ */
+export const moveTicketSchema = z.object({
+  ticketId: z.string().uuid(),
+  expectedBenefit: z
+    .string()
+    .trim()
+    .min(5, "What's the expected benefit?")
+    .max(2000)
+    .optional(),
+});
+export type MoveTicketInput = z.infer<typeof moveTicketSchema>;
+
 /** MD decision — an offline verdict RECORDED BY AN MIS_ADMIN on the MD's behalf
  *  (§12.2). There is no MD role and the MD never logs in. */
 export const mdDecisionSchema = z.object({

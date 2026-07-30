@@ -8,6 +8,7 @@ import type { SessionUser } from "@/lib/session";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ActivityTimeline } from "./activity-timeline";
 import { AttachmentGrid } from "./attachment-grid";
+import { MoveTicketButton } from "./move-ticket-button";
 import { PriorityChip, StatusChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
 import { ResolutionActions } from "./resolution-actions";
@@ -61,21 +62,32 @@ export function TicketDetail({
             <StatusChip status={ticket.status} />
             <PriorityChip priority={ticket.priority} />
           </div>
-          {canEdit || canDelete ? (
-            <TicketActions
-              ticketId={ticket.id}
-              number={ticket.number}
-              defaults={{
-                title: ticket.title,
-                description: ticket.description,
-                department: ticket.department,
-                sheetLink: ticket.sheetLink ?? "",
-              }}
-              canEdit={canEdit}
-              canDelete={canDelete}
-              onMutate={onMutate}
-            />
-          ) : null}
+          <div className="flex items-center gap-2">
+            {/* Misfiled? MIS can move it to System Requests (§12). */}
+            {isStaff ? (
+              <MoveTicketButton
+                ticketId={ticket.id}
+                number={ticket.number}
+                currentType="ISSUE"
+                status={ticket.status}
+              />
+            ) : null}
+            {canEdit || canDelete ? (
+              <TicketActions
+                ticketId={ticket.id}
+                number={ticket.number}
+                defaults={{
+                  title: ticket.title,
+                  description: ticket.description,
+                  department: ticket.department,
+                  sheetLink: ticket.sheetLink ?? "",
+                }}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                onMutate={onMutate}
+              />
+            ) : null}
+          </div>
         </div>
         <h1 className="font-display text-2xl font-semibold tracking-tight">
           {ticket.title}

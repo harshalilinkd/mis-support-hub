@@ -6,8 +6,10 @@ import {
   assertStatusForType,
   availableRequestMoves,
   canLogProgress,
+  canMoveTicketType,
   canReleaseTicket,
   canTransition,
+  moveTargetType,
   releaseNeedsNotice,
   type RequestMoveId,
 } from "./ticket-state";
@@ -369,4 +371,31 @@ test("availableRequestMoves: the right moves for the right actor", () => {
 
   // A closed request is terminal for everyone.
   assert.deepEqual(ids("CLOSED", adminCtx), []);
+});
+
+/* ---------------- canMoveTicketType (§12 — moving a misfiled ticket) ------------- */
+
+test("an ISSUE can be moved until it's resolved/closed", () => {
+  assert.equal(canMoveTicketType("ISSUE", "OPEN"), true);
+  assert.equal(canMoveTicketType("ISSUE", "IN_PROGRESS"), true);
+  assert.equal(canMoveTicketType("ISSUE", "REOPENED"), true);
+  // Blocked once work is done or the reporter is verifying — a reset would destroy it.
+  assert.equal(canMoveTicketType("ISSUE", "RESOLVED"), false);
+  assert.equal(canMoveTicketType("ISSUE", "CLOSED"), false);
+});
+
+test("a REQUEST can be moved until testing/closed", () => {
+  assert.equal(canMoveTicketType("REQUEST", "SUBMITTED"), true);
+  assert.equal(canMoveTicketType("REQUEST", "UNDER_REVIEW"), true);
+  assert.equal(canMoveTicketType("REQUEST", "CLAIMED"), true);
+  assert.equal(canMoveTicketType("REQUEST", "IN_PROGRESS"), true);
+  assert.equal(canMoveTicketType("REQUEST", "CHANGES_REQUESTED"), true);
+  // Blocked once the requester is verifying (IN_TESTING) or has accepted (CLOSED).
+  assert.equal(canMoveTicketType("REQUEST", "IN_TESTING"), false);
+  assert.equal(canMoveTicketType("REQUEST", "CLOSED"), false);
+});
+
+test("moveTargetType flips the module", () => {
+  assert.equal(moveTargetType("ISSUE"), "REQUEST");
+  assert.equal(moveTargetType("REQUEST"), "ISSUE");
 });

@@ -250,6 +250,31 @@ export const REQUEST_ACTIVE_STATUSES: Status[] = [
 export const AUTO_CLOSE_DAYS = 7;
 
 /**
+ * May a misfiled ticket be MOVED to the other module (ISSUE ⇄ REQUEST)? (§12.)
+ *
+ * A move renumbers the ticket into the target sequence and resets it to that module's
+ * intake stage (OPEN / SUBMITTED), clearing any assignee / priority / deadline — so it
+ * is only offered while the ticket has NOT reached a done-or-verification state, where
+ * a reset would destroy real work or a sign-off in progress:
+ *  - ISSUE: blocked once RESOLVED or CLOSED (work done / reporter verifying).
+ *  - REQUEST: blocked once IN_TESTING or CLOSED (requester verifying / accepted).
+ * Everything earlier (including a claimed/in-progress misfile) may still be corrected.
+ *
+ * Pure + unit-tested, shared by the server action and the menu, so the button never
+ * offers a move the action rejects.
+ */
+export function canMoveTicketType(type: TicketType, status: Status): boolean {
+  if (type === "ISSUE") return status !== "RESOLVED" && status !== "CLOSED";
+  // REQUEST
+  return status !== "IN_TESTING" && status !== "CLOSED";
+}
+
+/** The module a move sends the ticket to (the opposite of its current type). */
+export function moveTargetType(type: TicketType): TicketType {
+  return type === "ISSUE" ? "REQUEST" : "ISSUE";
+}
+
+/**
  * May this actor release an ISSUE back to the open pool? (§5.)
  *
  * ASSIGNEE-LOCKED — even an MIS_ADMIN releases only their own claim; taking a ticket

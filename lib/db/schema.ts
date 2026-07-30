@@ -129,6 +129,10 @@ export const ACTIVITY_TYPES = [
   "MARKED_COMPLETE",
   "CHANGES_REQUESTED",
   "ACCEPTED",
+  // A misfiled ticket was moved between modules (ISSUE ⇄ REQUEST). from_value/to_value
+  // carry the old and new numbers so the timeline shows the renumber (§12). TEXT-
+  // constrained, so no migration.
+  "MOVED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

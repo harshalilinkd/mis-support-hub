@@ -11,6 +11,7 @@ import { isStaff } from "@/lib/roles";
 import { formatDueDate, isUrl } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AttachmentGrid } from "./attachment-grid";
+import { MoveTicketButton } from "./move-ticket-button";
 import { PriorityChip, StatusChip, TypeChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
 import { RequestActions } from "./request-actions";
@@ -102,9 +103,20 @@ export function RequestDetail({
           </div>
           <h1 className="mt-2 font-display text-2xl font-semibold">{request.systemName}</h1>
         </div>
-        {canDelete ? (
-          <RequestDelete ticketId={request.id} number={request.number} />
-        ) : null}
+        <div className="flex items-center gap-2">
+          {/* Misfiled as a request? MIS can move it to Issues (§12). */}
+          {isStaff(currentUser.role) ? (
+            <MoveTicketButton
+              ticketId={request.id}
+              number={request.number}
+              currentType="REQUEST"
+              status={request.status}
+            />
+          ) : null}
+          {canDelete ? (
+            <RequestDelete ticketId={request.id} number={request.number} />
+          ) : null}
+        </div>
       </div>
 
       {/* The journey so far (§12.3) — current stage highlighted, done stages ticked. */}

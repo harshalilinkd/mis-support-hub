@@ -1373,6 +1373,131 @@ export async function createRequestTicket(args: CreateRequestArgs) {
   return rows[0];
 }
 
+/**
+ * Move a misfiled ticket to the other module (ISSUE ⇄ REQUEST) (§12). Renumbers it
+ * into the target sequence (MIS-/REQ-, the prefix always matches the type), resets it
+ * to that module's intake stage, and clears the old assignment/priority/deadline —
+ * it re-enters the correct pipeline fresh. Comments, attachments and activity stay
+ * (they hang off ticket_id); a MOVED activity row records old → new number.
+ *
+ * ISSUE → REQUEST: creates the request_details brief (system name ← title, problem ←
+ * description, sheet ← sheet_link, plus the expected_benefit the mover supplied).
+ * REQUEST → ISSUE: folds the brief back into title/description and drops the
+ * request_details row (1:1 with REQUEST). All in ONE atomic batch (§2).
+ */
+export async function moveTicketType(args: {
+  ticketId: string;
+  currentType: TicketType;
+  actorId: string;
+  /** Required when currentType is ISSUE (→ REQUEST). Ignored the other way. */
+  expectedBenefit?: string;
+}): Promise<{ number: string; type: TicketType }> {
+  const toRequest = args.currentType === "ISSUE";
+  const [current] = await db
+    .select()
+    .from(tickets)
+    .where(eq(tickets.id, args.ticketId))
+    .limit(1);
+  if (!current) throw new Error("Ticket not found.");
+  const oldNumber = current.number;
+
+  // Fresh number from the TARGET sequence — same expression the creators use.
+  const newNumberSql = toRequest
+    ? sql`'REQ-' || lpad(nextval('request_seq')::text, 3, '0')`
+    : sql`'MIS-' || lpad(nextval('ticket_seq')::text, 3, '0')`;
+
+  if (toRequest) {
+    // ISSUE → REQUEST.
+    await db.batch([
+      db
+        .update(tickets)
+        .set({
+          type: "REQUEST",
+          number: newNumberSql,
+          status: "SUBMITTED",
+          assignedTo: null,
+          priority: null,
+          deadline: null,
+          resolvedAt: null,
+          resolvedBy: null,
+        })
+        .where(eq(tickets.id, args.ticketId)),
+      db.insert(requestDetails).values({
+        ticketId: args.ticketId,
+        systemName: current.title,
+        problemStatement: current.description,
+        currentSheetLink: current.sheetLink ?? null,
+        expectedBenefit: args.expectedBenefit ?? "—",
+      }),
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "MOVED",
+        fromValue: oldNumber,
+        // to_value is filled below once we know the minted number.
+      }),
+    ]);
+  } else {
+    // REQUEST → ISSUE. Fold the brief back into the issue description so nothing is lost.
+    const details = await getRequestDetailsRow(args.ticketId);
+    const title = details?.systemName ?? current.title;
+    const parts = [details?.problemStatement ?? current.description];
+    if (details?.currentProcess) parts.push(`How it's handled today: ${details.currentProcess}`);
+    if (details?.expectedBenefit) parts.push(`Expected benefit: ${details.expectedBenefit}`);
+    const description = parts.filter(Boolean).join("\n\n");
+
+    await db.batch([
+      db
+        .update(tickets)
+        .set({
+          type: "ISSUE",
+          number: newNumberSql,
+          status: "OPEN",
+          title,
+          description,
+          sheetLink: current.sheetLink ?? details?.currentSheetLink ?? null,
+          assignedTo: null,
+          priority: null,
+          deadline: null,
+          resolvedAt: null,
+          resolvedBy: null,
+        })
+        .where(eq(tickets.id, args.ticketId)),
+      db.delete(requestDetails).where(eq(requestDetails.ticketId, args.ticketId)),
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "MOVED",
+        fromValue: oldNumber,
+      }),
+    ]);
+  }
+
+  // Read back the minted number and stamp it onto the MOVED activity's to_value, so
+  // the timeline reads "moved from MIS-004 to REQ-012". (A batch statement can't read
+  // a sibling's nextval result, so this is a small follow-up write — best-effort.)
+  const [moved] = await db
+    .select({ number: tickets.number, type: tickets.type })
+    .from(tickets)
+    .where(eq(tickets.id, args.ticketId))
+    .limit(1);
+  try {
+    await db
+      .update(ticketActivity)
+      .set({ toValue: moved.number })
+      .where(
+        and(
+          eq(ticketActivity.ticketId, args.ticketId),
+          eq(ticketActivity.type, "MOVED"),
+          isNull(ticketActivity.toValue)
+        )
+      );
+  } catch {
+    // The move itself already committed; a missing to_value only affects the label.
+  }
+  return { number: moved.number, type: moved.type };
+}
+
 /** The request_details row for a ticket (state checks in actions). */
 export async function getRequestDetailsRow(ticketId: string) {
   const [row] = await db

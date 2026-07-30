@@ -63,6 +63,10 @@ function describe(a: ActivityRow): string {
       return `${actor} reopened the ticket`;
     case "EDITED":
       return `${actor} edited the ticket`;
+    case "MOVED":
+      return a.fromValue && a.toValue
+        ? `${actor} moved this from ${a.fromValue} to ${a.toValue}`
+        : `${actor} moved this between modules`;
     default:
       return `${actor} updated the ticket`;
   }

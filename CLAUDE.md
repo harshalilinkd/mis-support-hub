@@ -562,6 +562,39 @@ fill an inbox for no gain, and no earlier email is made false by it.
   machine (IN_PROGRESS is shared). `getTicketById` is deliberately NOT type-filtered —
   the request actions call it and then check `type` themselves.
 
+### 12.9 Moving a misfiled ticket (ISSUE ⇄ REQUEST)
+Doers sometimes file a system request in Issues, or a bug in System Requests. A **Move**
+converts a ticket to the other module in place (`moveTicketType`, `lib/actions/tickets.ts`
+→ `moveTicketType` query). **MIS staff + admin only** — they triage, so they fix the
+misfile; a USER never sees it.
+
+**As built:**
+- **Renumbered into the target sequence.** The ticket draws a FRESH number from the
+  other sequence (`MIS-` ⇄ `REQ-`, same `nextval` expression the creators use), because
+  the prefix encodes the type everywhere. The old number is retired (a just-misfiled
+  ticket isn't deeply linked yet). Never computed from a row count (§9).
+- **Reset to the target's intake stage**, fresh: ISSUE → REQUEST lands at `SUBMITTED`;
+  REQUEST → ISSUE lands at `OPEN`. The old `assigned_to` / `priority` / `deadline` /
+  `resolved_*` are cleared — it re-enters the correct pipeline clean.
+- **The brief is reconciled.** ISSUE → REQUEST creates the `request_details` row
+  (system_name ← title, problem_statement ← description, current_sheet_link ←
+  sheet_link) and collects the **one** field a request needs that an issue lacks —
+  `expected_benefit` — in the move dialog. REQUEST → ISSUE folds the brief back into the
+  issue description (problem + benefit + current process) and drops `request_details`
+  (1:1 with REQUEST). Comments, attachments and activity hang off `ticket_id`, so they
+  come across untouched.
+- **Audited.** A `MOVED` activity row (TEXT-constrained, no migration) records
+  `from_value` = old number, `to_value` = new number, so the timeline reads "moved from
+  MIS-004 to REQ-012". All the above is ONE atomic `db.batch` (§2); the `to_value`
+  back-stamp is a best-effort follow-up (a batch statement can't read a sibling's
+  `nextval`).
+- **Gated by `canMoveTicketType(type, status)`** (`lib/ticket-state.ts`, unit-tested) —
+  a move is blocked once the ticket reaches a done/verification state (ISSUE: RESOLVED /
+  CLOSED; REQUEST: IN_TESTING / CLOSED), where a reset would destroy real work or a
+  sign-off. Everything earlier, including a claimed/in-progress misfile, may still move.
+  The `MoveTicketButton` shares this predicate, so it hides exactly when the action
+  would refuse.
+
 ## 13. Systems Repository module (ADDITIVE — new tables only)
 
 Central directory of every system the MIS team builds, so URLs aren't lost and

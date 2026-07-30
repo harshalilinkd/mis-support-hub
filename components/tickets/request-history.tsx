@@ -55,6 +55,7 @@ const ACTIVITY_TEXT: Record<string, string> = {
   CHANGES_REQUESTED: "requested changes",
   ACCEPTED: "accepted the build",
   EDITED: "edited the request",
+  MOVED: "moved this between modules",
 };
 
 function buildEntries(request: RequestDetail): Entry[] {

@@ -63,6 +63,9 @@ export function NewTicketForm({
   const [uploading, setUploading] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [pending, startTransition] = useTransition();
+  // The dropzone isn't a react-hook-form field, so its requirement is tracked here
+  // and rendered next to the dropzone (not as a toast the user has to remember).
+  const [fileError, setFileError] = useState<string | null>(null);
 
   // Either an upload path can be in flight; block submit until both are idle.
   const busy = uploading || voiceBusy;
@@ -71,6 +74,8 @@ export function NewTicketForm({
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<FormValues, unknown, CreateTicketInput>({
     resolver: zodResolver(createTicketSchema),
@@ -87,15 +92,37 @@ export function NewTicketForm({
       toast.error("Please wait for the recording/uploads to finish.");
       return;
     }
-    // The voice note is a normal attachment; it counts toward the requirement.
+    // Both get stored as attachments, but they are TWO SEPARATE requirements and
+    // must never be pooled into one count (doing so let a voice note stand in for
+    // the mandatory file, and made a file stand in for the description):
+    //   · a file attachment (screenshot/PDF) is REQUIRED, always;
+    //   · the voice note is OPTIONAL — an alternative to typing, nothing more.
     const allAttachments = voiceNote ? [...attachments, voiceNote] : attachments;
+
+    // Describe the problem: typed text OR a voice note — either alone is enough,
+    // and a voice note is never required on top of text.
     const hasText = values.description.trim().length > 0;
-    if (!hasText && !voiceNote) {
-      toast.error("Describe the problem — type it in, or record a voice note.");
-      return;
+    const missingDescription = !hasText && !voiceNote;
+    // Only real files count here — the voice note does NOT satisfy this.
+    const missingFile = attachments.length === 0;
+
+    if (missingDescription) {
+      setError("description", {
+        type: "manual",
+        message: "Describe the problem — type it here, or record a voice note.",
+      });
     }
-    if (allAttachments.length === 0) {
-      toast.error("Attach a screenshot or PDF, or record a voice note.");
+    if (missingFile) {
+      setFileError("Attach at least one screenshot or PDF.");
+    }
+    if (missingDescription || missingFile) {
+      toast.error(
+        missingDescription && missingFile
+          ? "Describe the problem (type it or record it) and attach a screenshot or PDF."
+          : missingDescription
+            ? "Describe the problem — type it in, or record a voice note."
+            : "Attach at least one screenshot or PDF."
+      );
       return;
     }
     // A voice-only ticket has no typed body — give MIS a hint to play the audio.
@@ -199,37 +226,56 @@ export function NewTicketForm({
       </div>
 
       <div>
-        <Label htmlFor="description">Describe the problem / Summary</Label>
+        <Label htmlFor="description">
+          Describe the problem / Summary{" "}
+          <span className="text-destructive">*</span>
+        </Label>
         <Textarea
           id="description"
           rows={3}
           placeholder="What's happening, what you expected, and any steps to reproduce."
           disabled={pending}
-          {...register("description")}
+          {...register("description", {
+            onChange: () => clearErrors("description"),
+          })}
         />
+        <p className="mt-1 text-xs text-text-muted">
+          Type it here <span className="font-medium">or</span> record a voice
+          note — either one is enough.
+        </p>
         <FieldError message={errors.description?.message} />
         {/* Accessibility: not everyone is comfortable typing — record the issue
-            as a voice note instead. A voice note can stand in for the text. */}
+            as a voice note instead. A voice note STANDS IN for the text; it is
+            never required alongside it. */}
         <VoiceRecorder
-          onChange={setVoiceNote}
+          onChange={(meta) => {
+            setVoiceNote(meta);
+            if (meta) clearErrors("description");
+          }}
           onBusyChange={setVoiceBusy}
           disabled={pending}
         />
       </div>
 
       <div>
-        <Label>Attachments</Label>
+        <Label>
+          Attachments <span className="text-destructive">*</span>
+        </Label>
         <FileDropzone
-          onChange={setAttachments}
+          onChange={(files) => {
+            setAttachments(files);
+            if (files.length > 0) setFileError(null);
+          }}
           onBusyChange={setUploading}
           disabled={pending}
           compact
         />
         {attachments.length === 0 ? (
           <p className="mt-1 text-xs text-text-muted">
-            Screenshot or PDF — or record a voice note above instead.
+            Required — attach at least one screenshot or PDF of the problem.
           </p>
         ) : null}
+        <FieldError message={fileError ?? undefined} />
       </div>
 
       <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">

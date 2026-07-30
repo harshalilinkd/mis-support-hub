@@ -49,6 +49,10 @@ function describe(a: ActivityRow): string {
       return `${actor} requested changes${a.toValue ? ` (round ${a.toValue})` : ""}`;
     case "ACCEPTED":
       return `${actor} accepted the build`;
+    case "MOVED":
+      return a.fromValue && a.toValue
+        ? `${actor} moved this from ${a.fromValue} to ${a.toValue}`
+        : `${actor} moved this between modules`;
     default:
       return `${actor} updated the request`;
   }

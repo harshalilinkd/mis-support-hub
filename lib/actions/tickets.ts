@@ -18,6 +18,7 @@ import {
 } from "@/lib/notifications";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
 import {
+  canMoveTicketType,
   canReleaseTicket,
   canTransition,
   releaseNeedsNotice,
@@ -28,6 +29,7 @@ import {
   claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
+  moveTicketSchema,
   releaseTicketSchema,
   reopenTicketSchema,
   startTaskSchema,
@@ -53,6 +55,60 @@ function revalidateTicketRoutes(number?: string) {
 // on top of revalidateTicketRoutes, so ordinary mutations don't refetch it.
 function revalidateRecycleBin() {
   revalidatePath("/settings/recycle-bin");
+}
+
+/**
+ * Move a misfiled ticket to the other module (ISSUE ⇄ REQUEST) (§12). MIS staff +
+ * admin only — they triage, so they fix the misfile. Renumbers into the target
+ * sequence and resets to that module's intake stage; returns the new number/type so
+ * the UI can navigate to it.
+ */
+export async function moveTicketType(
+  input: unknown
+): Promise<ActionResult<{ number: string; type: "ISSUE" | "REQUEST" }>> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only the MIS team can move a ticket between modules.");
+  }
+  const parsed = moveTicketSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(parsed.error.issues[0]?.message ?? "Check the form and try again.");
+  }
+
+  const ticket = await q.getTicketById(parsed.data.ticketId);
+  if (!ticket) return fail("That ticket no longer exists.");
+  if (!canMoveTicketType(ticket.type, ticket.status)) {
+    return fail(
+      ticket.type === "ISSUE"
+        ? "A resolved or closed issue can't be moved."
+        : "A request that's in testing or closed can't be moved."
+    );
+  }
+  // A request must have an expected benefit; the issue's title/description supply the
+  // system name and problem statement, so this is the one field we must collect.
+  if (ticket.type === "ISSUE" && !parsed.data.expectedBenefit?.trim()) {
+    return fail("Add the expected benefit before moving this to System Requests.");
+  }
+
+  let result: { number: string; type: "ISSUE" | "REQUEST" };
+  try {
+    result = await q.moveTicketType({
+      ticketId: ticket.id,
+      currentType: ticket.type,
+      actorId: user.id,
+      expectedBenefit: parsed.data.expectedBenefit,
+    });
+  } catch {
+    return fail("Could not move the ticket. Please try again.");
+  }
+
+  // Refresh BOTH pipelines' surfaces — the ticket left one and joined the other.
+  revalidateTicketRoutes(ticket.number);
+  revalidatePath("/requests");
+  revalidatePath("/requests/board");
+  revalidatePath(`/tickets/${result.number}`);
+  return ok(result);
 }
 
 /** Raise a ticket — any authenticated user (§6). */
