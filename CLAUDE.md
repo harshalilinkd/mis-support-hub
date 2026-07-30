@@ -382,11 +382,25 @@ start-work — and the notice says so explicitly.
 | Change an in-flight deadline | no | yes (assignee) | yes |
 | Add progress log | no | yes (assignee only) | yes (assignee only — no override) |
 | Mark complete (→ IN_TESTING) | no | yes (assignee) | yes |
-| Request changes (→ CHANGES_REQUESTED) | yes (requester only) | no | yes |
+| Request changes (→ CHANGES_REQUESTED) | yes (requester only) | no | yes — **detail-only override** |
 | Accept & close | yes (requester only) | no | no |
 | Comment | yes | yes | yes |
 
 MIS may NEVER force-close a request. Only the requester's acceptance closes it.
+
+> **Request-changes is the requester's gate; the admin's is an escape hatch, not a
+> normal move.** At IN_TESTING the build is delivered and it is the requester's turn —
+> so `availableRequestMoves` offers "Request changes" (and "Accept & close") **only to
+> the requester**, and the requests LIST shows the admin nothing there. An admin is
+> still server-permitted to send it back (`requestActorAllows` keeps
+> `IN_TESTING → CHANGES_REQUESTED` for admin) — because otherwise a request whose
+> requester never tests it would be stuck in Testing with no MIS lever at all (release
+> is barred from IN_TESTING, close is requester-only). That power is surfaced ONLY in
+> the detail (`RequestUatPanel`) as a clearly-secondary "Send back for changes
+> (override)", under the primary "Waiting for {requester} to test" message — never as a
+> row move, where it read as "MIS is being asked to test the build". The build panel
+> likewise stops showing "is building this / Change date" once IN_TESTING: the build is
+> **delivered**, so that stage renders a read-only "finished — now in testing" state.
 
 > **Why "Add progress log" has no admin override**, unlike every other build action
 > beside it (`canBuild = isAdmin || (isStaff && isAssignee)` lets an admin start,

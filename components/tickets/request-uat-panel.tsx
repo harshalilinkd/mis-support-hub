@@ -41,31 +41,44 @@ export function RequestUatPanel({
   if (request.status !== "IN_TESTING") return null;
 
   const isRequester = request.createdById === currentUser.id;
-  // §12.4: request-changes is the requester's call; an admin may also send it back.
-  const canAskChanges = isRequester || currentUser.role === "MIS_ADMIN";
+  const isAdmin = currentUser.role === "MIS_ADMIN";
 
+  // MIS side (builder / staff / admin): the build is delivered and it's the
+  // requester's turn. This is a WAITING state — MIS never closes (§12.4). An admin
+  // additionally gets an escape-hatch override, kept visually secondary so it doesn't
+  // read as "you're being asked to test".
   if (!isRequester) {
     return (
       <div className="flex items-start gap-2.5 rounded-[var(--radius-input)] border border-border bg-surface-muted/60 p-3 text-sm">
         <Hourglass className="mt-0.5 size-4 shrink-0 text-text-muted" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-medium">
             Waiting for {request.createdByName ?? "the requester"} to test
           </p>
           <p className="mt-0.5 text-xs text-text-muted">
-            Only they can accept and close this request — MIS can&apos;t close it on
-            their behalf.
+            The build is delivered. It closes when{" "}
+            {request.createdByName ?? "the requester"} accepts it — MIS can&apos;t
+            accept or close on their behalf.
           </p>
-          {canAskChanges ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              disabled={pending}
-              onClick={() => setAsking(true)}
-            >
-              <RotateCcw className="size-4" /> Send back for changes
-            </Button>
+          {/* Admin-only ESCAPE HATCH (§12.4), deliberately secondary: use it only if
+              the requester can't test it, since it reopens the build for another
+              round. Not shown to non-admin staff, and never on the list. */}
+          {isAdmin ? (
+            <div className="mt-2.5 border-t border-border/60 pt-2.5">
+              <p className="text-xs text-text-muted">
+                Requester unavailable to test? As an admin you can send it back into the
+                build queue.
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mt-1.5 h-auto px-2 py-1 text-xs text-text-muted hover:text-foreground"
+                disabled={pending}
+                onClick={() => setAsking(true)}
+              >
+                <RotateCcw className="size-3.5" /> Send back for changes (override)
+              </Button>
+            </div>
           ) : null}
         </div>
         <ChangesDialog

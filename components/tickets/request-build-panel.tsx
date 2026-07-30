@@ -35,8 +35,13 @@ const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
   URGENT: "Urgent",
 };
 
-/** Statuses where a claimed request is still being delivered (deadline is live). */
-const IN_FLIGHT = ["CLAIMED", "IN_PROGRESS", "IN_TESTING", "CHANGES_REQUESTED"];
+/**
+ * Statuses where the build is still UNDER WAY, so the delivery date is live and
+ * editable. IN_TESTING is deliberately NOT here: once marked complete the build has
+ * been DELIVERED, so "is building this" and a re-scheduleable date are both wrong —
+ * IN_TESTING gets its own past-tense, read-only "delivered" state below.
+ */
+const IN_FLIGHT = ["CLAIMED", "IN_PROGRESS", "CHANGES_REQUESTED"];
 
 /**
  * Two faces of the same slot (P12 item 1):
@@ -64,8 +69,39 @@ export function RequestBuildPanel({
 
   const claimable = request.status === "APPROVED" && !request.assignedToId && staff;
   const inFlight = !!request.assignedToId && IN_FLIGHT.includes(request.status);
+  // Build finished and handed over — the requester is now testing it. Read-only,
+  // past tense, and NO "change date": you can't reschedule a delivery that happened.
+  const delivered = !!request.assignedToId && request.status === "IN_TESTING";
 
-  if (!claimable && !inFlight) return null;
+  if (!claimable && !inFlight && !delivered) return null;
+
+  if (delivered) {
+    return (
+      <div className="flex flex-wrap items-center gap-2.5 rounded-[var(--radius-input)] border border-border bg-surface-muted/50 p-3">
+        <UserAvatar name={request.assignedToName} image={request.assignedToImage} />
+        <div className="min-w-0 text-sm">
+          <p className="truncate">
+            <span className="font-medium">{request.assignedToName ?? "An MIS member"}</span>{" "}
+            <span className="text-text-muted">
+              finished the build — it&apos;s now in testing
+            </span>
+          </p>
+          <p className="text-xs text-text-muted">
+            {request.deadline ? (
+              <>
+                Delivered · target was{" "}
+                <span className="font-mono text-foreground">
+                  {formatDueDate(request.deadline)}
+                </span>
+              </>
+            ) : (
+              "Delivered"
+            )}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (claimable) {
     return (

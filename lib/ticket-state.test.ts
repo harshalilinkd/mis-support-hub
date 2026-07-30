@@ -357,11 +357,14 @@ test("availableRequestMoves: the right moves for the right actor", () => {
   assert.deepEqual(ids("CLAIMED", assigneeStaff), ["startBuild", "release"]);
   assert.deepEqual(ids("CLAIMED", { ...adminCtx, assigned: true }), ["startBuild"]);
 
-  // UAT gate: only the requester closes; requester or admin may send it back; a
-  // non-requester staff member gets no move at all.
+  // UAT gate: the requester owns it — accept & close, or send back for changes. The
+  // list is REQUESTER-ONLY: an admin is still server-permitted to send it back (the
+  // escape hatch, asserted in TRANSITION_CASES / canTransition), but that override
+  // lives only in the detail (RequestUatPanel), never as a row move here — so the row
+  // no longer reads as "MIS is being asked to test". Non-requester staff/admin: none.
   const requester = { role: USER, isRequester: true, isAssignee: false, assigned: true };
   assert.deepEqual(ids("IN_TESTING", requester), ["accept", "requestChanges"]);
-  assert.deepEqual(ids("IN_TESTING", { ...adminCtx, assigned: true }), ["requestChanges"]);
+  assert.deepEqual(ids("IN_TESTING", { ...adminCtx, assigned: true }), []);
   assert.deepEqual(ids("IN_TESTING", { ...staffCtx, assigned: true }), []);
 
   // A closed request is terminal for everyone.

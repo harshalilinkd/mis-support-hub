@@ -416,11 +416,16 @@ export function availableRequestMoves(
         moves.push({ id: "release", label: "Release", kind: "inline" });
       break;
     case "IN_TESTING":
-      // Only the requester closes; the requester or an admin can send it back (§12.4).
-      if (ctx.isRequester)
+      // The requester OWNS this gate — accept & close, or send it back for changes.
+      // An admin is ALSO server-permitted to send it back (§12.4), but that is an
+      // ESCAPE HATCH for an unresponsive requester — surfaced only as a clearly
+      // secondary override in the detail (RequestUatPanel), never offered here as a
+      // normal row move (where it read as "MIS is being asked to test the build").
+      // So this list is requester-only; the admin override lives in the detail.
+      if (ctx.isRequester) {
         moves.push({ id: "accept", label: "Accept & close", kind: "inline" });
-      if (ctx.isRequester || isAdmin)
         moves.push({ id: "requestChanges", label: "Request changes…", kind: "detail" });
+      }
       break;
     // APPROVED-with-assignee, CLOSED: nothing to advance from here.
     default:
