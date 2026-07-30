@@ -4,8 +4,8 @@ import { ArrowRight } from "lucide-react";
 
 import { requireRole, STAFF_ROLES } from "@/lib/authz";
 import { createdByDepartment, flowTrend, openAging, requestStats } from "@/lib/db/analytics";
-import { dashboardStats, listAllTickets } from "@/lib/db/queries";
-import type { Department } from "@/lib/db/schema";
+import { dashboardStats, listAllTickets, listRequests } from "@/lib/db/queries";
+import type { Department, Status } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ChartAgingBar } from "@/components/dashboard/chart-aging-bar";
@@ -65,7 +65,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireRole(...STAFF_ROLES);
+  const user = await requireRole(...STAFF_ROLES);
   const sp = await searchParams;
 
   const rangeParam = pick(sp.range);
@@ -75,10 +75,91 @@ export default async function DashboardPage({
     ? (deptParam as Department)
     : undefined;
 
-  // §12: the dashboard reports on one pipeline at a time. Requests are a funnel of
-  // counts, so they get their own KPI row rather than the issue charts.
+  // §12: the dashboard reports on one pipeline at a time. The REQUEST view gets its
+  // own KPI row + a request-shaped chart bento — all derived here from existing
+  // queries (requestStats + listRequests), never new schema/queries (§10).
   if (pick(sp.type) === "REQUEST") {
-    const reqStats = await requestStats(department);
+    const [reqStats, requests] = await Promise.all([
+      requestStats(department),
+      // Dashboard is staff-gated, so this viewer sees ALL requests (§12.7 only scopes
+      // a USER). Department filter honoured, same as the issue charts.
+      listRequests(
+        { id: user.id, role: user.role },
+        department ? { department } : {}
+      ),
+    ]);
+    const today = startOfDay(new Date());
+    const countBy = (ss: Status[]) => requests.filter((r) => ss.includes(r.status)).length;
+
+    /* ---- Pipeline funnel · every stage, submission → acceptance (horizontal bar) ---- */
+    const STAGE_ORDER: { status: Status; label: string }[] = [
+      { status: "SUBMITTED", label: "Submitted" },
+      { status: "UNDER_REVIEW", label: "Under review" },
+      { status: "PENDING_MD_APPROVAL", label: "Approval" },
+      { status: "APPROVED", label: "Approved" },
+      { status: "CLAIMED", label: "Claimed" },
+      { status: "IN_PROGRESS", label: "Building" },
+      { status: "CHANGES_REQUESTED", label: "Changes" },
+      { status: "IN_TESTING", label: "Testing" },
+      { status: "CLOSED", label: "Closed" },
+      { status: "DROPPED", label: "Dropped" },
+    ];
+    const pipelineData = STAGE_ORDER.map((s) => ({
+      name: s.label,
+      value: requests.filter((r) => r.status === s.status).length,
+    }));
+
+    /* ---- Live pipeline · what's in flight now, grouped by phase (donut) ---- */
+    const activeMix = [
+      { key: "awaiting", name: "Awaiting approval", color: "var(--status-open)", ss: ["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"] as Status[] },
+      { key: "approved", name: "Approved / claimed", color: "var(--priority-medium)", ss: ["APPROVED", "CLAIMED"] as Status[] },
+      { key: "building", name: "Building", color: "var(--status-in-progress)", ss: ["IN_PROGRESS", "CHANGES_REQUESTED"] as Status[] },
+      { key: "testing", name: "In testing", color: "var(--priority-high)", ss: ["IN_TESTING"] as Status[] },
+    ].map((g) => ({ key: g.key, name: g.name, color: g.color, value: countBy(g.ss) }));
+
+    /* ---- Submitted per week · last 8 weeks (columns) ---- */
+    const submittedWeeks = Array.from({ length: 8 }, (_, i) => {
+      const weekIdx = 7 - i; // 0 = most recent
+      const start = new Date(today);
+      start.setDate(today.getDate() - 7 * (weekIdx + 1) + 1);
+      const finish = new Date(today);
+      finish.setDate(today.getDate() - 7 * weekIdx);
+      finish.setHours(23, 59, 59, 999);
+      const value = requests.filter((r) => {
+        const c = new Date(r.createdAt);
+        return c >= start && c <= finish;
+      }).length;
+      return { name: fmtDate(start), value, color: "var(--primary)" };
+    });
+
+    /* ---- By priority (columns) & by department (horizontal bar) ---- */
+    const priorityData = [
+      { p: "LOW", label: "Low", color: "var(--priority-low)" },
+      { p: "MEDIUM", label: "Medium", color: "var(--priority-medium)" },
+      { p: "HIGH", label: "High", color: "var(--priority-high)" },
+      { p: "URGENT", label: "Urgent", color: "var(--priority-urgent)" },
+    ].map((x) => ({
+      name: x.label,
+      value: requests.filter((r) => r.priority === x.p).length,
+      color: x.color,
+    }));
+    const reqDeptData = DEPARTMENTS.map((d) => ({
+      name: DEPARTMENT_LABELS[d],
+      value: requests.filter((r) => r.department === d).length,
+    }));
+
+    /* ---- Systems logged · §13.5 compliance on finished builds (donut) ---- */
+    const finished = requests.filter((r) =>
+      (["IN_TESTING", "CLOSED", "CHANGES_REQUESTED"] as Status[]).includes(r.status)
+    );
+    const logged = finished.filter((r) => r.systemCode).length;
+    const systemsData = [
+      { key: "logged", name: "Logged", value: logged, color: "var(--status-resolved)" },
+      { key: "not", name: "Not logged", value: finished.length - logged, color: "var(--priority-high)" },
+    ];
+
+    const closedCount = requests.filter((r) => r.status === "CLOSED").length;
+
     return (
       <div className="space-y-6">
         <PageHeader
@@ -95,7 +176,64 @@ export default async function DashboardPage({
             </Button>
           </div>
         </PageHeader>
+
         <RequestKpiCards stats={reqStats} />
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <Panel
+            title="Pipeline by stage"
+            subtitle={`${requests.length} total · ${closedCount} closed`}
+            className="md:col-span-1 lg:col-span-3"
+            delay={0}
+          >
+            <ChartDepartmentBar data={pipelineData} />
+          </Panel>
+
+          <Panel
+            title="Live pipeline"
+            subtitle="What's in flight right now"
+            className="md:col-span-1 lg:col-span-3"
+            delay={60}
+          >
+            <ChartStatusDonut data={activeMix} />
+          </Panel>
+
+          <Panel
+            title="Submitted over time"
+            subtitle="Requests raised · last 8 weeks"
+            className="md:col-span-2 lg:col-span-4"
+            delay={120}
+          >
+            <ChartAgingBar data={submittedWeeks} />
+          </Panel>
+
+          <Panel
+            title="By priority"
+            subtitle="All requests"
+            className="md:col-span-1 lg:col-span-2"
+            delay={180}
+          >
+            <ChartAgingBar data={priorityData} />
+          </Panel>
+
+          <Panel
+            title="By department"
+            subtitle="All requests"
+            className="md:col-span-1 lg:col-span-3"
+            delay={240}
+          >
+            <ChartDepartmentBar data={reqDeptData} />
+          </Panel>
+
+          <Panel
+            title="Systems logged"
+            subtitle={`${logged}/${finished.length} finished builds in the directory`}
+            className="md:col-span-1 lg:col-span-3"
+            delay={300}
+          >
+            <ChartStatusDonut data={systemsData} />
+          </Panel>
+        </div>
       </div>
     );
   }
