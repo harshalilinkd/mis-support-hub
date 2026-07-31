@@ -11,7 +11,10 @@ export default async function NewRequestPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Request a new system" />
+      <PageHeader
+        title="Request a new system"
+        description="For a brand-new system that doesn't exist yet — tell MIS what you need and they'll design and build it. (Something in an existing system is broken? Use “Report an issue” instead.)"
+      />
       <RequestForm
         requester={{
           name: user.name ?? "You",

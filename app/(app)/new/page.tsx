@@ -11,7 +11,10 @@ export default async function NewTicketPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Raise a Ticket" />
+      <PageHeader
+        title="Raise a Ticket"
+        description="For a problem with an existing system, sheet, or app — something broken, wrong, or not working. (Need a brand-new system built? Use “Request a new system” instead.)"
+      />
       <NewTicketForm
         requester={{
           name: user.name ?? "You",

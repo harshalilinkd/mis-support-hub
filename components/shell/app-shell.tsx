@@ -43,6 +43,8 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: "myActive" | "pendingAccess";
+  /** Hover tooltip — plain-language purpose. Falls back to the label when unset. */
+  hint?: string;
 };
 
 type NavSection = {
@@ -89,8 +91,18 @@ function navSectionsFor(role: Role): NavSection[] {
       {
         id: "raise",
         items: [
-          { href: "/new", label: "Report an issue", icon: PlusCircle },
-          { href: "/requests/new", label: "Request a system", icon: Sparkles },
+          {
+            href: "/new",
+            label: "Report an issue",
+            icon: PlusCircle,
+            hint: "Something in an existing system, sheet, or app is broken or wrong — get MIS to fix it.",
+          },
+          {
+            href: "/requests/new",
+            label: "Request a new system",
+            icon: Sparkles,
+            hint: "Ask MIS to build a brand-new system that doesn't exist yet.",
+          },
         ],
       },
       {
@@ -112,7 +124,12 @@ function navSectionsFor(role: Role): NavSection[] {
       items: [
         { href: "/tickets", label: "All Issues", icon: ListChecks },
         { href: "/board", label: "Issue Board", icon: KanbanSquare },
-        { href: "/new", label: "Report an issue", icon: PlusCircle },
+        {
+          href: "/new",
+          label: "Report an issue",
+          icon: PlusCircle,
+          hint: "Something in an existing system, sheet, or app is broken or wrong — get it fixed.",
+        },
       ],
     },
     {
@@ -121,7 +138,12 @@ function navSectionsFor(role: Role): NavSection[] {
       items: [
         { href: "/requests", label: "All Requests", icon: Sparkles },
         { href: "/requests/board", label: "Request Board", icon: KanbanSquare },
-        { href: "/requests/new", label: "New Request", icon: PlusCircle },
+        {
+          href: "/requests/new",
+          label: "New Request",
+          icon: PlusCircle,
+          hint: "Ask MIS to build a brand-new system that doesn't exist yet.",
+        },
       ],
     },
     {
@@ -216,7 +238,9 @@ export function AppShell({
     return (
       <Link
         href={item.href}
-        title={item.label}
+        // Plain-language purpose on hover; the collapsed rail still needs the label,
+        // so fall back to it when no hint is set.
+        title={item.hint ?? item.label}
         onClick={onNavigate}
         className={cn(
           "group flex items-center gap-2.5 rounded-[var(--radius-input)] px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
