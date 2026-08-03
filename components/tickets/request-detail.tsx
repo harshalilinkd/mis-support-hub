@@ -11,6 +11,7 @@ import { isStaff } from "@/lib/roles";
 import { formatDueDate, isUrl } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AttachmentGrid } from "./attachment-grid";
+import { AutoClosedBanner } from "./auto-closed-banner";
 import { MoveTicketButton } from "./move-ticket-button";
 import { PriorityChip, StatusChip, TypeChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
@@ -158,6 +159,11 @@ export function RequestDetail({
       {/* IN_TESTING — the requester accepts or sends it back. MIS sees a read-only
           waiting state: only the requester's acceptance closes a request (§12.4). */}
       <RequestUatPanel request={request} currentUser={currentUser} onMutate={onMutate} />
+
+      {/* System auto-closed it (§5) — offer the requester/admin a reopen back to testing. */}
+      {request.status === "CLOSED" && request.autoClosedAt && (isRequester || isAdmin) ? (
+        <AutoClosedBanner ticketId={request.id} kind="REQUEST" onDone={onMutate} />
+      ) : null}
 
       {/* Workflow actions */}
       <RequestActions

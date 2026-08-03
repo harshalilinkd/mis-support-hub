@@ -619,6 +619,34 @@ export async function acceptRequest(ticketId: string): Promise<ActionResult> {
   return ok(undefined);
 }
 
+/**
+ * Reopen a request the SYSTEM auto-closed (§5): CLOSED → IN_TESTING, back at the UAT
+ * gate so the requester can accept it or send it back. Only when it was auto-closed
+ * (auto_closed_at set) — a manual acceptance is permanent. Requester or admin.
+ */
+export async function reopenRequest(ticketId: string): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  const parsed = requestActionSchema.safeParse({ ticketId });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const t = await loadRequest(parsed.data.ticketId);
+  if (!t) return fail("Request not found.");
+
+  const isRequester = t.createdBy === user.id;
+  const isAdmin = user.role === "MIS_ADMIN";
+  if (!isRequester && !isAdmin) {
+    return fail("Only the requester or an MIS admin can reopen this request.");
+  }
+  if (!(t.status === "CLOSED" && t.autoClosedAt)) {
+    return fail("Only a request the system auto-closed can be reopened.");
+  }
+
+  await q.reopenAutoClosedRequestRow({ ticketId: t.id, actorId: user.id });
+  revalidateRequestRoutes(t.number);
+  return ok(undefined);
+}
+
 /** Read the full REQUEST detail for the viewer (§6 visibility enforced in the query). */
 export async function loadRequestDetail(
   number: string

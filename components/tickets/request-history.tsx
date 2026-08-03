@@ -56,6 +56,8 @@ const ACTIVITY_TEXT: Record<string, string> = {
   ACCEPTED: "accepted the build",
   EDITED: "edited the request",
   MOVED: "moved this between modules",
+  AUTO_CLOSED: "closed automatically (no changes requested)",
+  REOPENED: "reopened this for testing",
 };
 
 function buildEntries(request: RequestDetail): Entry[] {

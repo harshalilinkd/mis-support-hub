@@ -53,6 +53,10 @@ function describe(a: ActivityRow): string {
       return a.fromValue && a.toValue
         ? `${actor} moved this from ${a.fromValue} to ${a.toValue}`
         : `${actor} moved this between modules`;
+    case "AUTO_CLOSED":
+      return "Closed automatically — no changes requested, accepted on the requester's behalf";
+    case "REOPENED":
+      return `${actor} reopened this — back for testing`;
     default:
       return `${actor} updated the request`;
   }

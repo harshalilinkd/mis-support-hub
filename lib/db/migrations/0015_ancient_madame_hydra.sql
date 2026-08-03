@@ -1,0 +1,1 @@
+ALTER TABLE "tickets" ADD COLUMN "auto_closed_at" timestamp with time zone;

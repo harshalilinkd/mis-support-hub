@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import type { Role, Status } from "@/lib/db/schema";
 import {
   assertStatusForType,
+  AUTO_CLOSE_DAYS,
+  autoCloseDue,
   availableRequestMoves,
   canLogProgress,
   canMoveTicketType,
   canReleaseTicket,
   canTransition,
+  isAutoCloseEligible,
   moveTargetType,
   releaseNeedsNotice,
   type RequestMoveId,
@@ -398,4 +401,26 @@ test("a REQUEST can be moved until testing/closed", () => {
 test("moveTargetType flips the module", () => {
   assert.equal(moveTargetType("ISSUE"), "REQUEST");
   assert.equal(moveTargetType("REQUEST"), "ISSUE");
+});
+
+/* ---------------- auto-close (§5) ---------------- */
+
+test("only RESOLVED issues and IN_TESTING requests are auto-close eligible", () => {
+  assert.equal(isAutoCloseEligible("ISSUE", "RESOLVED"), true);
+  assert.equal(isAutoCloseEligible("ISSUE", "OPEN"), false);
+  assert.equal(isAutoCloseEligible("ISSUE", "IN_PROGRESS"), false);
+  assert.equal(isAutoCloseEligible("ISSUE", "CLOSED"), false);
+  assert.equal(isAutoCloseEligible("REQUEST", "IN_TESTING"), true);
+  assert.equal(isAutoCloseEligible("REQUEST", "IN_PROGRESS"), false);
+  assert.equal(isAutoCloseEligible("REQUEST", "CLOSED"), false);
+});
+
+test("auto-close fires only after the grace window fully elapses", () => {
+  const now = new Date("2026-08-20T09:00:00Z");
+  const day = 86_400_000;
+  // Resolved 8 days ago exactly → due; 7 days ago → still within grace.
+  assert.equal(autoCloseDue(new Date(now.getTime() - AUTO_CLOSE_DAYS * day), now), true);
+  assert.equal(autoCloseDue(new Date(now.getTime() - (AUTO_CLOSE_DAYS - 1) * day), now), false);
+  // Just resolved → not due.
+  assert.equal(autoCloseDue(now, now), false);
 });

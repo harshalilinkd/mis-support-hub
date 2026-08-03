@@ -287,6 +287,23 @@ export function renderTemplate(input: NotifyInput): {
         ),
       };
     }
+    case "TICKET_AUTO_CLOSED": {
+      const isReq = input.data.kind === "REQUEST";
+      const days = input.data.days ?? "8";
+      return {
+        subject: `${number} was closed automatically`,
+        html: shell(
+          `${number} was closed automatically`,
+          `<p style="margin:0;line-height:1.6">${
+            isReq
+              ? `The build for <strong>${escapeHtml(title)}</strong> was delivered ${escapeHtml(days)} days ago and you didn't request any changes, so we've <strong>accepted it on your behalf</strong> and closed the request.`
+              : `<strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was marked resolved ${escapeHtml(days)} days ago and you didn't ask for any changes, so we've <strong>closed it as resolved</strong>.`
+          }</p>
+           <p style="margin:12px 0 0;line-height:1.6">If it still isn't right, you can reopen it from the app.</p>`,
+          isReq ? requestCta : cta
+        ),
+      };
+    }
     case "ACCESS_APPROVED": {
       const signInCta = appUrl
         ? { href: `${appUrl}/login`, label: "Sign in" }

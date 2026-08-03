@@ -66,13 +66,13 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED
-- `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | **ACCESS_REQUESTED** (→ admins) | **ACCESS_APPROVED** (→ the new user)
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM)
+- `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | ACCESS_REQUESTED (→ admins) | ACCESS_APPROVED (→ the new user) | **TICKET_AUTO_CLOSED** (§5 → the reporter)
 - `access_request_status`: PENDING | APPROVED | REJECTED (§7)
 
 Tables:
 - `users`: id (uuid), name, email (unique), email_verified, image, **password_hash (nullable — bcrypt; null = Google-only)**, role (default USER), **department (nullable)**, is_active (bool, default true), created_at. Auth.js adapter also owns `accounts`, `sessions`, `verification_tokens`.
-- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
+- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **auto_closed_at (timestamp, nullable — set when the SYSTEM auto-closes it (§5); marks the close as reopenable, vs a permanent manual confirm)**, **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
 - `ticket_comments`: id, ticket_id (fk, cascade), author_id (fk), body, created_at. Index on ticket_id.
 - `ticket_attachments`: id, ticket_id (fk, cascade), comment_id (fk, nullable), url (Vercel Blob), filename, content_type, size_bytes, uploaded_by (fk), created_at.
 - `ticket_activity`: id, ticket_id (fk, cascade), actor_id (fk), type (see enum above), from_value (nullable), to_value (nullable), created_at. **Audit trail — write a row on EVERY mutation.** Index on ticket_id.
@@ -92,7 +92,22 @@ explicitly started.
 - **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
 - Only the assignee/MIS may move to IN_PROGRESS/RESOLVED. Setting RESOLVED requires an assignee.
 - **Confirm resolved**: when the reporter confirms the fix, the ticket goes to **CLOSED permanently** (the "Did this resolve your issue?" prompt does not reappear).
-- Reopen is allowed only by the reporter or MIS_ADMIN. RESOLVED auto-CLOSES after 7 days if not reopened (spec'd; cron optional/stub).
+- Reopen is allowed only by the reporter or MIS_ADMIN.
+- **Auto-close (as built).** A RESOLVED issue the reporter never confirms auto-CLOSES
+  after **`AUTO_CLOSE_DAYS` = 8** (the reporter's grace window; requests auto-close the
+  same way from IN_TESTING — see §12.4). A daily **Vercel Cron** (`vercel.json` →
+  `/api/cron/auto-close`, guarded by `CRON_SECRET`) runs `autoCloseStaleTickets()`:
+  eligible = RESOLVED/IN_TESTING with `resolved_at`/`completed_at` older than the window.
+  Each close stamps **`tickets.auto_closed_at`**, writes an `AUTO_CLOSED` activity row
+  authored by the **SYSTEM** user placeholder (so `actor_id` has a truthful owner for an
+  action no human took), and notifies the reporter (in-app + email, type-aware wording —
+  "resolved" for an issue, "accepted on your behalf" for a request).
+  - **Auto-close is reversible.** `auto_closed_at` is the marker that distinguishes it
+    from a manual confirm/accept (which never sets it and stays permanent): the reporter
+    (or admin) may still **reopen** an auto-closed ticket — an ISSUE → REOPENED, a
+    REQUEST → IN_TESTING (back at the UAT gate). Reopen clears `auto_closed_at`.
+  - Degrades safe: with `CRON_SECRET` unset the endpoint refuses (401), so nothing
+    auto-closes until it's configured.
 - Allowed transitions live in `lib/ticket-state.ts` (`STATUS_TRANSITIONS` / `canTransition`); enforce them server-side. (OPEN → IN_PROGRESS is listed so the UI can offer it, but it's performed by `startTask`, never `updateStatus`.)
 
 ## 6. Roles & permissions
@@ -232,7 +247,7 @@ best-effort — a failed send never rolls back or throws to the caller):
 - **Soft delete**: `deleted_at IS NULL` must be filtered from EVERY active ticket read (lists, detail, counts, analytics). Deleted tickets live only in the recycle bin.
 - **Dates**: stored UTC. Tables/lists render **absolute time in a fixed timezone (IST)** via the deterministic `AbsoluteTime` component (no locale drift → no hydration mismatch); deadlines render as a plain IST date. Relative time ("2h ago") is used only for at-a-glance card metadata, never as a table's source of truth.
 - **Best-effort side effects**: notifications and bulk operations never let one failure abort the rest or roll back the DB; log and continue.
-- Env vars: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `ADMIN_EMAILS`, `BLOB_READ_WRITE_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`.
+- Env vars: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `ADMIN_EMAILS`, `BLOB_READ_WRITE_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`, `CRON_SECRET` (guards the §5 auto-close cron; unset ⇒ the endpoint refuses and nothing auto-closes).
 
 ## 10. Design & UI conventions
 The visual system is locked in `design-system.md` (also a reusable design
@@ -386,7 +401,11 @@ start-work — and the notice says so explicitly.
 | Accept & close | yes (requester only) | no | no |
 | Comment | yes | yes | yes |
 
-MIS may NEVER force-close a request. Only the requester's acceptance closes it.
+MIS may NEVER force-close a request. Only the requester's acceptance closes it — with
+ONE exception: the **system auto-closes** a delivered request (IN_TESTING) the requester
+never responds to, after `AUTO_CLOSE_DAYS` (§5). That is a timeout, not MIS acting, and
+it is reversible — the requester (or admin) can reopen it back to IN_TESTING
+(`reopenRequest`, gated on `auto_closed_at`). No MIS member can force a close by hand.
 
 > **Request-changes is the requester's gate; the admin's is an escape hatch, not a
 > normal move.** At IN_TESTING the build is delivered and it is the requester's turn —

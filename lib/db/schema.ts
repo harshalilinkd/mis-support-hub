@@ -133,6 +133,9 @@ export const ACTIVITY_TYPES = [
   // carry the old and new numbers so the timeline shows the renumber (§12). TEXT-
   // constrained, so no migration.
   "MOVED",
+  // The system auto-closed a stale RESOLVED issue / delivered request after the
+  // reporter didn't respond for AUTO_CLOSE_DAYS (§5). Actor is the SYSTEM user.
+  "AUTO_CLOSED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -174,6 +177,9 @@ export const NOTIFICATION_TYPES = [
   // ACCESS_APPROVED → the new user's welcome, seen on their first sign-in.
   "ACCESS_REQUESTED",
   "ACCESS_APPROVED",
+  // The system auto-closed the reporter's stale ticket after AUTO_CLOSE_DAYS (§5) —
+  // "no changes requested, treated as resolved/accepted; you can reopen it."
+  "TICKET_AUTO_CLOSED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -317,6 +323,11 @@ export const tickets = pgTable("tickets", {
   assignedTo: uuid("assigned_to").references(() => users.id),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedBy: uuid("resolved_by").references(() => users.id),
+  // Set when the SYSTEM auto-closes a ticket after the reporter didn't respond for
+  // AUTO_CLOSE_DAYS (§5). Non-null distinguishes an auto-close from a manual
+  // confirmation/acceptance — only an auto-closed ticket may be reopened from CLOSED.
+  // Cleared on reopen.
+  autoClosedAt: timestamp("auto_closed_at", { withTimezone: true }),
   // Estimated resolution date set by MIS when they claim the ticket (§ claim flow).
   deadline: timestamp("deadline", { withTimezone: true }),
   // Soft delete (recycle bin): non-null means the ticket is in the bin — hidden

@@ -7,6 +7,7 @@ import {
   listAdmins,
   listAssignableUsers,
 } from "@/lib/db/queries";
+import { AUTO_CLOSE_DAYS } from "@/lib/ticket-state";
 import type { NotifyRecipient } from "./types";
 import {
   type NotificationType,
@@ -389,6 +390,48 @@ export async function sendNewTicketNotification(ticketId: string): Promise<void>
     );
   } catch (e) {
     console.error("[sendNewTicketNotification]", e);
+  }
+}
+
+/**
+ * §5 auto-close → tell the reporter their ticket was closed by the system after the
+ * grace window, with type-appropriate wording (issue "resolved" vs request "accepted"),
+ * and that they can still reopen it. In-app + email (best-effort, §8).
+ */
+export async function sendAutoCloseNotification(ticketId: string): Promise<void> {
+  try {
+    const ticket = await loadTicket(ticketId);
+    if (!ticket) return;
+    const reporter = await loadUser(ticket.createdBy);
+    if (!reporter) return;
+    const isRequest = ticket.type === "REQUEST";
+
+    await createInApp({
+      userId: reporter.id,
+      type: "TICKET_AUTO_CLOSED",
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      title: `${ticket.number} was closed automatically`,
+      body: isRequest
+        ? `${ticket.title}\nThe build was delivered ${AUTO_CLOSE_DAYS} days ago and you didn't request changes, so we've accepted it on your behalf. You can still reopen it if it isn't right.`
+        : `${ticket.title}\nThis was marked resolved ${AUTO_CLOSE_DAYS} days ago and you didn't ask for changes, so we've closed it as resolved. You can still reopen it if it isn't right.`,
+    });
+
+    if (reporter.email) {
+      await notify({
+        to: { email: reporter.email, name: reporter.name },
+        template: "TICKET_AUTO_CLOSED",
+        data: {
+          number: ticket.number,
+          title: ticket.title,
+          kind: isRequest ? "REQUEST" : "ISSUE",
+          days: String(AUTO_CLOSE_DAYS),
+          appUrl: appUrl(),
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[sendAutoCloseNotification]", e);
   }
 }
 

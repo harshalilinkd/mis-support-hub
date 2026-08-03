@@ -31,7 +31,10 @@ export type NotificationTemplate =
   // ACCESS_APPROVED → the new user ("you're in — sign in with Google"). These do NOT
   // deep-link to a ticket, so they build their own CTA from appUrl.
   | "ACCESS_REQUESTED"
-  | "ACCESS_APPROVED";
+  | "ACCESS_APPROVED"
+  // §5 auto-close → the reporter. Wording differs by kind (issue "resolved" vs request
+  // "accepted"); `kind` = ISSUE | REQUEST, `days` = the grace window.
+  | "TICKET_AUTO_CLOSED";
 
 export interface NotifyRecipient {
   email?: string | null;

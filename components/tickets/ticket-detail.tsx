@@ -8,6 +8,7 @@ import type { SessionUser } from "@/lib/session";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ActivityTimeline } from "./activity-timeline";
 import { AttachmentGrid } from "./attachment-grid";
+import { AutoClosedBanner } from "./auto-closed-banner";
 import { MoveTicketButton } from "./move-ticket-button";
 import { PriorityChip, StatusChip } from "./chips";
 import { CommentComposer } from "./comment-composer";
@@ -120,6 +121,11 @@ export function TicketDetail({
           showConfirm={isReporter}
           onDone={onMutate}
         />
+      ) : null}
+
+      {/* System auto-closed it (§5) — offer the reporter/admin a reopen. */}
+      {ticket.status === "CLOSED" && ticket.autoClosedAt && (isReporter || isAdmin) ? (
+        <AutoClosedBanner ticketId={ticket.id} kind="ISSUE" onDone={onMutate} />
       ) : null}
 
       {/* Description */}

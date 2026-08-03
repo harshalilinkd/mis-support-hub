@@ -7,7 +7,8 @@ import {
   inArray,
   isNotNull,
   isNull,
-  ne,
+  lte,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -39,7 +40,7 @@ import {
   accessRequests,
 } from "./schema";
 import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
-import { assertStatusForType } from "@/lib/ticket-state";
+import { assertStatusForType, AUTO_CLOSE_DAYS } from "@/lib/ticket-state";
 
 /* ------------------------------------------------------------------ *
  * Users
@@ -53,6 +54,14 @@ import { assertStatusForType } from "@/lib/ticket-state";
  * real company address.
  */
 export const DELETED_USER_EMAIL = "deleted-user@placeholder.invalid";
+
+/**
+ * The SYSTEM actor — the author of automated audit rows (e.g. an auto-close, §5). Like
+ * the deleted-user placeholder it can never sign in and is hidden from the users list;
+ * it exists only so ticket_activity.actor_id (NOT NULL) has a truthful owner for an
+ * action no human took.
+ */
+export const SYSTEM_USER_EMAIL = "system@placeholder.invalid";
 
 export async function getUserById(id: string) {
   const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -174,8 +183,8 @@ export async function listAllUsers() {
         ),
     })
     .from(users)
-    // Hide the "Deleted user" placeholder from the admin list — it's plumbing.
-    .where(ne(users.email, DELETED_USER_EMAIL))
+    // Hide the placeholder rows (Deleted user, System) from the admin list — plumbing.
+    .where(notInArray(users.email, [DELETED_USER_EMAIL, SYSTEM_USER_EMAIL]))
     .orderBy(asc(users.name), asc(users.email));
 }
 
@@ -293,6 +302,27 @@ async function getOrCreateDeletedPlaceholderId(): Promise<string> {
     .where(eq(users.email, DELETED_USER_EMAIL))
     .limit(1);
   if (!row) throw new Error("Failed to provision the deleted-user placeholder.");
+  return row.id;
+}
+
+/** Get (or lazily create) the SYSTEM actor row; returns its id (§5 auto-close). */
+export async function getOrCreateSystemUserId(): Promise<string> {
+  await db
+    .insert(users)
+    .values({
+      name: "System",
+      email: SYSTEM_USER_EMAIL,
+      role: "USER",
+      isActive: false,
+    })
+    .onConflictDoNothing({ target: users.email });
+
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, SYSTEM_USER_EMAIL))
+    .limit(1);
+  if (!row) throw new Error("Failed to provision the system user.");
   return row.id;
 }
 
@@ -477,7 +507,9 @@ export async function reopenTicketRow(args: {
   await db.batch([
     db
       .update(tickets)
-      .set({ status: "REOPENED", resolvedAt: null, resolvedBy: null })
+      // Clear auto_closed_at too: reopening from an auto-close ends that state, so it
+      // can't be reopened again from CLOSED once it's back in the flow.
+      .set({ status: "REOPENED", resolvedAt: null, resolvedBy: null, autoClosedAt: null })
       .where(eq(tickets.id, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -485,6 +517,35 @@ export async function reopenTicketRow(args: {
       type: "REOPENED",
       fromValue: args.from,
       toValue: "REOPENED",
+    }),
+  ]);
+}
+
+/**
+ * Reopen an AUTO-CLOSED request (§5): CLOSED → IN_TESTING, back at the UAT gate so the
+ * requester can accept it or send it back. Clears auto_closed_at + the acceptance
+ * timestamp the auto-close stamped. Guarded by the caller (requester/admin + the row
+ * was auto-closed).
+ */
+export async function reopenAutoClosedRequestRow(args: {
+  ticketId: string;
+  actorId: string;
+}) {
+  await db.batch([
+    db
+      .update(tickets)
+      .set({ status: "IN_TESTING", autoClosedAt: null })
+      .where(eq(tickets.id, args.ticketId)),
+    db
+      .update(requestDetails)
+      .set({ acceptedAt: null })
+      .where(eq(requestDetails.ticketId, args.ticketId)),
+    db.insert(ticketActivity).values({
+      ticketId: args.ticketId,
+      actorId: args.actorId,
+      type: "REOPENED",
+      fromValue: "CLOSED",
+      toValue: "IN_TESTING",
     }),
   ]);
 }
@@ -1150,6 +1211,7 @@ export async function getTicketByNumber(
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
       resolvedAt: tickets.resolvedAt,
+      autoClosedAt: tickets.autoClosedAt,
       createdById: tickets.createdBy,
       createdByName: creatorUser.name,
       createdByEmail: creatorUser.email,
@@ -1498,6 +1560,87 @@ export async function moveTicketType(args: {
   return { number: moved.number, type: moved.type };
 }
 
+/**
+ * §5 auto-close sweep (run daily by the cron). Closes tickets the reporter never acted
+ * on past the grace window:
+ *  - ISSUE:   RESOLVED longer than AUTO_CLOSE_DAYS → CLOSED (treated as resolved).
+ *  - REQUEST: IN_TESTING (delivered) longer than AUTO_CLOSE_DAYS → CLOSED (auto-accepted).
+ *
+ * Stamps `auto_closed_at` so the close is reversible — the reporter may still reopen it
+ * (the manual confirm/accept path never sets it, so those stay permanent). Writes an
+ * AUTO_CLOSED activity row authored by the SYSTEM user, and for a request records the
+ * acceptance timestamp too. Returns the closed tickets so the caller notifies each
+ * reporter (best-effort). All DB writes in ONE batch (§2).
+ */
+export async function autoCloseStaleTickets(): Promise<
+  { id: string; number: string; type: TicketType; createdBy: string }[]
+> {
+  const systemId = await getOrCreateSystemUserId();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - AUTO_CLOSE_DAYS * 86_400_000);
+
+  const issues = await db
+    .select({ id: tickets.id, number: tickets.number, createdBy: tickets.createdBy })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.type, "ISSUE"),
+        eq(tickets.status, "RESOLVED"),
+        isNull(tickets.deletedAt),
+        isNotNull(tickets.resolvedAt),
+        lte(tickets.resolvedAt, cutoff)
+      )
+    );
+
+  const reqs = await db
+    .select({ id: tickets.id, number: tickets.number, createdBy: tickets.createdBy })
+    .from(tickets)
+    .innerJoin(requestDetails, eq(requestDetails.ticketId, tickets.id))
+    .where(
+      and(
+        eq(tickets.type, "REQUEST"),
+        eq(tickets.status, "IN_TESTING"),
+        isNull(tickets.deletedAt),
+        isNotNull(requestDetails.completedAt),
+        lte(requestDetails.completedAt, cutoff)
+      )
+    );
+
+  const all = [
+    ...issues.map((t) => ({ ...t, type: "ISSUE" as TicketType })),
+    ...reqs.map((t) => ({ ...t, type: "REQUEST" as TicketType })),
+  ];
+  if (all.length === 0) return [];
+
+  const stmts = [];
+  for (const t of all) {
+    stmts.push(
+      db
+        .update(tickets)
+        .set({ status: "CLOSED", autoClosedAt: now })
+        .where(eq(tickets.id, t.id))
+    );
+    if (t.type === "REQUEST") {
+      stmts.push(
+        db
+          .update(requestDetails)
+          .set({ acceptedAt: now })
+          .where(eq(requestDetails.ticketId, t.id))
+      );
+    }
+    stmts.push(
+      db.insert(ticketActivity).values({
+        ticketId: t.id,
+        actorId: systemId,
+        type: "AUTO_CLOSED",
+        toValue: "CLOSED",
+      })
+    );
+  }
+  await db.batch(stmts as unknown as Parameters<typeof db.batch>[0]);
+  return all;
+}
+
 /** The request_details row for a ticket (state checks in actions). */
 export async function getRequestDetailsRow(ticketId: string) {
   const [row] = await db
@@ -1606,6 +1749,7 @@ export async function getRequestByNumber(
       )`,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
+      autoClosedAt: tickets.autoClosedAt,
       createdById: tickets.createdBy,
       createdByName: creatorUser.name,
       createdByEmail: creatorUser.email,

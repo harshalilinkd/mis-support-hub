@@ -246,8 +246,29 @@ export const REQUEST_ACTIVE_STATUSES: Status[] = [
   "CHANGES_REQUESTED",
 ];
 
-/** Days a RESOLVED ticket waits before auto-CLOSE (CLAUDE.md §5; cron in a later phase). */
-export const AUTO_CLOSE_DAYS = 7;
+/**
+ * Days a RESOLVED issue / delivered request (IN_TESTING) waits, with no response from
+ * the reporter, before the SYSTEM auto-closes it (§5). The grace window is these many
+ * full days; the daily cron closes it on the next run after they elapse (so a ticket
+ * resolved on day 1 auto-closes on ~day 9). An auto-close is reversible — the reporter
+ * can still reopen it (tracked by tickets.auto_closed_at).
+ */
+export const AUTO_CLOSE_DAYS = 8;
+
+/**
+ * Which statuses is a ticket auto-closed FROM (§5)? An ISSUE waits in RESOLVED; a
+ * delivered REQUEST waits in IN_TESTING. Anything else (still open/being built, already
+ * closed, dropped) is never swept. Pure + tested; the sweep query filters on exactly
+ * these.
+ */
+export function isAutoCloseEligible(type: TicketType, status: Status): boolean {
+  return type === "ISSUE" ? status === "RESOLVED" : status === "IN_TESTING";
+}
+
+/** Has the grace window elapsed? `since` = when the clock started (resolved / delivered). */
+export function autoCloseDue(since: Date, now: Date): boolean {
+  return now.getTime() - since.getTime() >= AUTO_CLOSE_DAYS * 86_400_000;
+}
 
 /**
  * May a misfiled ticket be MOVED to the other module (ISSUE ⇄ REQUEST)? (§12.)

@@ -539,8 +539,11 @@ export async function reopenTicket(ticketId: string): Promise<ActionResult> {
   if (!isReporter && !isAdmin) {
     return fail("Only the reporter or an MIS admin can reopen a ticket.");
   }
-  if (ticket.status !== "RESOLVED") {
-    return fail("Only a resolved ticket can be reopened.");
+  // Reopenable from RESOLVED (the normal case) OR from CLOSED when the SYSTEM
+  // auto-closed it (§5) — a manual confirmation stays permanent (auto_closed_at null).
+  const autoClosed = ticket.status === "CLOSED" && !!ticket.autoClosedAt;
+  if (ticket.status !== "RESOLVED" && !autoClosed) {
+    return fail("Only a resolved ticket — or one the system auto-closed — can be reopened.");
   }
 
   await q.reopenTicketRow({
