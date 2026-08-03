@@ -130,7 +130,7 @@ export function KpiCards({
       value: formatHours(stats.avgResolutionHours),
       sub: "created → resolved",
       icon: Clock,
-      tint: "var(--accent)",
+      tint: "var(--chart-accent)",
       spark: sparks.avgResolution,
     },
   ];

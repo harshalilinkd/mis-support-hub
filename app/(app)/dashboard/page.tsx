@@ -147,7 +147,7 @@ export default async function DashboardPage({
         const c = new Date(r.createdAt);
         return c >= start && c <= finish;
       }).length;
-      return { name: fmtDate(start), value, color: "var(--primary)" };
+      return { name: fmtDate(start), value, color: "var(--chart-accent)" };
     });
 
     /* ---- By priority (columns) & by department (horizontal bar) ---- */

@@ -16,7 +16,9 @@ import { cn } from "@/lib/utils";
  * Token palette — charts consume CSS variables, never raw hex.
  * ------------------------------------------------------------------ */
 export const CHART = {
-  accent: "var(--accent)",
+  // Neutral series accent — the dashboard's orchid/purple (theme-aware), NOT the
+  // cobalt brand accent. Semantic series still use the status/priority tokens below.
+  accent: "var(--chart-accent)",
   resolved: "var(--status-resolved)",
   grid: "var(--border)",
   axis: "var(--text-muted)",

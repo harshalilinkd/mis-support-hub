@@ -22,6 +22,13 @@
   --accent-hover: #1d4ed8;
   --accent-soft: #eff3ff;
 
+  /* Dashboard chart accent — a distinct orchid/purple used for the NEUTRAL,
+     non-semantic chart series (department, over-time, avg-resolution line, submitted
+     columns, the two "avg" KPI accents). Kept separate from the cobalt brand accent
+     (buttons/nav) so only the dashboard picks it up, and given its own dark value so
+     it stays legible in both themes. Status/priority colours stay semantic. */
+  --chart-accent: #8a3a8d;
+
   /* shadcn-compatible aliases (mapped onto the palette above).
      NOTE: shadcn's semantic `accent` is a *subtle hover* surface, not the
      brand cobalt — cobalt lives in `primary`. Keeping these distinct avoids
@@ -80,6 +87,9 @@
   --accent: #3b82f6;
   --accent-hover: #2563eb;
   --accent-soft: #16233f;
+
+  /* Lighter orchid so the accent pops on the dark surface. */
+  --chart-accent: #cf97d3;
 
   --foreground: var(--text);
   --card: var(--surface);

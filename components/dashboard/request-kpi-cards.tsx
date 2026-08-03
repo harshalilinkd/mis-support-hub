@@ -100,7 +100,7 @@ export function RequestKpiCards({ stats }: { stats: RequestStats }) {
       value: stats.avgRoundsToAcceptance.toFixed(1),
       sub: "revisions before acceptance",
       icon: RotateCcw,
-      tint: "var(--accent)",
+      tint: "var(--chart-accent)",
     },
   ];
 
