@@ -18,7 +18,6 @@ import { ChartAgingBar } from "@/components/dashboard/chart-aging-bar";
 import { ChartCreatedResolved } from "@/components/dashboard/chart-created-resolved";
 import { ChartDepartmentBar } from "@/components/dashboard/chart-department-bar";
 import { RequestPipelineFunnel } from "@/components/dashboard/request-pipeline-funnel";
-import { statusColor } from "@/components/tickets/chips";
 import { ChartPriorityStacked } from "@/components/dashboard/chart-priority-stacked";
 import { ChartResolutionLine } from "@/components/dashboard/chart-resolution-line";
 import { ChartStatusDonut } from "@/components/dashboard/chart-status-donut";
@@ -121,18 +120,31 @@ export default async function DashboardPage({
       { status: "CLOSED", label: "Closed" },
       { status: "DROPPED", label: "Dropped" },
     ];
+    // Colour each stage by its PHASE (not the semantic status colour, which made the
+    // whole pipeline orange). One hue per phase — shared with the Live pipeline donut.
+    const stageColor = (status: Status): string => {
+      if ((["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"] as Status[]).includes(status))
+        return "var(--chart-accent)"; // intake / awaiting → orchid
+      if ((["APPROVED", "CLAIMED"] as Status[]).includes(status)) return "var(--chart-2)"; // indigo
+      if ((["IN_PROGRESS", "CHANGES_REQUESTED"] as Status[]).includes(status))
+        return "var(--chart-3)"; // building → teal
+      if (status === "IN_TESTING") return "var(--chart-4)"; // testing → amber
+      if (status === "CLOSED") return "var(--chart-5)"; // done → emerald
+      return "var(--status-closed)"; // DROPPED → muted grey
+    };
     const pipelineData = STAGE_ORDER.map((s) => ({
       label: s.label,
       value: requests.filter((r) => r.status === s.status).length,
-      color: statusColor(s.status),
+      color: stageColor(s.status),
     }));
 
     /* ---- Live pipeline · what's in flight now, grouped by phase (donut) ---- */
+    // Same phase hues as the funnel, so the two pipeline charts read as one system.
     const activeMix = [
-      { key: "awaiting", name: "Awaiting approval", color: "var(--status-open)", ss: ["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"] as Status[] },
-      { key: "approved", name: "Approved / claimed", color: "var(--priority-medium)", ss: ["APPROVED", "CLAIMED"] as Status[] },
-      { key: "building", name: "Building", color: "var(--status-in-progress)", ss: ["IN_PROGRESS", "CHANGES_REQUESTED"] as Status[] },
-      { key: "testing", name: "In testing", color: "var(--priority-high)", ss: ["IN_TESTING"] as Status[] },
+      { key: "awaiting", name: "Awaiting approval", color: "var(--chart-accent)", ss: ["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"] as Status[] },
+      { key: "approved", name: "Approved / claimed", color: "var(--chart-2)", ss: ["APPROVED", "CLAIMED"] as Status[] },
+      { key: "building", name: "Building", color: "var(--chart-3)", ss: ["IN_PROGRESS", "CHANGES_REQUESTED"] as Status[] },
+      { key: "testing", name: "In testing", color: "var(--chart-4)", ss: ["IN_TESTING"] as Status[] },
     ].map((g) => ({ key: g.key, name: g.name, color: g.color, value: countBy(g.ss) }));
 
     /* ---- Submitted per week · last 8 weeks (columns) ---- */
@@ -172,8 +184,8 @@ export default async function DashboardPage({
     );
     const logged = finished.filter((r) => r.systemCode).length;
     const systemsData = [
-      { key: "logged", name: "Logged", value: logged, color: "var(--status-resolved)" },
-      { key: "not", name: "Not logged", value: finished.length - logged, color: "var(--priority-high)" },
+      { key: "logged", name: "Logged", value: logged, color: "var(--chart-5)" },
+      { key: "not", name: "Not logged", value: finished.length - logged, color: "var(--chart-4)" },
     ];
 
     const closedCount = requests.filter((r) => r.status === "CLOSED").length;

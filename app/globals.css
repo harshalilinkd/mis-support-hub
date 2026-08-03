@@ -29,6 +29,14 @@
      it stays legible in both themes. Status/priority colours stay semantic. */
   --chart-accent: #8a3a8d;
 
+  /* Categorical chart palette for the request pipeline / phase charts (funnel, live
+     pipeline, systems-logged). Distinct, harmonious hues anchored on the orchid accent
+     so the Requests dashboard isn't one wall of orange. chart-1 = the orchid accent. */
+  --chart-2: #5b52d6; /* indigo-violet */
+  --chart-3: #0e8f9e; /* teal */
+  --chart-4: #e08a12; /* amber */
+  --chart-5: #12a074; /* emerald */
+
   /* shadcn-compatible aliases (mapped onto the palette above).
      NOTE: shadcn's semantic `accent` is a *subtle hover* surface, not the
      brand cobalt — cobalt lives in `primary`. Keeping these distinct avoids
@@ -90,6 +98,12 @@
 
   /* Lighter orchid so the accent pops on the dark surface. */
   --chart-accent: #cf97d3;
+
+  /* Brighter categorical hues for the dark surface. */
+  --chart-2: #a09bf0;
+  --chart-3: #4fd0dd;
+  --chart-4: #f5b942;
+  --chart-5: #4bd6a4;
 
   --foreground: var(--text);
   --card: var(--surface);
