@@ -86,7 +86,10 @@ function navSectionsFor(role: Role): NavSection[] {
     return [
       {
         id: "home",
-        items: [{ href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" }],
+        items: [
+          { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+          { href: "/my", label: "My Tickets", icon: Inbox, badge: "myActive" },
+        ],
       },
       {
         id: "raise",

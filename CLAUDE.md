@@ -32,12 +32,12 @@ Do NOT use Prisma, do NOT use an ORM other than Drizzle, do NOT store files in t
 /app
   /(auth)/login/page.tsx
   /(app)/layout.tsx                 # app shell (sidebar+topbar), session-gated, mounts AutoRefresh
-  /(app)/page.tsx                   # role-aware home → USER to /my, staff to /dashboard
+  /(app)/page.tsx                   # home → everyone redirects to /dashboard (role-aware view)
   /(app)/my/page.tsx                # "My Tickets" (employee) / "Assigned to Me" (staff)
   /(app)/new/page.tsx               # raise a ticket
   /(app)/tickets/page.tsx           # MIS: All Tickets table (status tabs, bulk claim)
   /(app)/tickets/[number]/page.tsx  # ticket detail (shared, deep-link/fallback)
-  /(app)/dashboard/page.tsx         # MIS: KPI cards + charts
+  /(app)/dashboard/page.tsx         # landing for ALL: staff = KPI+charts (issue/request); USER = own-tickets view (EmployeeDashboard)
   /(app)/board/page.tsx             # MIS: Kanban
   /(app)/profile/page.tsx           # edit name/department + set/change password
   /(app)/settings/page.tsx          # admin: Settings landing (cards → the tools below)
@@ -115,7 +115,8 @@ explicitly started.
 |---|---|---|---|
 | Raise ticket | ✓ | ✓ | ✓ |
 | See own tickets | ✓ | ✓ | ✓ |
-| See all tickets / dashboard / board | ✗ | ✓ | ✓ |
+| See all tickets / staff dashboard / board | ✗ | ✓ | ✓ |
+| See own dashboard (landing: own issues & requests) | ✓ | ✓ | ✓ |
 | Claim (assign to self + priority; stays Open) | ✗ | ✓ | ✓ |
 | Start task (set deadline; Open → In Progress) — own claimed ticket | ✗ | ✓ | ✓ |
 | Release own claim (Open-only; back to unclaimed Open) — own claimed ticket | ✗ | ✓ | ✓ |

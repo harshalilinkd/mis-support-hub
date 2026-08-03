@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
-import { requireRole, STAFF_ROLES } from "@/lib/authz";
+import { requireUser } from "@/lib/authz";
 import { createdByDepartment, flowTrend, openAging, requestStats } from "@/lib/db/analytics";
 import { dashboardStats, listAllTickets, listRequests } from "@/lib/db/queries";
 import type { Department, Status } from "@/lib/db/schema";
@@ -17,6 +17,7 @@ import { ChartStatusDonut } from "@/components/dashboard/chart-status-donut";
 import { KpiCards, type KpiSparks } from "@/components/dashboard/kpi-cards";
 import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
 import { RequestKpiCards } from "@/components/dashboard/request-kpi-cards";
+import { EmployeeDashboard } from "@/components/dashboard/employee-dashboard";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -65,8 +66,14 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const user = await requireRole(...STAFF_ROLES);
+  const user = await requireUser();
   const sp = await searchParams;
+
+  // Everyone lands here (§3). Employees get their own "your issues & requests" view —
+  // the operational dashboard below runs staff-only queries, so a USER never reaches it.
+  if (user.role === "USER") {
+    return <EmployeeDashboard userId={user.id} />;
+  }
 
   const rangeParam = pick(sp.range);
   const days = rangeParam === "7" ? 7 : rangeParam === "90" ? 90 : 30;
