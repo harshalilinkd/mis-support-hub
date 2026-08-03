@@ -179,7 +179,10 @@ export type AssigneePerf = {
   id: string;
   name: string | null;
   image: string | null;
+  /** Total assigned to them = notStarted + inProgress + completed (they reconcile). */
   claimed: number;
+  /** Claimed but work hasn't begun — ISSUE: OPEN; REQUEST: CLAIMED (pre start-work). */
+  notStarted: number;
   inProgress: number;
   completed: number;
   /** Average completion time in HOURS (0 when they've completed nothing yet). */
@@ -208,8 +211,11 @@ export async function assigneePerformance(
         name: users.name,
         image: users.image,
         claimed: sql<number>`count(*)`.mapWith(Number),
+        // CLAIMED = picked up but start-work (the delivery commitment) hasn't happened.
+        notStarted:
+          sql<number>`count(*) filter (where ${tickets.status} = 'CLAIMED')`.mapWith(Number),
         inProgress:
-          sql<number>`count(*) filter (where ${tickets.status} in ('CLAIMED','IN_PROGRESS','CHANGES_REQUESTED'))`.mapWith(Number),
+          sql<number>`count(*) filter (where ${tickets.status} in ('IN_PROGRESS','CHANGES_REQUESTED'))`.mapWith(Number),
         completed:
           sql<number>`count(*) filter (where ${tickets.status} in ('IN_TESTING','CLOSED'))`.mapWith(Number),
         avgHours:
@@ -238,6 +244,10 @@ export async function assigneePerformance(
       name: users.name,
       image: users.image,
       claimed: sql<number>`count(*)`.mapWith(Number),
+      // A claimed ISSUE stays OPEN until the member starts it (§5) — that's the gap
+      // between "claimed" and in-progress+completed.
+      notStarted:
+        sql<number>`count(*) filter (where ${tickets.status} = 'OPEN')`.mapWith(Number),
       inProgress:
         sql<number>`count(*) filter (where ${tickets.status} in ('IN_PROGRESS','REOPENED'))`.mapWith(Number),
       completed:

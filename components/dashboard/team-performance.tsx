@@ -60,7 +60,19 @@ export function TeamPerformance({
             <TableHeader className="[&_th]:h-9 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
               <TableRow className="hover:bg-transparent">
                 <TableHead>Member</TableHead>
-                <TableHead className="text-right">Claimed</TableHead>
+                <TableHead className="text-right" title="Total assigned to them">
+                  Claimed
+                </TableHead>
+                <TableHead
+                  className="text-right"
+                  title={
+                    type === "REQUEST"
+                      ? "Claimed but the build hasn't started"
+                      : "Claimed but not started yet (still Open)"
+                  }
+                >
+                  Not started
+                </TableHead>
                 <TableHead className="text-right">In progress</TableHead>
                 <TableHead className="text-right">{completedLabel}</TableHead>
                 <TableHead className="text-right">{avgLabel}</TableHead>
@@ -77,8 +89,15 @@ export function TeamPerformance({
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                  <TableCell className="text-right font-mono text-sm font-semibold tabular-nums">
                     {r.claimed}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                    {r.notStarted > 0 ? (
+                      r.notStarted
+                    ) : (
+                      <span className="text-text-muted">0</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">
                     {r.inProgress > 0 ? (
