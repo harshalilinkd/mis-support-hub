@@ -3,12 +3,30 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/authz";
 import { listAssignedToMe, listMyTickets, listRequests } from "@/lib/db/queries";
 import { toIso } from "@/lib/format";
+import type { TicketTabKey } from "@/lib/ticket-tabs";
 import { PageHeader } from "@/components/shell/page-header";
 import { MyWorkView } from "@/components/tickets/my-work-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
 
-export default async function MyTicketsPage() {
+const TAB_KEYS = ["open", "in_progress", "resolved", "closed"] as const;
+
+export default async function MyTicketsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  // Deep-link from the dashboard KPI cards: which sub-tab + status to open on.
+  const scope = pick(sp.scope);
+  const initialSection =
+    scope === "systems" ? "systems" : scope === "issues" ? "tickets" : undefined;
+  const tabParam = pick(sp.tab);
+  const initialTab = (TAB_KEYS as readonly string[]).includes(tabParam ?? "")
+    ? (tabParam as TicketTabKey)
+    : undefined;
+
   const user = await requireUser();
   const isStaff = user.role === "MIS_STAFF" || user.role === "MIS_ADMIN";
   // Employees see the tickets they raised; MIS staff see their work queue —
@@ -61,6 +79,8 @@ export default async function MyTicketsPage() {
         requests={myRequests}
         currentUser={user}
         variant={isStaff ? "assigned" : "raised"}
+        initialSection={initialSection}
+        initialTab={initialTab}
       />
     </div>
   );

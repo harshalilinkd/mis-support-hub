@@ -33,14 +33,18 @@ export function MyTicketsView({
   tickets,
   variant = "raised",
   currentUser,
+  initialTab,
 }: {
   tickets: TicketCardData[];
   variant?: "raised" | "assigned";
   currentUser: SessionUser;
+  /** Deep-link: pre-select a status tab (e.g. from a dashboard KPI). */
+  initialTab?: TicketTabKey;
 }) {
-  // Land on the first tab that actually has tickets (Open → In Progress →
-  // Resolved), so the employee sees their tickets instead of an empty default.
+  // A deep-linked tab wins; otherwise land on the first tab that actually has tickets
+  // (Open → In Progress → Resolved) so the employee sees their tickets, not an empty tab.
   const [tab, setTab] = useState<TicketTabKey>(() => {
+    if (initialTab) return initialTab;
     const firstNonEmpty = TICKET_TABS.find((t) =>
       tickets.some((x) => statusesForTab(t.key).includes(x.status))
     );

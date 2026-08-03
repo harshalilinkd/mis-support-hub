@@ -5,6 +5,7 @@ import { Sparkles, Ticket } from "lucide-react";
 
 import type { RequestListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import type { TicketTabKey } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
 import { MyTicketsView } from "./my-tickets-view";
 import { RequestsView } from "./requests-view";
@@ -31,15 +32,22 @@ export function MyWorkView({
   requests,
   currentUser,
   variant = "assigned",
+  initialSection,
+  initialTab,
 }: {
   tickets: TicketCardData[];
   requests: RequestListRow[];
   currentUser: SessionUser;
   variant?: "raised" | "assigned";
+  /** Deep-link from a dashboard KPI: which sub-tab + which status to open on. */
+  initialSection?: Section;
+  initialTab?: TicketTabKey;
 }) {
-  // Land on whichever section actually has work; tickets win a tie.
-  const [section, setSection] = useState<Section>(() =>
-    tickets.length === 0 && requests.length > 0 ? "systems" : "tickets"
+  // A deep-linked section wins; otherwise land on whichever has work (tickets win a tie).
+  const [section, setSection] = useState<Section>(
+    () =>
+      initialSection ??
+      (tickets.length === 0 && requests.length > 0 ? "systems" : "tickets")
   );
 
   const SECTIONS: { key: Section; label: string; icon: typeof Ticket; count: number }[] = [
@@ -80,7 +88,12 @@ export function MyWorkView({
       </div>
 
       {section === "tickets" ? (
-        <MyTicketsView tickets={tickets} variant={variant} currentUser={currentUser} />
+        <MyTicketsView
+          tickets={tickets}
+          variant={variant}
+          currentUser={currentUser}
+          initialTab={initialTab}
+        />
       ) : (
         <RequestsView requests={requests} currentUser={currentUser} />
       )}
