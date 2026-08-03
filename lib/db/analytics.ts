@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "./index";
-import type { Department, Priority } from "./schema";
+import type { Department, Priority, TicketType } from "./schema";
 import { requestDetails, tickets, users } from "./schema";
 
 /**
@@ -172,5 +172,91 @@ export async function assigneeWorkload(
     .innerJoin(users, eq(tickets.assignedTo, users.id))
     .where(and(inArray(tickets.status, [...ACTIVE]), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
     .groupBy(users.id, users.name)
+    .orderBy(desc(sql`count(*)`));
+}
+
+export type AssigneePerf = {
+  id: string;
+  name: string | null;
+  image: string | null;
+  claimed: number;
+  inProgress: number;
+  completed: number;
+  /** Average completion time in HOURS (0 when they've completed nothing yet). */
+  avgHours: number;
+};
+
+/**
+ * Per-member performance report, grouped by the CURRENT assignee, one type at a time.
+ * A dedicated aggregation (not one of the six §10 charts — this is a detail report; it
+ * lives in analytics.ts alongside dashboardStats/requestStats).
+ *  - ISSUE:   claimed = tickets assigned to them; inProgress = IN_PROGRESS/REOPENED;
+ *             completed = RESOLVED/CLOSED; avg = resolved_at − created_at.
+ *  - REQUEST: claimed = builds assigned to them; inProgress = CLAIMED/IN_PROGRESS/
+ *             CHANGES_REQUESTED; completed = IN_TESTING/CLOSED (delivered);
+ *             avg = completed_at − claimed_at (their build time).
+ * "Claimed" reflects the current assignment (there is no reassignment/takeover, §6/§12).
+ */
+export async function assigneePerformance(
+  type: TicketType,
+  department?: Department
+): Promise<AssigneePerf[]> {
+  if (type === "REQUEST") {
+    return db
+      .select({
+        id: users.id,
+        name: users.name,
+        image: users.image,
+        claimed: sql<number>`count(*)`.mapWith(Number),
+        inProgress:
+          sql<number>`count(*) filter (where ${tickets.status} in ('CLAIMED','IN_PROGRESS','CHANGES_REQUESTED'))`.mapWith(Number),
+        completed:
+          sql<number>`count(*) filter (where ${tickets.status} in ('IN_TESTING','CLOSED'))`.mapWith(Number),
+        avgHours:
+          sql<number>`coalesce(avg(extract(epoch from (${requestDetails.completedAt} - ${requestDetails.claimedAt})) / 3600.0) filter (where ${requestDetails.completedAt} is not null and ${requestDetails.claimedAt} is not null), 0)`.mapWith(
+            Number
+          ),
+      })
+      .from(tickets)
+      .innerJoin(users, eq(tickets.assignedTo, users.id))
+      .innerJoin(requestDetails, eq(requestDetails.ticketId, tickets.id))
+      .where(
+        and(
+          eq(tickets.type, "REQUEST"),
+          isNull(tickets.deletedAt),
+          isNotNull(tickets.assignedTo),
+          deptEq(department)
+        )
+      )
+      .groupBy(users.id, users.name, users.image)
+      .orderBy(desc(sql`count(*)`));
+  }
+
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      image: users.image,
+      claimed: sql<number>`count(*)`.mapWith(Number),
+      inProgress:
+        sql<number>`count(*) filter (where ${tickets.status} in ('IN_PROGRESS','REOPENED'))`.mapWith(Number),
+      completed:
+        sql<number>`count(*) filter (where ${tickets.status} in ('RESOLVED','CLOSED'))`.mapWith(Number),
+      avgHours:
+        sql<number>`coalesce(avg(extract(epoch from (${tickets.resolvedAt} - ${tickets.createdAt})) / 3600.0) filter (where ${tickets.resolvedAt} is not null), 0)`.mapWith(
+          Number
+        ),
+    })
+    .from(tickets)
+    .innerJoin(users, eq(tickets.assignedTo, users.id))
+    .where(
+      and(
+        eq(tickets.type, "ISSUE"),
+        isNull(tickets.deletedAt),
+        isNotNull(tickets.assignedTo),
+        deptEq(department)
+      )
+    )
+    .groupBy(users.id, users.name, users.image)
     .orderBy(desc(sql`count(*)`));
 }

@@ -3,7 +3,13 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { requireUser } from "@/lib/authz";
-import { createdByDepartment, flowTrend, openAging, requestStats } from "@/lib/db/analytics";
+import {
+  assigneePerformance,
+  createdByDepartment,
+  flowTrend,
+  openAging,
+  requestStats,
+} from "@/lib/db/analytics";
 import { dashboardStats, listAllTickets, listRequests } from "@/lib/db/queries";
 import type { Department, Status } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -18,6 +24,7 @@ import { KpiCards, type KpiSparks } from "@/components/dashboard/kpi-cards";
 import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
 import { RequestKpiCards } from "@/components/dashboard/request-kpi-cards";
 import { EmployeeDashboard } from "@/components/dashboard/employee-dashboard";
+import { TeamPerformance } from "@/components/dashboard/team-performance";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -86,7 +93,7 @@ export default async function DashboardPage({
   // own KPI row + a request-shaped chart bento — all derived here from existing
   // queries (requestStats + listRequests), never new schema/queries (§10).
   if (pick(sp.type) === "REQUEST") {
-    const [reqStats, requests] = await Promise.all([
+    const [reqStats, requests, teamPerf] = await Promise.all([
       requestStats(department),
       // Dashboard is staff-gated, so this viewer sees ALL requests (§12.7 only scopes
       // a USER). Department filter honoured, same as the issue charts.
@@ -94,6 +101,7 @@ export default async function DashboardPage({
         { id: user.id, role: user.role },
         department ? { department } : {}
       ),
+      assigneePerformance("REQUEST", department),
     ]);
     const today = startOfDay(new Date());
     const countBy = (ss: Status[]) => requests.filter((r) => ss.includes(r.status)).length;
@@ -241,17 +249,20 @@ export default async function DashboardPage({
             <ChartStatusDonut data={systemsData} />
           </Panel>
         </div>
+
+        <TeamPerformance rows={teamPerf} type="REQUEST" />
       </div>
     );
   }
 
-  const [stats, flow, byDept, aging, allTickets] = await Promise.all([
+  const [stats, flow, byDept, aging, allTickets, teamPerf] = await Promise.all([
     dashboardStats(),
     flowTrend(30, department), // Chart 1 is pinned to the last 30 days.
     createdByDepartment(days),
     openAging(department),
     // Raw list (existing query) → derive the weekly/daily charts client-of-server-side.
     listAllTickets(department ? { department } : {}),
+    assigneePerformance("ISSUE", department),
   ]);
 
   const now = new Date();
@@ -434,6 +445,8 @@ export default async function DashboardPage({
           <ChartAgingBar data={agingData} />
         </Panel>
       </div>
+
+      <TeamPerformance rows={teamPerf} type="ISSUE" />
     </div>
   );
 }
