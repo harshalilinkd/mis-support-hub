@@ -131,9 +131,14 @@ export async function requestStats(department?: Department): Promise<RequestStat
         sql<number>`count(*) filter (where ${tickets.status} = 'IN_PROGRESS')`.mapWith(Number),
       inTesting:
         sql<number>`count(*) filter (where ${tickets.status} = 'IN_TESTING')`.mapWith(Number),
+      // Overdue = the committed delivery date has fully PASSED and the build is still
+      // being built. Compared by IST calendar day, so a deadline of "3 Aug" is on time
+      // through end of 3 Aug and only overdue from 4 Aug. Only IN_PROGRESS counts:
+      // once marked complete (IN_TESTING) or closed the assignee delivered on time, so
+      // it's never overdue — even if it sits in testing past the date.
       overdue: sql<number>`count(*) filter (
-        where ${requestDetails.deadline} < current_date
-          and ${tickets.status} in ('CLAIMED','IN_PROGRESS','IN_TESTING','CHANGES_REQUESTED')
+        where ${requestDetails.deadline} < (now() at time zone 'Asia/Kolkata')::date
+          and ${tickets.status} = 'IN_PROGRESS'
       )`.mapWith(Number),
       avgRoundsToAcceptance: sql<number>`coalesce(
         avg(${requestDetails.revisionRound}) filter (where ${tickets.status} = 'CLOSED'), 0

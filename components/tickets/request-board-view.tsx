@@ -113,10 +113,21 @@ function blockReason(
 /** A build only has something to log once it is finished (§13.5). */
 const FINISHED_STATUSES: Status[] = ["IN_TESTING", "CLOSED", "CHANGES_REQUESTED"];
 
+// A deadline is a whole DAY, not an instant: "3 Aug" is due through the end of 3 Aug,
+// so it's overdue only from 4 Aug — never partway through the 3rd. Compare by calendar
+// day in IST (how deadlines render), and only for a build STILL in progress: once it's
+// marked complete (IN_TESTING) or closed, the assignee delivered, so it can't be
+// "overdue" even if the requester tests it days later.
+const IST_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 const isOverdue = (r: RequestListRow) =>
   !!r.deadline &&
-  new Date(r.deadline).getTime() < Date.now() &&
-  ["CLAIMED", "IN_PROGRESS", "IN_TESTING", "CHANGES_REQUESTED"].includes(r.status);
+  r.status === "IN_PROGRESS" &&
+  IST_DAY.format(new Date(r.deadline)) < IST_DAY.format(new Date());
 
 const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Kolkata",
