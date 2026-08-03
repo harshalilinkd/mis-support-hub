@@ -227,7 +227,11 @@ export default async function DashboardPage({
             className="md:col-span-1 lg:col-span-3"
             delay={60}
           >
-            <ChartStatusDonut data={activeMix} />
+            <ChartStatusDonut
+              data={activeMix}
+              centerLabel="in flight"
+              emptyMessage="Nothing in the pipeline right now."
+            />
           </Panel>
 
           <Panel
@@ -263,7 +267,11 @@ export default async function DashboardPage({
             className="md:col-span-1 lg:col-span-3"
             delay={300}
           >
-            <ChartStatusDonut data={systemsData} />
+            <ChartStatusDonut
+              data={systemsData}
+              centerLabel="builds"
+              emptyMessage="No finished builds yet."
+            />
           </Panel>
         </div>
       </div>
@@ -423,7 +431,7 @@ export default async function DashboardPage({
           className="md:col-span-1 lg:col-span-2"
           delay={60}
         >
-          <ChartStatusDonut data={statusData} />
+          <ChartStatusDonut data={statusData} centerLabel="active" />
         </Panel>
 
         <Panel

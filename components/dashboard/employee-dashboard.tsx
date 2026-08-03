@@ -101,7 +101,9 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
   const flow = Array.from({ length: FLOW_DAYS }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() - (FLOW_DAYS - 1 - i));
-    return { date: d.toISOString(), created: 0, resolved: 0 };
+    // Date-only "YYYY-MM-DD" — the chart's fmtMonthDay splits on "-" and would read a
+    // full ISO timestamp's day as NaN ("15T00:00:...").
+    return { date: d.toISOString().slice(0, 10), created: 0, resolved: 0 };
   });
   const bucket = (value: Date | string) => {
     const d = startOfDay(new Date(value));
@@ -205,7 +207,11 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
           {/* Four charts */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Panel title="My issues by status" subtitle={`${issues.length} total`}>
-              <ChartStatusDonut data={issueStatusData} />
+              <ChartStatusDonut
+                data={issueStatusData}
+                centerLabel="issues"
+                emptyMessage="No issues yet."
+              />
             </Panel>
             <Panel title="My issues over time" subtitle="Raised vs resolved · last 30 days">
               <ChartCreatedResolved data={flow} />

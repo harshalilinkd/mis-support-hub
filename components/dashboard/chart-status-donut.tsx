@@ -20,13 +20,22 @@ const H = 240;
  * the hole and a dot+label+value legend gives identity beyond colour (the
  * amber/green pair is low-contrast on the surface, so the legend does the work).
  */
-export function ChartStatusDonut({ data }: { data: StatusDatum[] }) {
+export function ChartStatusDonut({
+  data,
+  centerLabel = "total",
+  emptyMessage = "Nothing to show yet.",
+}: {
+  data: StatusDatum[];
+  /** Word under the number in the hole — it's the TOTAL of the slices, not "open". */
+  centerLabel?: string;
+  emptyMessage?: string;
+}) {
   const mounted = useMounted();
   const reduced = usePrefersReducedMotion();
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const slices = data.filter((d) => d.value > 0);
 
-  if (total === 0) return <ChartEmpty height={H} message="No open tickets right now." />;
+  if (total === 0) return <ChartEmpty height={H} message={emptyMessage} />;
   if (!mounted) return <ChartSkeleton height={H} />;
 
   return (
@@ -61,7 +70,7 @@ export function ChartStatusDonut({ data }: { data: StatusDatum[] }) {
             {total}
           </span>
           <span className="mt-1 text-[11px] uppercase tracking-wider text-text-muted">
-            open
+            {centerLabel}
           </span>
         </div>
       </div>
