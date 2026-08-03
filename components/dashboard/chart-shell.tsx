@@ -42,10 +42,12 @@ export const CHART = {
   ],
 } as const;
 
-/** Shared axis-tick style — muted ink, small, mono for the numeric axis. */
-export const axisTick = { fill: "var(--text-muted)", fontSize: 11 } as const;
+/** Shared axis-tick style — foreground ink (readable, not muted gray), small; mono
+ *  for the numeric axis. Axis labels are always-on, so they use the dark foreground
+ *  rather than the muted token that was too light to read on the dashboard. */
+export const axisTick = { fill: "var(--foreground)", fontSize: 11 } as const;
 export const monoTick = {
-  fill: "var(--text-muted)",
+  fill: "var(--foreground)",
   fontSize: 11,
   fontFamily: "var(--font-mono)",
 } as const;
@@ -154,7 +156,7 @@ export function ChartTooltip({
   return (
     <div className="min-w-32 rounded-[var(--radius-input)] border border-border bg-surface p-2.5 shadow-[var(--shadow-popover)]">
       {label !== undefined && label !== "" ? (
-        <div className="mb-1.5 text-[11px] font-medium text-text-muted">
+        <div className="mb-1.5 text-[11px] font-semibold text-foreground">
           {labelFormatter ? labelFormatter(label) : label}
         </div>
       ) : null}
@@ -164,7 +166,7 @@ export function ChartTooltip({
             key={i}
             className="flex items-center justify-between gap-4 text-xs"
           >
-            <span className="inline-flex items-center gap-1.5 text-text-muted">
+            <span className="inline-flex items-center gap-1.5 text-foreground">
               <span
                 aria-hidden
                 className="size-2 rounded-full"
@@ -205,7 +207,7 @@ export function ChartLegend({
   items: { label: string; color: string }[];
 }) {
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-text-muted">
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium text-foreground">
       {items.map((it) => (
         <span key={it.label} className="inline-flex items-center gap-1.5">
           <span

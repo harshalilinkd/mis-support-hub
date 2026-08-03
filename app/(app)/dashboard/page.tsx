@@ -17,6 +17,8 @@ import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ChartAgingBar } from "@/components/dashboard/chart-aging-bar";
 import { ChartCreatedResolved } from "@/components/dashboard/chart-created-resolved";
 import { ChartDepartmentBar } from "@/components/dashboard/chart-department-bar";
+import { RequestPipelineFunnel } from "@/components/dashboard/request-pipeline-funnel";
+import { statusColor } from "@/components/tickets/chips";
 import { ChartPriorityStacked } from "@/components/dashboard/chart-priority-stacked";
 import { ChartResolutionLine } from "@/components/dashboard/chart-resolution-line";
 import { ChartStatusDonut } from "@/components/dashboard/chart-status-donut";
@@ -120,8 +122,9 @@ export default async function DashboardPage({
       { status: "DROPPED", label: "Dropped" },
     ];
     const pipelineData = STAGE_ORDER.map((s) => ({
-      name: s.label,
+      label: s.label,
       value: requests.filter((r) => r.status === s.status).length,
+      color: statusColor(s.status),
     }));
 
     /* ---- Live pipeline · what's in flight now, grouped by phase (donut) ---- */
@@ -194,6 +197,8 @@ export default async function DashboardPage({
 
         <RequestKpiCards stats={reqStats} />
 
+        <TeamPerformance rows={teamPerf} type="REQUEST" />
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
           <Panel
             title="Pipeline by stage"
@@ -201,7 +206,7 @@ export default async function DashboardPage({
             className="md:col-span-1 lg:col-span-3"
             delay={0}
           >
-            <ChartDepartmentBar data={pipelineData} />
+            <RequestPipelineFunnel data={pipelineData} />
           </Panel>
 
           <Panel
@@ -249,8 +254,6 @@ export default async function DashboardPage({
             <ChartStatusDonut data={systemsData} />
           </Panel>
         </div>
-
-        <TeamPerformance rows={teamPerf} type="REQUEST" />
       </div>
     );
   }
@@ -389,6 +392,8 @@ export default async function DashboardPage({
 
       <KpiCards stats={stats} sparks={sparks} />
 
+      <TeamPerformance rows={teamPerf} type="ISSUE" />
+
       {/* Six-chart bento — varied forms, one card radius/shadow, staggered entrance. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Panel
@@ -445,8 +450,6 @@ export default async function DashboardPage({
           <ChartAgingBar data={agingData} />
         </Panel>
       </div>
-
-      <TeamPerformance rows={teamPerf} type="ISSUE" />
     </div>
   );
 }
@@ -473,8 +476,8 @@ function Panel({
       )}
     >
       <div>
-        <h2 className="font-display text-sm font-semibold">{title}</h2>
-        {subtitle ? <p className="text-xs text-text-muted">{subtitle}</p> : null}
+        <h2 className="font-display text-sm font-semibold text-foreground">{title}</h2>
+        {subtitle ? <p className="text-xs text-foreground/70">{subtitle}</p> : null}
       </div>
       {children}
     </section>

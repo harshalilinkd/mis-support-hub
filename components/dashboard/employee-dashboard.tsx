@@ -257,8 +257,8 @@ function Panel({
       <div className="flex items-center gap-2">
         {icon ? <span className="text-text-muted">{icon}</span> : null}
         <div>
-          <h2 className="font-display text-sm font-semibold">{title}</h2>
-          {subtitle ? <p className="text-xs text-text-muted">{subtitle}</p> : null}
+          <h2 className="font-display text-sm font-semibold text-foreground">{title}</h2>
+          {subtitle ? <p className="text-xs text-foreground/70">{subtitle}</p> : null}
         </div>
       </div>
       {children}

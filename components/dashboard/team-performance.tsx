@@ -41,8 +41,8 @@ export function TeamPerformance({
           <Users className="size-4" />
         </div>
         <div>
-          <h2 className="font-display text-sm font-semibold">Team performance</h2>
-          <p className="text-xs text-text-muted">
+          <h2 className="font-display text-sm font-semibold text-foreground">Team performance</h2>
+          <p className="text-xs text-foreground/70">
             {type === "REQUEST"
               ? "System requests each MIS member is building or has delivered."
               : "Issues each MIS member has claimed and worked."}
