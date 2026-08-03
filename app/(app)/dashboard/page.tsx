@@ -90,6 +90,28 @@ export default async function DashboardPage({
     ? (deptParam as Department)
     : undefined;
 
+  // Custom from–to date range (the two calendar pickers). When both are valid it
+  // OVERRIDES the 7/30/90 preset for the time-based charts (Created vs resolved, By
+  // department) and the range label. Otherwise the window is the last `days` days.
+  const isYmd = (s: string | undefined): s is string =>
+    !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  const fromParam = pick(sp.from);
+  const toParam = pick(sp.to);
+  const customRange = isYmd(fromParam) && isYmd(toParam) && fromParam <= toParam;
+  const winTo = customRange ? new Date(`${toParam}T00:00:00Z`) : new Date();
+  const winFrom = customRange
+    ? new Date(`${fromParam}T00:00:00Z`)
+    : (() => {
+        const d = new Date();
+        d.setUTCHours(0, 0, 0, 0);
+        d.setUTCDate(d.getUTCDate() - (days - 1));
+        return d;
+      })();
+  const fmtWin = (d: Date) => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  const rangeLabel = customRange
+    ? `${fmtWin(winFrom)} – ${fmtWin(winTo)}`
+    : `last ${days} days`;
+
   // §12: the dashboard reports on one pipeline at a time. The REQUEST view gets its
   // own KPI row + a request-shaped chart bento — all derived here from existing
   // queries (requestStats + listRequests), never new schema/queries (§10).
@@ -280,8 +302,8 @@ export default async function DashboardPage({
 
   const [stats, flow, byDept, aging, allTickets, teamPerf] = await Promise.all([
     dashboardStats(),
-    flowTrend(30, department), // Chart 1 is pinned to the last 30 days.
-    createdByDepartment(days),
+    flowTrend(winFrom, winTo, department),
+    createdByDepartment(winFrom, winTo),
     openAging(department),
     // Raw list (existing query) → derive the weekly/daily charts client-of-server-side.
     listAllTickets(department ? { department } : {}),
@@ -391,7 +413,6 @@ export default async function DashboardPage({
 
   const createdInRange = flow.reduce((sum, d) => sum + d.created, 0);
   const resolvedInRange = flow.reduce((sum, d) => sum + d.resolved, 0);
-  const rangeLabel = `last ${days} days`;
 
   return (
     <div className="space-y-6">
@@ -418,7 +439,7 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Panel
           title="Created vs resolved"
-          subtitle={`${createdInRange} in · ${resolvedInRange} out · last 30 days`}
+          subtitle={`${createdInRange} in · ${resolvedInRange} out · ${rangeLabel}`}
           className="md:col-span-2 lg:col-span-4"
           delay={0}
         >

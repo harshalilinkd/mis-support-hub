@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 
 import { db } from "./index";
 import type { Department, Priority, TicketType } from "./schema";
@@ -20,21 +20,41 @@ function startOfRange(days: number): Date {
   return d;
 }
 
+/** Start-of-day (UTC) for an arbitrary date. */
+function startOfUTCDay(d: Date): Date {
+  const x = new Date(d);
+  x.setUTCHours(0, 0, 0, 0);
+  return x;
+}
+/** End-of-day (UTC) for an arbitrary date — inclusive upper bound. */
+function endOfUTCDay(d: Date): Date {
+  const x = new Date(d);
+  x.setUTCHours(23, 59, 59, 999);
+  return x;
+}
+
 const deptEq = (department?: Department) =>
   department ? eq(tickets.department, department) : undefined;
 
 export type FlowPoint = { date: string; created: number; resolved: number };
 
-/** Created vs resolved per day over the range — the backlog-flow chart. */
+/** Created vs resolved per day over an explicit [from, to] window — the backlog-flow
+ *  chart. Daily buckets, capped so a very wide custom range can't explode the series. */
 export async function flowTrend(
-  days: number,
+  from: Date,
+  to: Date,
   department?: Department
 ): Promise<FlowPoint[]> {
-  const since = startOfRange(days);
+  const MAX_DAYS = 180;
+  const start = startOfUTCDay(from);
+  const end = startOfUTCDay(to);
+  const upper = endOfUTCDay(to);
   const keys: string[] = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setUTCDate(since.getUTCDate() + i);
+  for (
+    let d = new Date(start);
+    d <= end && keys.length < MAX_DAYS;
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
     keys.push(d.toISOString().slice(0, 10));
   }
   const dayOf = (col: typeof tickets.createdAt | typeof tickets.resolvedAt) =>
@@ -44,12 +64,12 @@ export async function flowTrend(
     db
       .select({ day: dayOf(tickets.createdAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(gte(tickets.createdAt, since), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
+      .where(and(gte(tickets.createdAt, start), lte(tickets.createdAt, upper), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
       .groupBy(dayOf(tickets.createdAt)),
     db
       .select({ day: dayOf(tickets.resolvedAt), n: sql<number>`count(*)`.mapWith(Number) })
       .from(tickets)
-      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, since), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
+      .where(and(isNotNull(tickets.resolvedAt), gte(tickets.resolvedAt, start), lte(tickets.resolvedAt, upper), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE"), deptEq(department)))
       .groupBy(dayOf(tickets.resolvedAt)),
   ]);
 
@@ -62,15 +82,16 @@ export async function flowTrend(
   }));
 }
 
-/** Tickets created in range, by department (all departments; the dept filter is
- *  intentionally not applied — this chart IS the department breakdown). */
+/** Tickets created in the [from, to] window, by department (all departments; the dept
+ *  filter is intentionally not applied — this chart IS the department breakdown). */
 export async function createdByDepartment(
-  days: number
+  from: Date,
+  to: Date
 ): Promise<{ department: Department; count: number }[]> {
   return db
     .select({ department: tickets.department, count: sql<number>`count(*)`.mapWith(Number) })
     .from(tickets)
-    .where(and(gte(tickets.createdAt, startOfRange(days)), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE")))
+    .where(and(gte(tickets.createdAt, startOfUTCDay(from)), lte(tickets.createdAt, endOfUTCDay(to)), isNull(tickets.deletedAt), eq(tickets.type, "ISSUE")))
     .groupBy(tickets.department);
 }
 
