@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -21,11 +21,13 @@ import { toast } from "sonner";
 
 import {
   acceptRequest,
+  claimRequest,
   moveToReview,
   recordApprovalDecision,
   releaseRequest,
   reviveRequest,
   sendForApproval,
+  startWork,
 } from "@/lib/actions/requests";
 import type { RequestListRow } from "@/lib/db/queries";
 import type { Role, Status } from "@/lib/db/schema";
@@ -34,10 +36,27 @@ import { isStaff } from "@/lib/roles";
 import type { SessionUser } from "@/lib/session";
 import { canTransition, transitionsFor } from "@/lib/ticket-state";
 import { cn } from "@/lib/utils";
+import { PRIORITIES } from "@/lib/validators/ticket";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/shell/empty-state";
 import { BoardColumn } from "@/components/board/board-column";
 import { DRAG_ACTIVATION_DISTANCE } from "@/components/board/board-card";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { RequestSheet } from "./request-sheet";
 
 type ColId =
@@ -273,9 +292,37 @@ export function RequestBoardView({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showDropped, setShowDropped] = useState(false);
+  // Dragging a card into "In progress" opens this dialog to collect the delivery date
+  // (and a priority if it isn't claimed yet) — then claim+start / start it.
+  const [startTarget, setStartTarget] = useState<RequestListRow | null>(null);
+
+  const [starting, startTransition] = useTransition();
 
   // Server data wins after any revalidation.
   useEffect(() => setRows(requests), [requests]);
+
+  // Collected from the start-build dialog: claim (if needed) + start with the date.
+  function submitStart(deadline: string, priority: string) {
+    const r = startTarget;
+    if (!r) return;
+    startTransition(async () => {
+      if (r.status === "APPROVED") {
+        const c = await claimRequest({ ticketId: r.id, priority });
+        if (!c.ok) {
+          toast.error(c.error);
+          return;
+        }
+      }
+      const s = await startWork({ ticketId: r.id, deadline });
+      if (!s.ok) {
+        toast.error(s.error);
+        return;
+      }
+      toast.success(`${r.number} → In progress`);
+      setStartTarget(null);
+      router.refresh();
+    });
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -306,6 +353,26 @@ export function RequestBoardView({
   async function runMove(r: RequestListRow, to: Status) {
     const isRequester = r.createdById === currentUser.id;
     const isAssignee = r.assignedToId === currentUser.id;
+
+    // Dragging into "In progress" from the Approved column: a start needs a delivery
+    // date (and an unclaimed request needs a priority first), which a drag can't carry.
+    // Instead of refusing, open a dialog to collect them — then claim+start / start.
+    if (to === "IN_PROGRESS" && (r.status === "APPROVED" || r.status === "CLAIMED")) {
+      const canStart =
+        r.status === "CLAIMED"
+          ? currentUser.role === "MIS_ADMIN" || isAssignee
+          : isStaff(currentUser.role); // APPROVED → this member claims, then starts
+      if (!canStart) {
+        toast.error(
+          r.status === "CLAIMED"
+            ? "Only the assignee can start this build."
+            : "Only MIS staff can claim and start this build."
+        );
+        return;
+      }
+      setStartTarget(r);
+      return;
+    }
 
     // The SAME gate the server uses — the UI never offers an illegal move (§12.8).
     if (
@@ -466,6 +533,106 @@ export function RequestBoardView({
         currentUser={currentUser}
         onOpenChange={(o) => !o && setSelected(null)}
       />
+
+      <StartBuildDialog
+        request={startTarget}
+        pending={starting}
+        onOpenChange={(o) => !o && setStartTarget(null)}
+        onSubmit={submitStart}
+      />
     </div>
+  );
+}
+
+const PRIORITY_LABEL = (p: string) => p.charAt(0) + p.slice(1).toLowerCase();
+
+/**
+ * Opened when a card is dragged into "In progress". Collects the delivery date (always)
+ * and a priority (only when the request isn't claimed yet — a claimed one already has
+ * one). Submitting claims (if needed) then starts the build, so the drag lands it in
+ * progress without having to open the detail.
+ */
+function StartBuildDialog({
+  request,
+  pending,
+  onOpenChange,
+  onSubmit,
+}: {
+  request: RequestListRow | null;
+  pending: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSubmit: (deadline: string, priority: string) => void;
+}) {
+  const [deadline, setDeadline] = useState("");
+  const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>("MEDIUM");
+  const needsPriority = request?.status === "APPROVED";
+
+  // Fresh on every open.
+  useEffect(() => {
+    if (request) {
+      setDeadline("");
+      setPriority("MEDIUM");
+    }
+  }, [request]);
+
+  return (
+    <Dialog open={!!request} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Start building {request?.number ?? ""}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-text-muted">
+          {needsPriority
+            ? "This claims the build for you and starts it. Set a priority and the delivery date you're committing to — the requester is told when to expect it."
+            : "Set the delivery date you're committing to. The requester is told, and any later change is recorded — a delivery date is never silent."}
+        </p>
+
+        {needsPriority ? (
+          <div>
+            <label className="mb-1 block text-sm font-medium">Priority</label>
+            <Select
+              value={priority}
+              onValueChange={(v) => setPriority(v as (typeof PRIORITIES)[number])}
+              disabled={pending}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITIES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {PRIORITY_LABEL(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
+        <div>
+          <label htmlFor="board-start-date" className="mb-1 block text-sm font-medium">
+            Delivery date
+          </label>
+          <Input
+            id="board-start-date"
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            disabled={pending}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={() => onSubmit(deadline, priority)} disabled={pending || !deadline}>
+            {pending ? "Starting…" : "Start build"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
