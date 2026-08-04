@@ -70,6 +70,10 @@ export function RequestProgress({
    * section exists to remove. Logs arrive ordered by createdAt asc.
    */
   const latest = [...logs].reverse().find((l) => l.percentComplete != null) ?? null;
+  // Delivered (Testing) or accepted (Closed) → the build is complete, so state 100%
+  // even though markComplete logs no final entry — the last in-progress % is stale then.
+  const delivered =
+    request.status === "IN_TESTING" || request.status === "CLOSED";
 
   return (
     <section>
@@ -77,7 +81,14 @@ export function RequestProgress({
         Progress
       </h2>
 
-      {latest ? <CurrentProgress log={latest} /> : null}
+      {latest || delivered ? (
+        <CurrentProgress
+          pct={delivered ? 100 : latest?.percentComplete ?? 0}
+          log={latest}
+          delivered={delivered}
+          closed={request.status === "CLOSED"}
+        />
+      ) : null}
 
       {canLog ? (
         <div className={cn(latest && "mt-3")}>
@@ -107,8 +118,18 @@ export function RequestProgress({
  * not of a log entry — so it is stated once, at the top, attributed and timestamped.
  * The entries below are history.
  */
-function CurrentProgress({ log }: { log: LogRow }) {
-  const pct = Math.max(0, Math.min(100, log.percentComplete ?? 0));
+function CurrentProgress({
+  pct: rawPct,
+  log,
+  delivered = false,
+  closed = false,
+}: {
+  pct: number;
+  log: LogRow | null;
+  delivered?: boolean;
+  closed?: boolean;
+}) {
+  const pct = Math.max(0, Math.min(100, rawPct));
   // Same-family cobalt only (design-system §10): a darker cobalt (--accent-hover)
   // eases into --primary, then a white-tinted --primary brightens the leading edge.
   // White mixes are shading, not a second hue.
@@ -123,10 +144,16 @@ function CurrentProgress({ log }: { log: LogRow }) {
           {pct}
           <span className="ml-0.5 text-lg font-medium text-foreground">%</span>
         </span>
-        <span className="text-xs text-text-muted">
-          updated by {log.authorName ?? "the assignee"} ·{" "}
-          <AbsoluteTime date={log.createdAt} />
-        </span>
+        {delivered ? (
+          <span className="text-xs text-text-muted">
+            {closed ? "Delivered & accepted" : "Delivered — now in testing"}
+          </span>
+        ) : log ? (
+          <span className="text-xs text-text-muted">
+            updated by {log.authorName ?? "the assignee"} ·{" "}
+            <AbsoluteTime date={log.createdAt} />
+          </span>
+        ) : null}
       </div>
 
       <div className="relative mt-3 h-3" role="img" aria-label={`${pct}% complete`}>

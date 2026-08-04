@@ -161,6 +161,11 @@ const RequestCardContent = forwardRef<
   { request: RequestListRow } & React.HTMLAttributes<HTMLDivElement>
 >(function RequestCardContent({ request: r, className, children, ...rest }, ref) {
   const overdue = isOverdue(r);
+  // Once the build is delivered (Testing) or accepted (Closed) it's complete — show
+  // 100%, not the last in-progress log %. Progress logs only run during the build, so
+  // markComplete never records a 100% entry; the derived % would otherwise stay stale.
+  const displayPct =
+    r.status === "IN_TESTING" || r.status === "CLOSED" ? 100 : r.percentComplete;
   return (
     <div
       ref={ref}
@@ -196,20 +201,20 @@ const RequestCardContent = forwardRef<
         ) : null}
       </div>
 
-      {r.percentComplete != null ? (
+      {displayPct != null ? (
         <div className="mt-2">
           <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
             <div
               className="h-full rounded-full"
               style={{
-                width: `${r.percentComplete}%`,
+                width: `${displayPct}%`,
                 background:
                   "linear-gradient(90deg, var(--accent-hover), var(--primary))",
               }}
             />
           </div>
           <span className="mt-0.5 block text-right font-mono text-[10px] tabular-nums text-text-muted">
-            {r.percentComplete}%
+            {displayPct}%
           </span>
         </div>
       ) : null}
