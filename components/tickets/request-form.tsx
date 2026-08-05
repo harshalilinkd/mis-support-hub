@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Send } from "lucide-react";
 import type { z } from "zod";
 
+import { UserAvatar } from "@/components/user-avatar";
 import { attachTo } from "@/lib/actions/attachments";
 import { createRequest } from "@/lib/actions/requests";
 import { updateMyProfile } from "@/lib/actions/users";
@@ -55,20 +57,31 @@ function Label({
 }
 
 /**
- * A field group. The eyebrow carries the grouping without a second description
- * line — the labels and placeholders already say what each field is, and this form
- * should fit the viewport rather than read like a document.
+ * A field group, introduced by a numbered step marker + eyebrow. The number turns a
+ * flat form into a guided, three-step flow without a second description line — the
+ * labels and placeholders already say what each field is.
  *
- * `first-of-type` (not `first`) because the "requesting as" banner above is a div:
- * the first <section> genuinely is the first of its type, so the rule matches.
+ * `first-of-type` (not `first`) because the identity header above is a div: the first
+ * <section> genuinely is the first of its type, so the rule matches.
  */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  step,
+  title,
+  children,
+}: {
+  step: number;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="border-t border-border pt-3 first-of-type:border-t-0 first-of-type:pt-0">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+    <section className="border-t border-border pt-4 first-of-type:border-t-0 first-of-type:pt-0">
+      <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-primary tabular-nums">
+          {step}
+        </span>
         {title}
       </h2>
-      <div className="space-y-2.5">{children}</div>
+      <div className="space-y-3">{children}</div>
     </section>
   );
 }
@@ -141,16 +154,29 @@ export function RequestForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
+      className="space-y-5 overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)] sm:p-6"
     >
-      <div className="truncate rounded-[var(--radius-input)] border border-border bg-surface-muted px-3 py-1.5 text-xs text-text-muted">
-        Requesting as{" "}
-        <span className="font-medium text-foreground">{requester.name}</span> ·{" "}
-        {requester.email}
+      {/* Identity header — a designed strip that bleeds to the card edge, replacing the
+          plain gray "requesting as" banner. Avatar + name + email, softly cobalt-tinted. */}
+      <div className="-mx-5 -mt-5 flex items-center gap-3 border-b border-border bg-gradient-to-br from-accent-soft/70 to-surface px-5 py-4 sm:-mx-6 sm:-mt-6 sm:px-6">
+        <UserAvatar
+          name={requester.name}
+          email={requester.email}
+          className="size-10 shrink-0 ring-2 ring-surface shadow-[var(--shadow-elevation)]"
+        />
+        <div className="min-w-0">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+            Requesting as
+          </div>
+          <div className="truncate text-sm font-semibold text-foreground">
+            {requester.name}
+          </div>
+          <div className="truncate text-xs text-text-muted">{requester.email}</div>
+        </div>
       </div>
 
-      <Section title="What you need">
-        <div className="grid gap-2.5 sm:grid-cols-2">
+      <Section step={1} title="What you need">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="systemName">System name</Label>
             <Input
@@ -218,7 +244,7 @@ export function RequestForm({
         </div>
       </Section>
 
-      <Section title="Context">
+      <Section step={2} title="Context">
         <div>
           <Label htmlFor="currentProcess" hint="optional">
             How it&apos;s handled today
@@ -248,7 +274,7 @@ export function RequestForm({
             start-work (§12.3) — the requester states the need, not the schedule. */}
       </Section>
 
-      <Section title="Attachments">
+      <Section step={3} title="Attachments">
         <FileDropzone
           onChange={setAttachments}
           onBusyChange={setUploading}
@@ -257,11 +283,12 @@ export function RequestForm({
         />
       </Section>
 
-      <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">
+      <div className="-mx-5 -mb-5 flex items-center justify-end gap-2 border-t border-border bg-surface-muted/40 px-5 py-4 sm:-mx-6 sm:-mb-6 sm:px-6">
         <Button type="button" variant="ghost" onClick={() => router.back()} disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" disabled={pending || uploading}>
+        <Button type="submit" disabled={pending || uploading} className="gap-2">
+          <Send className="size-4" />
           {pending ? "Submitting…" : uploading ? "Uploading…" : "Submit request"}
         </Button>
       </div>

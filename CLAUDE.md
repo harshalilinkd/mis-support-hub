@@ -20,7 +20,11 @@ Sheet/AppSheet/Apps Script artifact, so "Sheet Link" is a first-class field.
   - `neon-http` has **no interactive transactions** — batch related writes with `db.batch([...])`; never assume a multi-statement transaction spanning awaits.
 - Auth.js v5 (`next-auth@beta`) + `@auth/drizzle-adapter`. **Google SSO first**, plus an **email + password** door (`bcryptjs` hash in `users.password_hash`).
 - Tailwind CSS v4 (CSS-first `@theme`) + shadcn/ui (radix-ui primitives) + lucide-react icons. Dark mode via `next-themes` (`.dark` class).
-- File storage: Vercel Blob (`@vercel/blob`) — client-upload token flow.
+- File storage: Vercel Blob (`@vercel/blob`) — client-upload token flow. **Voice notes**
+  use no extra service: the browser's own `MediaRecorder` (webm/opus, mp4 on Safari,
+  5-min cap) uploads through the same flow and is stored as an ordinary
+  `ticket_attachments` row (§5.1). Unsupported/insecure-origin browsers hide the
+  recorder — typing always works.
 - Email: Resend (`resend`). In-app notifications persisted in Postgres + a Web-Audio chime.
 - Kanban drag-drop: `@dnd-kit/core` + `@dnd-kit/sortable`.
 - Dashboard charts: `recharts` (client components, styled with the design tokens). This is the chosen charting library — supersedes the earlier hand-built-SVG approach for the dashboard; see §10.
@@ -109,6 +113,44 @@ explicitly started.
   - Degrades safe: with `CRON_SECRET` unset the endpoint refuses (401), so nothing
     auto-closes until it's configured.
 - Allowed transitions live in `lib/ticket-state.ts` (`STATUS_TRANSITIONS` / `canTransition`); enforce them server-side. (OPEN → IN_PROGRESS is listed so the UI can offer it, but it's performed by `startTask`, never `updateStatus`.)
+
+### 5.1 ISSUE intake — what "Raise a Ticket" requires (`NewTicketForm`)
+Four requirements, and they are **independent checks that must never be pooled into
+one count**:
+1. **Subject** — required, min 4 chars (zod, `createTicketSchema`).
+2. **Sheet link / System** — required, min 1 char. Deliberately NOT url-validated: a
+   link **or** just the system's name ("Data entry Interface") is accepted (§13.6).
+3. **Describe the problem — typed text OR a voice note.** Either one alone is enough.
+   The recorder is an accessibility feature for people who would rather speak than
+   type; it is **never required, and never required *alongside* text**. A voice-only
+   ticket is stored with the placeholder body "🎤 Voice note attached — please listen
+   to the recording below." so MIS knows to play the audio.
+4. **At least one file attachment (screenshot/PDF) — mandatory.** A **voice note does
+   NOT satisfy this**; only a real file does.
+
+`description` is therefore `z.string().trim().max(5000)` with **no `min`** in both
+`createTicketSchema` and `editTicketSchema` — a voice-only ticket has no typed body and
+must stay valid AND editable later. Requirement 3 is a hand-written check in the form,
+not a zod rule, because it spans a form field and a piece of component state.
+
+> **Why "never pooled" is load-bearing.** The form used to build
+> `allAttachments = [...attachments, voiceNote]` and require `length > 0` as a single
+> gate. That one line broke both rules at once, in both directions: a voice note
+> satisfied the mandatory-file requirement, and a screenshot satisfied the
+> describe-the-problem requirement. `allAttachments` still exists — it is what gets
+> written via `attachTo` — but it is used **only for the upload**, never for validation.
+> Validate `attachments.length` (files) and `hasText || voiceNote` (description)
+> separately.
+
+Both failures are reported together, inline on the field that is missing (`setError` on
+the textarea, a `fileError` state under the dropzone — the dropzone is not a
+react-hook-form field), plus one combined toast. Each clears as soon as it is satisfied.
+
+> **These are CLIENT-side gates.** `createTicket` cannot enforce requirement 4:
+> attachments are written by `attachTo` *after* the ticket row exists, so there is no
+> point at which the server can see "this ticket has ≥1 file". A ticket created through
+> the action directly can have no attachment — accepted, and the reason the rule lives
+> in the form. Requirements 1 and 2 ARE server-enforced by zod (§9).
 
 ## 6. Roles & permissions
 | Action | USER | MIS_STAFF | MIS_ADMIN |

@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Send } from "lucide-react";
 import type { z } from "zod";
 
+import { UserAvatar } from "@/components/user-avatar";
 import { attachTo } from "@/lib/actions/attachments";
 import { createTicket } from "@/lib/actions/tickets";
 import { updateMyProfile } from "@/lib/actions/users";
@@ -49,6 +51,32 @@ function Label({
     <label htmlFor={htmlFor} className="mb-1 block text-sm font-medium">
       {children}
     </label>
+  );
+}
+
+/**
+ * A field group introduced by a numbered step marker + eyebrow — mirrors the request
+ * form so both raise-flows read as the same guided, stepped card.
+ */
+function Section({
+  step,
+  title,
+  children,
+}: {
+  step: number;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-border pt-4 first-of-type:border-t-0 first-of-type:pt-0">
+      <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-primary tabular-nums">
+          {step}
+        </span>
+        {title}
+      </h2>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }
 
@@ -162,105 +190,116 @@ export function NewTicketForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-elevation)] sm:p-5"
+      className="space-y-5 overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface p-5 shadow-[var(--shadow-elevation)] sm:p-6"
     >
-      {/* Who's raising this — a compact locked banner (name is fixed to the
-          signed-in account) + the department field. */}
-      <div className="truncate rounded-[var(--radius-input)] border border-border bg-surface-muted px-3 py-2 text-xs text-text-muted">
-        Raising as{" "}
-        <span className="font-medium text-foreground">{requester.name}</span> ·{" "}
-        {requester.email}
-      </div>
-      <div>
-        <Label>Department</Label>
-        <Controller
-          control={control}
-          name="department"
-          render={({ field }) => (
-            <Select
-              value={field.value}
-              onValueChange={field.onChange}
-              disabled={pending}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select department" />
-              </SelectTrigger>
-              <SelectContent>
-                {DEPARTMENTS.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {DEPARTMENT_LABELS[d]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+      {/* Identity header — a designed strip that bleeds to the card edge (name is
+          fixed to the signed-in account). */}
+      <div className="-mx-5 -mt-5 flex items-center gap-3 border-b border-border bg-gradient-to-br from-accent-soft/70 to-surface px-5 py-4 sm:-mx-6 sm:-mt-6 sm:px-6">
+        <UserAvatar
+          name={requester.name}
+          email={requester.email}
+          className="size-10 shrink-0 ring-2 ring-surface shadow-[var(--shadow-elevation)]"
         />
-        <FieldError message={errors.department?.message} />
+        <div className="min-w-0">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+            Raising as
+          </div>
+          <div className="truncate text-sm font-semibold text-foreground">
+            {requester.name}
+          </div>
+          <div className="truncate text-xs text-text-muted">{requester.email}</div>
+        </div>
       </div>
 
-      <div>
-        <Label htmlFor="title">Subject</Label>
-        <Input
-          id="title"
-          placeholder="A short one-line title for the issue"
-          disabled={pending}
-          {...register("title")}
-        />
-        <FieldError message={errors.title?.message} />
-      </div>
+      <Section step={1} title="The problem">
+        <div>
+          <Label>Department</Label>
+          <Controller
+            control={control}
+            name="department"
+            render={({ field }) => (
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={pending}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEPARTMENTS.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {DEPARTMENT_LABELS[d]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <FieldError message={errors.department?.message} />
+        </div>
 
-      <div>
-        <Label htmlFor="sheetLink">
-          Sheet link / System <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="sheetLink"
-          placeholder="Sheet/app URL, or just the system name"
-          disabled={pending}
-          {...register("sheetLink")}
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          Paste a link, or just type the system’s name.
-        </p>
-        <FieldError message={errors.sheetLink?.message} />
-      </div>
+        <div>
+          <Label htmlFor="title">Subject</Label>
+          <Input
+            id="title"
+            placeholder="A short one-line title for the issue"
+            disabled={pending}
+            {...register("title")}
+          />
+          <FieldError message={errors.title?.message} />
+        </div>
 
-      <div>
-        <Label htmlFor="description">
-          Describe the problem / Summary{" "}
-          <span className="text-destructive">*</span>
-        </Label>
-        <Textarea
-          id="description"
-          rows={3}
-          placeholder="What's happening, what you expected, and any steps to reproduce."
-          disabled={pending}
-          {...register("description", {
-            onChange: () => clearErrors("description"),
-          })}
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          Type it here <span className="font-medium">or</span> record a voice
-          note — either one is enough.
-        </p>
-        <FieldError message={errors.description?.message} />
-        {/* Accessibility: not everyone is comfortable typing — record the issue
-            as a voice note instead. A voice note STANDS IN for the text; it is
-            never required alongside it. */}
-        <VoiceRecorder
-          onChange={(meta) => {
-            setVoiceNote(meta);
-            if (meta) clearErrors("description");
-          }}
-          onBusyChange={setVoiceBusy}
-          disabled={pending}
-        />
-      </div>
+        <div>
+          <Label htmlFor="sheetLink">
+            Sheet link / System <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="sheetLink"
+            placeholder="Sheet/app URL, or just the system name"
+            disabled={pending}
+            {...register("sheetLink")}
+          />
+          <p className="mt-1 text-xs text-text-muted">
+            Paste a link, or just type the system’s name.
+          </p>
+          <FieldError message={errors.sheetLink?.message} />
+        </div>
 
-      <div>
-        <Label>
-          Attachments <span className="text-destructive">*</span>
-        </Label>
+        <div>
+          <Label htmlFor="description">
+            Describe the problem / Summary{" "}
+            <span className="text-destructive">*</span>
+          </Label>
+          <Textarea
+            id="description"
+            rows={3}
+            placeholder="What's happening, what you expected, and any steps to reproduce."
+            disabled={pending}
+            {...register("description", {
+              onChange: () => clearErrors("description"),
+            })}
+          />
+          <p className="mt-1 text-xs text-text-muted">
+            Type it here <span className="font-medium">or</span> record a voice
+            note — either one is enough.
+          </p>
+          <FieldError message={errors.description?.message} />
+          {/* Accessibility: not everyone is comfortable typing — record the issue
+              as a voice note instead. A voice note STANDS IN for the text; it is
+              never required alongside it. */}
+          <VoiceRecorder
+            onChange={(meta) => {
+              setVoiceNote(meta);
+              if (meta) clearErrors("description");
+            }}
+            onBusyChange={setVoiceBusy}
+            disabled={pending}
+          />
+        </div>
+      </Section>
+
+      <Section step={2} title="Attachments">
         <FileDropzone
           onChange={(files) => {
             setAttachments(files);
@@ -271,14 +310,14 @@ export function NewTicketForm({
           compact
         />
         {attachments.length === 0 ? (
-          <p className="mt-1 text-xs text-text-muted">
+          <p className="text-xs text-text-muted">
             Required — attach at least one screenshot or PDF of the problem.
           </p>
         ) : null}
         <FieldError message={fileError ?? undefined} />
-      </div>
+      </Section>
 
-      <div className="-mx-4 flex justify-end gap-2 border-t border-border px-4 pt-3 sm:-mx-5 sm:px-5">
+      <div className="-mx-5 -mb-5 flex items-center justify-end gap-2 border-t border-border bg-surface-muted/40 px-5 py-4 sm:-mx-6 sm:-mb-6 sm:px-6">
         <Button
           type="button"
           variant="ghost"
@@ -287,7 +326,8 @@ export function NewTicketForm({
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={pending || busy}>
+        <Button type="submit" disabled={pending || busy} className="gap-2">
+          <Send className="size-4" />
           {pending ? "Creating…" : busy ? "Uploading…" : "Raise ticket"}
         </Button>
       </div>
