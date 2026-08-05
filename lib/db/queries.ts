@@ -1394,6 +1394,7 @@ export interface CreateRequestArgs {
   currentProcess?: string | null;
   currentSheetLink?: string | null;
   expectedBenefit: string;
+  requestedBy: string;
   department: Department;
 }
 
@@ -1425,6 +1426,7 @@ export async function createRequestTicket(args: CreateRequestArgs) {
       currentProcess: args.currentProcess ?? null,
       currentSheetLink: args.currentSheetLink ?? null,
       expectedBenefit: args.expectedBenefit,
+      requestedBy: args.requestedBy,
     }),
     db.insert(ticketActivity).values({
       ticketId: id,
@@ -1763,6 +1765,7 @@ export async function getRequestByNumber(
       currentProcess: requestDetails.currentProcess,
       currentSheetLink: requestDetails.currentSheetLink,
       expectedBenefit: requestDetails.expectedBenefit,
+      requestedBy: requestDetails.requestedBy,
       mdDecision: requestDetails.mdDecision,
       mdDecidedAt: requestDetails.mdDecidedAt,
       mdRemark: requestDetails.mdRemark,

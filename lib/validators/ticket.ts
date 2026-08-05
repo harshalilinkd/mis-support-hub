@@ -220,6 +220,13 @@ export const createRequestSchema = z.object({
     .trim()
     .min(5, "What's the expected benefit?")
     .max(2000),
+  // Who ASKED for this system — required at intake so every request records the
+  // person/authority it's being raised on behalf of.
+  requestedBy: z
+    .string()
+    .trim()
+    .min(2, "Who asked for this system?")
+    .max(160, "Keep it under 160 characters"),
   department: z.enum(DEPARTMENTS),
   // No urgency / target date: the requester states the need, MIS sets the priority
   // on claim and the delivery date when they start work (mirrors §5).

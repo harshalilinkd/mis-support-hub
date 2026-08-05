@@ -1,0 +1,1 @@
+ALTER TABLE "request_details" ADD COLUMN "requested_by" text;

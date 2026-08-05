@@ -328,7 +328,9 @@ Numbers are never computed from a row count.
 ### 12.2 New tables
 - `request_details` (1:1 with REQUEST tickets): ticket_id (pk, fk cascade),
   system_name, problem_statement, current_process (nullable), current_sheet_link
-  (nullable), intended_users, expected_benefit,
+  (nullable), expected_benefit, **requested_by (text, nullable in the DB but REQUIRED at
+  intake via the form/zod — who ASKED for the system, e.g. the requester's manager;
+  nullable so pre-existing rows and ISSUE→REQUEST moves (§12.9) need no backfill)**,
   md_decision (enum, default PENDING), **md_decision_recorded_by**
   (fk users.id, nullable — the MIS_ADMIN who ticked on the MD's behalf; defaults to the
   acting admin), md_decided_at (nullable), md_remark (text, nullable — **OPTIONAL even

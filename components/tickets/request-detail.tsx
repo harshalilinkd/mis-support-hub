@@ -132,6 +132,7 @@ export function RequestDetail({
             {request.createdByName ?? "—"}
           </span>
         </Meta>
+        <Meta label="Asked for by">{request.requestedBy ?? "—"}</Meta>
         <Meta label="Building">
           {request.assignedToId ? (
             <span className="inline-flex items-center gap-1.5">

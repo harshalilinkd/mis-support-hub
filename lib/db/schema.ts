@@ -438,6 +438,11 @@ export const requestDetails = pgTable("request_details", {
   currentProcess: text("current_process"),
   currentSheetLink: text("current_sheet_link"),
   expectedBenefit: text("expected_benefit").notNull(),
+  // Who ASKED for this system — the person/authority the requester is filing on behalf
+  // of (e.g. their manager or dept head). Required at intake (enforced in the form/zod);
+  // NULLABLE in the DB so pre-existing requests and ISSUE→REQUEST moves (§12.9), which
+  // never captured it, don't need a backfill. Renders "—" when absent.
+  requestedBy: text("requested_by"),
   // NOTE: no `intended_users` either — intake captures the problem and the benefit;
   // who ends up using the system is worked out during the build, not at intake.
   // NOTE: no `urgency` / `target_date` here. A REQUEST mirrors the ISSUE flow (§5):

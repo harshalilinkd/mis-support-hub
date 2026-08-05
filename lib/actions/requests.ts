@@ -105,6 +105,7 @@ export async function createRequest(
     currentProcess: d.currentProcess ?? null,
     currentSheetLink: d.currentSheetLink ?? null,
     expectedBenefit: d.expectedBenefit,
+    requestedBy: d.requestedBy,
     department: d.department,
   });
 

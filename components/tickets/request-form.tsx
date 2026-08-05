@@ -94,6 +94,7 @@ export function RequestForm({
       systemName: "",
       problemStatement: "",
       expectedBenefit: "",
+      requestedBy: "",
       currentProcess: "",
       currentSheetLink: "",
       department: requester.department ?? undefined,
@@ -204,6 +205,16 @@ export function RequestForm({
             {...register("expectedBenefit")}
           />
           <FieldError message={errors.expectedBenefit?.message} />
+        </div>
+        <div>
+          <Label htmlFor="requestedBy">Who asked for this system?</Label>
+          <Input
+            id="requestedBy"
+            placeholder="Name of the person who requested it — e.g. your manager or dept head"
+            disabled={pending}
+            {...register("requestedBy")}
+          />
+          <FieldError message={errors.requestedBy?.message} />
         </div>
       </Section>
 
