@@ -20,6 +20,7 @@ import type { RequestListRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { formatDueDate } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { PriorityChip, statusColor } from "./chips";
 import { RequestSheet } from "./request-sheet";
@@ -249,6 +250,14 @@ export function RequestsView({
                   </span>
                   <AbsoluteTime date={r.createdAt} dateOnly className="shrink-0 font-mono" />
                 </div>
+                {r.deadline ? (
+                  <div className="mt-1 text-xs text-text-muted">
+                    Due{" "}
+                    <span className="font-mono tabular-nums text-foreground">
+                      {formatDueDate(r.deadline)}
+                    </span>
+                  </div>
+                ) : null}
                 {/* §13.5 flag — mobile gets it too, or a finished-but-unlogged build
                     is invisible to anyone working from a phone. */}
                 {r.systemCode || ["IN_TESTING", "CLOSED", "CHANGES_REQUESTED"].includes(r.status) ? (
@@ -270,6 +279,7 @@ export function RequestsView({
                   <TableHead>Dept</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Priority</TableHead>
+                  <TableHead>Deadline</TableHead>
                   <TableHead>Requester</TableHead>
                   <TableHead>Assignee</TableHead>
                   <TableHead>System</TableHead>
@@ -302,6 +312,13 @@ export function RequestsView({
                       />
                     </TableCell>
                     <TableCell><PriorityChip priority={r.priority} /></TableCell>
+                    <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                      {/* Delivery target committed at start-work (§12.3). Blank until
+                          then, like the issue table's Deadline column. */}
+                      {formatDueDate(r.deadline) ?? (
+                        <span className="text-text-muted">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <UserAvatar name={r.createdByName} image={r.createdByImage} />
