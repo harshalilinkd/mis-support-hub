@@ -96,7 +96,7 @@ function navSectionsFor(role: Role): NavSection[] {
         items: [
           {
             href: "/new",
-            label: "Report an issue",
+            label: "Report an issue/changes",
             icon: PlusCircle,
             hint: "Something in an existing system, sheet, or app is broken or wrong — get MIS to fix it.",
           },
@@ -129,7 +129,7 @@ function navSectionsFor(role: Role): NavSection[] {
         { href: "/board", label: "Issue Board", icon: KanbanSquare },
         {
           href: "/new",
-          label: "Report an issue",
+          label: "Report an issue/changes",
           icon: PlusCircle,
           hint: "Something in an existing system, sheet, or app is broken or wrong — get it fixed.",
         },
