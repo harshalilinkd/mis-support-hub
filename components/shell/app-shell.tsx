@@ -74,7 +74,10 @@ type NavSection = {
  *      sub-tab, and a kanban board of your own two requests is noise.)
  *   2. The two RAISE actions, kept deliberately distinct so the confusion can't recur —
  *      "Report an issue" (something's broken) vs "Request a system" (build a new one).
- *   3. Systems — the company-wide directory (§13.3).
+ *
+ * The Systems directory link is intentionally NOT in the employee nav — it's surfaced
+ * only in the MIS staff/admin tail. (The /systems route stays readable per §13.3; this
+ * is a nav-surface decision, not a permission change.)
  *
  * MIS STAFF / ADMIN — the pipeline-grouped triage nav: Dashboard over both pipelines,
  * then Issues and System Requests named outright, then "Assigned to Me" (their
@@ -107,10 +110,6 @@ function navSectionsFor(role: Role): NavSection[] {
             hint: "Ask MIS to build a brand-new system that doesn't exist yet.",
           },
         ],
-      },
-      {
-        id: "directory",
-        items: [{ href: "/systems", label: "Systems", icon: Library }],
       },
     ];
   }

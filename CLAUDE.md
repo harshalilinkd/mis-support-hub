@@ -582,14 +582,19 @@ fill an inbox for no gain, and no earlier email is made false by it.
     with rows removed. The old approach left them a broken shape (a lone "Report an issue"
     under an ISSUES header, their issue list orphaned at the bottom, a pointless "Request
     Board" of their own 1–2 requests, and a redundant "My Requests"). Their nav is exactly
-    three jobs:
+    two jobs:
     1. **My Tickets** (`/my`) — ONE home showing BOTH their issues and their requests
        (see the `/my` note below). This is why employees have **no** "My Requests" or
        "Request Board" link: the first is redundant with the sub-tab, the second is noise.
     2. The two RAISE actions, kept deliberately distinct so "broken system" can't blur
        into "new system" — **"Report an issue"** (`/new`) vs **"Request a system"**
        (`/requests/new`).
-    3. **Systems** (`/systems`) — the company-wide directory (§13.3).
+    - **Systems is NOT in the employee nav** (product decision): the directory link is
+      surfaced only in the MIS staff/admin tail. This is a **nav-surface** choice, not a
+      permission change — the `/systems` route itself stays USER-readable per §13.3, so
+      the two are consistent as long as the link's absence isn't mistaken for a route
+      guard. (If Systems is ever meant to be truly admin-only, §13.3's permission table
+      must change too, not just this nav entry.)
   - **`/my` shows BOTH types for everyone** via `MyWorkView` (an Issues | System Requests
     sub-tab pair, each reusing its real list — `MyTicketsView` / `RequestsView`). Its one
     `variant` differs by role: staff see tickets ASSIGNED to them (inline controls), a USER
