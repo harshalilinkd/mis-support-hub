@@ -25,6 +25,7 @@ import {
 import { AbsoluteTime } from "@/components/absolute-time";
 import type { RequestDetail } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { istDayKey } from "@/lib/format";
 import { isStaff } from "@/lib/roles";
 import { REQUEST_RELEASABLE_FROM } from "@/lib/ticket-state";
 import { Button } from "@/components/ui/button";
@@ -199,10 +200,19 @@ export function RequestActions({
           )
         }
       />
-      <NoteDialog open={dialog === "complete"} pending={pending} title="Mark build complete" label="Handover note (optional)" placeholder="Anything the requester should know before testing…" required={false} confirmLabel="Mark complete" onOpenChange={(o) => !o && setDialog(null)} onSubmit={(note) =>
-          run("Marked complete — ready for testing", () =>
-            markComplete({ ticketId: request.id, note })
-          , onCompleted)
+      {/* Asks WHEN the build was finished as well as the handover note (§5.2) — the
+          request-side twin of the issue resolve dialog, for a build delivered on one day
+          and recorded on another. */}
+      <CompleteDialog
+        open={dialog === "complete"}
+        pending={pending}
+        onOpenChange={(o) => !o && setDialog(null)}
+        onSubmit={(note, completedOn) =>
+          run(
+            "Marked complete — ready for testing",
+            () => markComplete({ ticketId: request.id, note, completedOn }),
+            onCompleted
+          )
         }
       />
     </>
@@ -354,47 +364,69 @@ function DecisionDialog({
   );
 }
 
-function NoteDialog({
+/**
+ * Marking the build complete (→ IN_TESTING): the completion DATE plus an optional
+ * handover note.
+ *
+ * The date defaults to today and accepts **any** date, past or future, exactly like the
+ * issue resolve dialog — §5.2 records why it is unbounded. It matters here for the same
+ * reason: `completed_at` drives the "avg completion time" column of the Team performance
+ * report (§10), so recording the day you got round to clicking rather than the day you
+ * delivered overstates every build.
+ */
+function CompleteDialog({
   open,
   pending,
-  title,
-  label,
-  placeholder,
-  required,
-  confirmLabel,
   onOpenChange,
   onSubmit,
 }: {
   open: boolean;
   pending: boolean;
-  title: string;
-  label: string;
-  placeholder: string;
-  required: boolean;
-  confirmLabel: string;
   onOpenChange: (o: boolean) => void;
-  onSubmit: (note: string) => void;
+  onSubmit: (note: string, completedOn: string) => void;
 }) {
   const [note, setNote] = useState("");
-  // Fresh form on every open (the wrapper stays mounted between opens).
+  const [completedOn, setCompletedOn] = useState("");
+  // Fresh form on every open (the wrapper stays mounted between opens), defaulted to
+  // today — the common answer.
   useEffect(() => {
     if (!open) return;
     setNote("");
+    setCompletedOn(istDayKey(new Date()));
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>Mark build complete</DialogTitle>
         </DialogHeader>
         <div>
-          <label className="mb-1 block text-sm font-medium">{label}</label>
-          <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={placeholder} disabled={pending} />
+          <label htmlFor="completed-on" className="mb-1 block text-sm font-medium">
+            Completed on
+          </label>
+          {/* No min/max — any past or future date (§5.2), matching the server. */}
+          <Input
+            id="completed-on"
+            type="date"
+            value={completedOn}
+            onChange={(e) => setCompletedOn(e.target.value)}
+            disabled={pending}
+          />
+          <p className="mt-1 text-xs text-text-muted">
+            Today is filled in — change it if you finished the build earlier. Any date
+            is allowed; a date other than today is recorded on the timeline.
+          </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Handover note (optional)
+          </label>
+          <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything the requester should know before testing…" disabled={pending} />
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
-          <Button onClick={() => onSubmit(note)} disabled={pending || (required && !note.trim())}>
-            {pending ? "Saving…" : confirmLabel}
+          <Button onClick={() => onSubmit(note, completedOn)} disabled={pending || !completedOn}>
+            {pending ? "Saving…" : "Mark complete"}
           </Button>
         </DialogFooter>
       </DialogContent>

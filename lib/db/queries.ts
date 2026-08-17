@@ -482,6 +482,15 @@ export async function setTicketStatus(args: {
   to: Status;
   resolvedAt?: Date | null;
   resolvedBy?: string | null;
+  /**
+   * Set ONLY when `resolvedAt` was dated to a day other than today (§5.2) — the real
+   * instant the change was recorded. Writes a second COMPLETION_DATED activity row in
+   * the same batch, because the STATUS_CHANGED row alone cannot show it: its created_at
+   * is today while resolved_at says last week, with nothing tying the two together or
+   * naming who chose the date. A chosen date moves the ticket's numbers in the
+   * dashboard's averages (§10), so it is exactly the kind of act §12.5 needs a trail for.
+   */
+  datedFrom?: Date;
 }) {
   assertStatusForType(args.type, args.to);
   const set: Partial<typeof tickets.$inferInsert> = { status: args.to };
@@ -496,6 +505,19 @@ export async function setTicketStatus(args: {
       fromValue: args.from,
       toValue: args.to,
     }),
+    // from = when it was recorded, to = the resolution date recorded (both ISO), so the
+    // timeline can read "…dated the resolution 13 Aug 2026".
+    ...(args.datedFrom && args.resolvedAt
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "COMPLETION_DATED",
+            fromValue: args.datedFrom.toISOString(),
+            toValue: args.resolvedAt.toISOString(),
+          }),
+        ]
+      : []),
   ]);
 }
 
@@ -2080,12 +2102,17 @@ export async function markRequestCompleteRow(args: {
   actorId: string;
   from: Status;
   note?: string | null;
+  /** The day the build was actually finished (§5.2). Defaults to now when omitted. */
+  completedAt?: Date;
+  /** Set when completedAt is a day other than today — see setTicketStatus.datedFrom. */
+  datedFrom?: Date;
 }) {
+  const completedAt = args.completedAt ?? new Date();
   await db.batch([
     db.update(tickets).set({ status: "IN_TESTING" }).where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ completedAt: new Date() })
+      .set({ completedAt })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     ...(args.note
       ? [
@@ -2103,6 +2130,19 @@ export async function markRequestCompleteRow(args: {
       fromValue: args.from,
       toValue: "IN_TESTING",
     }),
+    // Same audit row the ISSUE resolve writes (§5.2) — the completion date was moved off
+    // the day it was recorded, so the trail says who chose it and when.
+    ...(args.datedFrom
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "COMPLETION_DATED",
+            fromValue: args.datedFrom.toISOString(),
+            toValue: completedAt.toISOString(),
+          }),
+        ]
+      : []),
   ]);
 }
 

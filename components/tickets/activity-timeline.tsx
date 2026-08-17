@@ -55,6 +55,11 @@ function describe(a: ActivityRow): string {
       return `${actor} assigned it to ${a.toValue}`;
     case "STATUS_CHANGED":
       return `${actor} changed status: ${humanize(a.fromValue)} → ${humanize(a.toValue)}`;
+    case "COMPLETION_DATED":
+      // Written only when the resolution was dated to a day OTHER than today (§5.2).
+      // toValue is that date; the row's own created_at (rendered beside this line) is
+      // when it was recorded, so the two together show the gap.
+      return `${actor} dated the resolution ${formatDue(a.toValue)}`;
     case "PRIORITY_CHANGED":
       return a.fromValue
         ? `${actor} changed priority: ${humanize(a.fromValue)} → ${humanize(a.toValue)}`

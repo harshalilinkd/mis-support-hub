@@ -45,6 +45,10 @@ function describe(a: ActivityRow): string {
       return `${actor} started building`;
     case "MARKED_COMPLETE":
       return `${actor} marked the build complete — ready to test`;
+    case "COMPLETION_DATED":
+      // Written only when the completion was dated to a day OTHER than today (§5.2);
+      // toValue is that date, and this row's own timestamp is when it was recorded.
+      return `${actor} dated the completion ${formatDue(a.toValue)}`;
     case "CHANGES_REQUESTED":
       return `${actor} requested changes${a.toValue ? ` (round ${a.toValue})` : ""}`;
     case "ACCEPTED":

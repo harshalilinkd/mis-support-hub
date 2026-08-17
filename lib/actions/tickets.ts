@@ -20,7 +20,9 @@ import { getCurrentUser, type SessionUser } from "@/lib/session";
 import {
   canMoveTicketType,
   canReleaseTicket,
+  canResolveIssue,
   canTransition,
+  completionDateFor,
   releaseNeedsNotice,
 } from "@/lib/ticket-state";
 import {
@@ -129,10 +131,17 @@ export async function createTicket(
   return ok({ id: ticket.id, number: ticket.number });
 }
 
-/** Change status — MIS only, enforcing the §5 state machine. */
+/**
+ * Change status — MIS only, enforcing the §5 state machine.
+ *
+ * `resolvedOn` (RESOLVED only) is the IST calendar day the work actually finished, for
+ * the common case of recording a fix a day or two after doing it (§5). Omit it and the
+ * ticket resolves now, exactly as before.
+ */
 export async function updateStatus(
   ticketId: string,
-  status: Status
+  status: Status,
+  resolvedOn?: string
 ): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -140,7 +149,7 @@ export async function updateStatus(
     return fail("Only MIS staff can change a ticket's status.");
   }
 
-  const parsed = updateStatusSchema.safeParse({ ticketId, status });
+  const parsed = updateStatusSchema.safeParse({ ticketId, status, resolvedOn });
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
   const ticket = await q.getTicketById(parsed.data.ticketId);
@@ -174,6 +183,36 @@ export async function updateStatus(
   if (to === "RESOLVED" && !ticket.assignedTo) {
     return fail("Assign the ticket before marking it resolved.");
   }
+  // Resolving is ADMIN-ONLY, and only on your own claimed ticket (§6). The ownership
+  // lock above already refused someone else's ticket, so this adds the role half.
+  if (
+    to === "RESOLVED" &&
+    !canResolveIssue(user.role, ticket.assignedTo === user.id)
+  ) {
+    return fail(`Only an MIS admin can mark ${ticket.number} resolved.`);
+  }
+  // A resolution date is meaningless on any other transition — refuse rather than
+  // silently drop it, so a caller that passes one wrongly hears about it.
+  if (parsed.data.resolvedOn && to !== "RESOLVED") {
+    return fail("A resolution date only applies when marking a ticket resolved.");
+  }
+
+  // Resolving stamps resolved_at — the DAY the work finished, which may be any date
+  // (§5.2). Absent ⇒ now.
+  const now = new Date();
+  let resolution: { resolvedAt: Date; resolvedBy: string } | undefined;
+  let datedFrom: Date | undefined;
+  if (to === "RESOLVED") {
+    let at = now;
+    if (parsed.data.resolvedOn) {
+      const picked = completionDateFor(parsed.data.resolvedOn, now);
+      if (!picked.ok) return fail(picked.error);
+      at = picked.at;
+      // Only a date moved off today is audited — picking today is just "resolved now".
+      if (picked.dated) datedFrom = now;
+    }
+    resolution = { resolvedAt: at, resolvedBy: user.id };
+  }
 
   await q.setTicketStatus({
     ticketId: ticket.id,
@@ -181,7 +220,8 @@ export async function updateStatus(
     type: ticket.type,
     from,
     to,
-    ...(to === "RESOLVED" ? { resolvedAt: new Date(), resolvedBy: user.id } : {}),
+    ...(resolution ?? {}),
+    datedFrom,
   });
 
   // Notify the reporter when resolved/closed (§8; best-effort, never throws).

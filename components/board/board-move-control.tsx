@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Lock, Play } from "lucide-react";
-import { toast } from "sonner";
 
-import { updateStatus } from "@/lib/actions/tickets";
 import type { BoardTicketRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { canResolveIssue } from "@/lib/ticket-state";
 import { Button } from "@/components/ui/button";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { ResolveDialog } from "@/components/tickets/resolve-dialog";
 import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 
 /**
@@ -28,9 +28,9 @@ export function BoardMoveControl({
   currentUser: SessionUser;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [claimOpen, setClaimOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
 
   // Mirror ClaimButton / the board's drag rules exactly (§6 ownership lock).
   const done = ticket.status === "RESOLVED" || ticket.status === "CLOSED";
@@ -113,26 +113,38 @@ export function BoardMoveControl({
     );
   }
 
-  // In Progress / Reopened → Resolved (the assignee marks it fixed).
-  function resolve() {
-    startTransition(async () => {
-      const res = await updateStatus(ticket.id, "RESOLVED");
-      if (!res.ok) return void toast.error(res.error);
-      toast.success(`${ticket.number} moved to Resolved`);
-      router.refresh();
-    });
+  // In Progress / Reopened → Resolved — ADMIN + assignee only (§6). A staff assignee
+  // gets no move here; an admin resolves it (or they release it first).
+  if (!canResolveIssue(currentUser.role, mine)) {
+    return (
+      <span className="text-xs text-text-muted">
+        An MIS admin marks this resolved.
+      </span>
+    );
   }
 
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-9 w-full"
-      onClick={resolve}
-      disabled={pending}
-    >
-      <Check className="size-4" />
-      {pending ? "Moving…" : "Move to Resolved"}
-    </Button>
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-9 w-full"
+        onClick={() => setResolveOpen(true)}
+      >
+        <Check className="size-4" />
+        Move to Resolved
+      </Button>
+      <ResolveDialog
+        ticketId={ticket.id}
+        ticketNumber={ticket.number}
+        createdAt={ticket.createdAt}
+        open={resolveOpen}
+        onOpenChange={setResolveOpen}
+        onDone={() => {
+          setResolveOpen(false);
+          router.refresh();
+        }}
+      />
+    </>
   );
 }

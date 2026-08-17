@@ -14,6 +14,8 @@ import {
   isAutoCloseEligible,
   moveTargetType,
   releaseNeedsNotice,
+  canResolveIssue,
+  completionDateFor,
   type RequestMoveId,
 } from "./ticket-state";
 
@@ -152,7 +154,9 @@ test("assertStatusForType rejects a wrong-type status", () => {
 
 test("ISSUE machine still enforces §5/§6", () => {
   assert.equal(canTransition("ISSUE", "OPEN", "IN_PROGRESS", STAFF, false, false), true);
-  assert.equal(canTransition("ISSUE", "IN_PROGRESS", "RESOLVED", STAFF, false, false), true);
+  // Resolving is ADMIN-only now (§6, canResolveIssue) — staff claim/start/release only.
+  assert.equal(canTransition("ISSUE", "IN_PROGRESS", "RESOLVED", ADMIN, false, false), true);
+  assert.equal(canTransition("ISSUE", "IN_PROGRESS", "RESOLVED", STAFF, false, false), false);
   assert.equal(canTransition("ISSUE", "RESOLVED", "CLOSED", USER, true, false), true); // reporter confirms
   assert.equal(canTransition("ISSUE", "RESOLVED", "CLOSED", ADMIN, false, false), true); // admin may
   assert.equal(canTransition("ISSUE", "RESOLVED", "CLOSED", STAFF, false, false), false); // non-reporter staff can't
@@ -423,4 +427,86 @@ test("auto-close fires only after the grace window fully elapses", () => {
   assert.equal(autoCloseDue(new Date(now.getTime() - (AUTO_CLOSE_DAYS - 1) * day), now), false);
   // Just resolved → not due.
   assert.equal(autoCloseDue(now, now), false);
+});
+
+
+/* ------------------------------------------------------------------ *
+ * Dating a completion (§5.2) — completionDateFor. ANY date is allowed, past or
+ * future; only a non-date is refused.
+ * ------------------------------------------------------------------ */
+
+const NOW = new Date("2026-08-17T09:30:00Z"); // 17 Aug 2026, 15:00 IST
+
+test("today is stamped as now, and is not a 'dated' completion", () => {
+  const r = completionDateFor("2026-08-17", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.at.getTime(), NOW.getTime());
+  assert.equal(r.ok && r.dated, false);
+});
+
+test("'today' is read in IST, not UTC", () => {
+  // 17 Aug 02:00 IST is still 16 Aug in UTC. Reading the day in UTC would treat
+  // "today" as a past date for anyone working before 05:30 IST.
+  const earlyIst = new Date("2026-08-16T20:30:00Z");
+  const r = completionDateFor("2026-08-17", earlyIst);
+  assert.equal(r.ok && r.dated, false);
+  assert.equal(r.ok && r.at.getTime(), earlyIst.getTime());
+});
+
+test("a past day lands at the end of that IST day and counts as dated", () => {
+  const r = completionDateFor("2026-08-15", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.dated, true);
+  // 15 Aug 23:59:59.999 IST = 18:29:59.999Z.
+  assert.equal(r.ok && r.at.toISOString(), "2026-08-15T18:29:59.999Z");
+});
+
+test("a FUTURE day is accepted (product decision, §5.2) and not clamped to now", () => {
+  const r = completionDateFor("2026-09-01", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.dated, true);
+  assert.equal(r.ok && r.at.getTime() > NOW.getTime(), true);
+  assert.equal(r.ok && r.at.toISOString(), "2026-09-01T18:29:59.999Z");
+});
+
+test("same-day completion still lands AFTER a ticket raised that morning", () => {
+  // Why istDayEnd is end-of-day, not midnight: midnight would precede an 11:55 IST
+  // creation and make resolved − created negative in the dashboard averages (§10).
+  const raised = new Date("2026-08-13T06:25:00Z"); // 13 Aug 11:55 IST
+  const r = completionDateFor("2026-08-13", NOW);
+  assert.equal(r.ok && r.at.getTime() > raised.getTime(), true);
+});
+
+test("a malformed or impossible date is refused, never coerced", () => {
+  for (const bad of ["", "13-08-2026", "2026-8-13", "2026-02-31", "2026-13-01", "yesterday"]) {
+    assert.equal(
+      completionDateFor(bad, NOW).ok,
+      false,
+      `expected "${bad}" to be refused`
+    );
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * Resolving an ISSUE is MIS_ADMIN + assignee (§6) — canResolveIssue.
+ * ------------------------------------------------------------------ */
+
+test("only an MIS_ADMIN assignee may resolve an issue", () => {
+  assert.equal(canResolveIssue(ADMIN, true), true);
+  // An admin who isn't the assignee: resolving someone else's claim is a takeover (§6).
+  assert.equal(canResolveIssue(ADMIN, false), false);
+  // Staff may claim, start and release their own ticket — but not resolve it.
+  assert.equal(canResolveIssue(STAFF, true), false);
+  assert.equal(canResolveIssue(STAFF, false), false);
+  assert.equal(canResolveIssue(USER, true), false);
+});
+
+test("the transition map agrees: → RESOLVED is admin-only", () => {
+  for (const from of ["OPEN", "IN_PROGRESS", "REOPENED"] as Status[]) {
+    assert.equal(canTransition("ISSUE", from, "RESOLVED", ADMIN, false, true), true);
+    assert.equal(canTransition("ISSUE", from, "RESOLVED", STAFF, false, true), false);
+    assert.equal(canTransition("ISSUE", from, "RESOLVED", USER, true, false), false);
+  }
+  // Starting work is still open to staff — only resolving was narrowed.
+  assert.equal(canTransition("ISSUE", "OPEN", "IN_PROGRESS", STAFF, false, true), true);
 });

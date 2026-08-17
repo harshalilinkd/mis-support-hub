@@ -136,6 +136,12 @@ export const ACTIVITY_TYPES = [
   // The system auto-closed a stale RESOLVED issue / delivered request after the
   // reporter didn't respond for AUTO_CLOSE_DAYS (§5). Actor is the SYSTEM user.
   "AUTO_CLOSED",
+  // Work was marked finished and dated to a day OTHER than today (§5.2) — an issue
+  // resolved, or a request's build marked complete. from_value = when it was recorded,
+  // to_value = the date recorded. One type for both modules (each timeline words it for
+  // its own vocabulary); written only when the two differ, since dating it today is
+  // nothing to audit. TEXT-constrained, so no migration.
+  "COMPLETION_DATED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

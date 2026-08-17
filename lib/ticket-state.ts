@@ -1,4 +1,5 @@
 import type { Role, Status, TicketType } from "@/lib/db/schema";
+import { istDayEnd, istDayKey } from "@/lib/format";
 
 /**
  * Ticket lifecycle state machines (CLAUDE.md §5 for ISSUE, §12.3 for REQUEST).
@@ -8,7 +9,8 @@ import type { Role, Status, TicketType } from "@/lib/db/schema";
  * things per type (an ISSUE IN_PROGRESS → RESOLVED; a REQUEST IN_PROGRESS →
  * IN_TESTING), which is exactly why the transition map must be type-aware.
  *
- * This module is pure (type-only import) and safe to import from client UI.
+ * This module is pure (types + the equally pure lib/format date helpers — no DB, no
+ * server imports) and safe to import from client UI.
  */
 
 /**
@@ -135,12 +137,16 @@ function issueActorAllows(
   const isAdmin = role === "MIS_ADMIN";
   const isStaff = role === "MIS_STAFF" || isAdmin;
   switch (`${from}->${to}`) {
-    // Only MIS moves an issue into progress / resolves it (§6).
+    // Only MIS starts work on an issue (§6).
     case "OPEN->IN_PROGRESS":
+      return isStaff;
+    // Resolving is ADMIN-ONLY (§6, canResolveIssue) — narrower than the other staff
+    // steps. The assignee half of that rule is enforced by the action's ownership lock,
+    // which this role-only signature can't see.
     case "OPEN->RESOLVED":
     case "IN_PROGRESS->RESOLVED":
     case "REOPENED->RESOLVED":
-      return isStaff;
+      return isAdmin;
     // The reporter confirms a resolved issue → closed (admin may too) (§5).
     case "RESOLVED->CLOSED":
       return isRequester || isAdmin;
@@ -318,6 +324,76 @@ export function canReleaseTicket(
 ): boolean {
   if (!isAssignee) return false;
   return status === "OPEN" || status === "IN_PROGRESS" || status === "REOPENED";
+}
+
+/* ------------------------------------------------------------------ *
+ * Dating a completion (§5.2) — "Mark resolved" (ISSUE) and "Mark complete" (REQUEST)
+ * both ask which DAY the work was finished, because MIS routinely does the work on one
+ * day and records it on another.
+ * ------------------------------------------------------------------ */
+
+export type CompletionDate =
+  | { ok: true; at: Date; dated: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Turn a picked IST day ("YYYY-MM-DD") into the instant stored in `tickets.resolved_at`
+ * (ISSUE) or `request_details.completed_at` (REQUEST).
+ *
+ * **Any real date is accepted — past or future — by product decision.** The only thing
+ * refused is a string that isn't a calendar day at all ("2026-02-31", "yesterday"): a
+ * date we cannot place is not a date, and coercing it would put a silent wrong value in
+ * the audit trail. Range-checking is deliberately NOT done here; see the note below.
+ *
+ * The instant is the END of the picked IST day, except today, which collapses to `now`
+ * (the honest timestamp, and what an undated completion has always stored). End-of-day
+ * matters for the day the ticket was raised: midnight would land BEFORE `created_at` and
+ * make "resolved − created" negative in the dashboard averages (§10), so the common
+ * same-day case stays positive without needing a bound.
+ *
+ * `dated` = the picked day is not today, i.e. the completion was moved off the day it
+ * was recorded. That is what the caller audits (§12.5), in either direction.
+ *
+ * > **This used to enforce two bounds** — not in the future, not before the ticket was
+ * > raised — on the grounds that both describe an impossible history and that a
+ * > pre-creation date makes `resolved_at − created_at` negative in every dashboard
+ * > average. That reasoning still holds and the risk is real: **a future or
+ * > pre-creation date will skew the resolution-time averages and the created-vs-resolved
+ * > chart.** It was removed anyway, deliberately, because MIS needs to record dates the
+ * > bounds refused (a fix agreed before the ticket was filed, a delivery dated to an
+ * > agreed future hand-over). Accuracy of the record won over tidiness of the averages;
+ * > the audit row below is what keeps it honest. Do not re-add the bounds without
+ * > raising it — the absence is a decision, not an oversight.
+ *
+ * Pure + unit-tested, shared by `updateStatus`, `markComplete` and their dialogs, so
+ * the UI and the server can't disagree (the same convention as `canReleaseTicket`).
+ */
+export function completionDateFor(dayKey: string, now: Date): CompletionDate {
+  const end = istDayEnd(dayKey);
+  if (!end) return { ok: false, error: "Pick a valid date." };
+  const today = istDayKey(now);
+  if (dayKey === today) return { ok: true, at: now, dated: false };
+  return { ok: true, at: end, dated: true };
+}
+
+/**
+ * May this actor mark an ISSUE resolved? (§6 — **MIS_ADMIN only, and only their own
+ * claimed ticket**.)
+ *
+ * Deliberately narrower than the other staff actions: claiming, starting and releasing
+ * are open to MIS_STAFF, but declaring an issue fixed is the step the reporter is asked
+ * to verify and the step every resolution-time metric is computed from, so it is kept to
+ * admins. Assignee-locked for the same reason every other write is (§6 ownership lock) —
+ * an admin cannot resolve a colleague's ticket, since that is a takeover of the claim.
+ *
+ * Consequence, same shape as `docs/known-issues/0003`: an MIS_STAFF assignee cannot
+ * resolve their own ticket, and no admin may resolve it for them. The exit is the staff
+ * member **releasing** it (§5) so an admin can claim and resolve it. This affects nobody
+ * today — MIS_STAFF is retired from the admin role picker (§12.1) — but it is the reason
+ * the release hatch must stay open to staff.
+ */
+export function canResolveIssue(role: Role, isAssignee: boolean): boolean {
+  return role === "MIS_ADMIN" && isAssignee;
 }
 
 /**

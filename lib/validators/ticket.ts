@@ -69,6 +69,16 @@ export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export const updateStatusSchema = z.object({
   ticketId: z.string().uuid(),
   status: z.enum(STATUSES),
+  // Only meaningful when status is RESOLVED: the IST calendar DAY the work was
+  // actually finished, so MIS can record a fix they completed a day or two earlier
+  // (§5.2). Omitted ⇒ resolved now. A "YYYY-MM-DD" day, never a timestamp; any date is
+  // allowed (past or future) — completionDateFor (lib/ticket-state.ts) turns it into the
+  // stored instant and refuses only a string that isn't a calendar date.
+  resolvedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid resolution date")
+    .optional(),
 });
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 
@@ -312,6 +322,14 @@ export type ProgressLogInput = z.infer<typeof progressLogSchema>;
 export const markCompleteSchema = z.object({
   ticketId: z.string().uuid(),
   note: optionalText(2000),
+  // The IST day the build was actually finished (§5.2) — the request-side twin of
+  // updateStatusSchema.resolvedOn. Omitted ⇒ completed now. Any day is allowed; the
+  // shared completionDateFor only refuses a string that isn't a calendar date.
+  completedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid completion date")
+    .optional(),
 });
 export type MarkCompleteInput = z.infer<typeof markCompleteSchema>;
 

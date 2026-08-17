@@ -6,9 +6,9 @@ import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { setPriority, updateStatus } from "@/lib/actions/tickets";
-import type { Priority, Status } from "@/lib/db/schema";
+import type { Priority, Role, Status } from "@/lib/db/schema";
 import { humanizeEnum } from "@/lib/format";
-import { STATUS_TRANSITIONS } from "@/lib/ticket-state";
+import { canResolveIssue, STATUS_TRANSITIONS } from "@/lib/ticket-state";
 import { PRIORITIES } from "@/lib/validators/ticket";
 import {
   DropdownMenu,
@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { ResolveDialog } from "@/components/tickets/resolve-dialog";
 import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 
@@ -27,6 +28,8 @@ export function StatusControl({
   status,
   locked = false,
   mine = false,
+  role,
+  createdAt,
 }: {
   ticketId: string;
   status: Status;
@@ -34,12 +37,26 @@ export function StatusControl({
   locked?: boolean;
   /** True when the ticket is assigned to the current user (drives start vs claim). */
   mine?: boolean;
+  /**
+   * The viewer's role — decides whether "Mark resolved" is offered at all (§6:
+   * admin + assignee). Passed in rather than each call site computing the rule, so
+   * there is ONE copy of it.
+   */
+  role: Role;
+  /** When the ticket was raised — shown as context in the "Resolved on" picker (§5.2). */
+  createdAt?: Date | string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [claimOpen, setClaimOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
-  const targets = STATUS_TRANSITIONS[status];
+  const [resolveOpen, setResolveOpen] = useState(false);
+  // Resolving is admin + assignee (§6): drop it from the menu for anyone else rather
+  // than offering a move the server refuses.
+  const canResolve = canResolveIssue(role, mine);
+  const targets = STATUS_TRANSITIONS[status].filter(
+    (s) => s !== "RESOLVED" || canResolve
+  );
 
   function change(to: Status) {
     // Open → In Progress = start work (§5). If I've already claimed it, ask only
@@ -50,6 +67,12 @@ export function StatusControl({
       else setClaimOpen(true);
       return;
     }
+    // Resolving asks which day the work finished (§5) — same dialog as the detail,
+    // so a row can't resolve a ticket by a route that skips the date.
+    if (to === "RESOLVED") {
+      setResolveOpen(true);
+      return;
+    }
     startTransition(async () => {
       const res = await updateStatus(ticketId, to);
       if (!res.ok) return void toast.error(res.error);
@@ -58,13 +81,15 @@ export function StatusControl({
     });
   }
 
-  // Label the Open → In Progress item by which step it triggers.
+  // Label the items that open a dialog with an ellipsis (they ask for something).
   const label = (to: Status) =>
     status === "OPEN" && to === "IN_PROGRESS"
       ? mine
         ? "Start task…"
         : "Claim & start…"
-      : `Move to ${humanizeEnum(to)}`;
+      : to === "RESOLVED"
+        ? "Mark resolved…"
+        : `Move to ${humanizeEnum(to)}`;
 
   // Read-only when locked (claimed by someone else) or terminal (no transitions).
   if (locked || targets.length === 0) return <StatusChip status={status} />;
@@ -107,6 +132,14 @@ export function StatusControl({
         open={startOpen}
         onOpenChange={setStartOpen}
         onDone={() => setStartOpen(false)}
+      />
+      {/* → Resolved: record the day the work actually finished (defaults to today). */}
+      <ResolveDialog
+        ticketId={ticketId}
+        createdAt={createdAt}
+        open={resolveOpen}
+        onOpenChange={setResolveOpen}
+        onDone={() => setResolveOpen(false)}
       />
     </>
   );

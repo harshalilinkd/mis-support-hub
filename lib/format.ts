@@ -59,6 +59,40 @@ export function formatDueDate(
   return Number.isNaN(d.getTime()) ? null : DUE_DATE_FMT.format(d);
 }
 
+/* ------------------------------------------------------------------ *
+ * IST calendar days (CLAUDE.md §9 — stored UTC, read in a fixed IST timezone).
+ *
+ * A `<input type="date">` speaks "YYYY-MM-DD" — a calendar DAY with no time and no
+ * zone. Turning that into an instant (and back) has to pick a timezone, and the app's
+ * is IST, so both directions live here rather than being re-derived per caller. IST is
+ * a fixed +05:30 with no DST, so this is arithmetic, not a lookup.
+ * ------------------------------------------------------------------ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** The IST calendar day an instant falls on, as "YYYY-MM-DD" (an <input> value). */
+export function istDayKey(value: Date | string): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  return new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * The LAST instant of an IST calendar day ("2026-08-13" → 13 Aug 23:59:59.999 IST).
+ * End-of-day, not midnight, so a resolution backdated to the day the ticket was raised
+ * still lands after it was created — midnight would land before it and make
+ * "resolved − created" negative in the dashboard's averages.
+ * Returns null on a malformed or impossible date ("2026-02-31").
+ */
+export function istDayEnd(dayKey: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return null;
+  const ms = Date.parse(`${dayKey}T23:59:59.999+05:30`);
+  if (Number.isNaN(ms)) return null;
+  const at = new Date(ms);
+  // Round-trip guard: Date.parse SILENTLY ROLLS OVER an out-of-range day in the
+  // offset form ("2026-02-31…" → 3 Mar), so a nonexistent date would sail through as
+  // a different one. Only accept it if it maps back to the day asked for.
+  return istDayKey(at) === dayKey ? at : null;
+}
+
 /** "IN_PROGRESS" → "In progress"; passes through non-enum strings (names). */
 export function humanizeEnum(value: string | null): string {
   if (!value) return "";

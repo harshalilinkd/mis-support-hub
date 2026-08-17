@@ -70,7 +70,7 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM)
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM) | **COMPLETION_DATED** (§5.2 — an issue resolved / a build marked complete, dated to a day other than today; from_value = when it was recorded, to_value = the date recorded)
 - `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | ACCESS_REQUESTED (→ admins) | ACCESS_APPROVED (→ the new user) | **TICKET_AUTO_CLOSED** (§5 → the reporter)
 - `access_request_status`: PENDING | APPROVED | REJECTED (§7)
 
@@ -94,7 +94,16 @@ explicitly started.
   > §5 originally forbade release once started, reasoning that the reporter had already been told so it was "no longer a quiet undo". The premise was right and the conclusion was backwards: the answer to "an announcement would be falsified" is to **announce the reversal**, not to ban it. Forbidding it left a mis-started ticket with **no exit but "Mark resolved"** — resolving work nobody did, then asking the reporter to confirm a fix that doesn't exist. Issues also forbade the very undo requests permit (§12.3), for no reason other than the rule not having been applied here yet.
 - **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date). This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
 - **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
-- Only the assignee/MIS may move to IN_PROGRESS/RESOLVED. Setting RESOLVED requires an assignee.
+- Only the assignee/MIS may move to IN_PROGRESS. Setting RESOLVED requires an assignee.
+- **Resolving is MIS_ADMIN-only, and only their own claimed ticket** — `canResolveIssue`
+  (`lib/ticket-state.ts`, unit-tested, shared by the action and every surface that offers
+  the move). Deliberately narrower than claim / start / release, which stay open to
+  MIS_STAFF: declaring an issue fixed is what the reporter is asked to verify and what
+  every resolution-time metric is computed from. See §6 for the consequence.
+- **Mark resolved asks WHEN (§5.2).** Resolving opens `ResolveDialog`, which collects the
+  IST calendar **day** the work actually finished (`updateStatus(id,"RESOLVED",resolvedOn)`),
+  defaulted to today and accepting **any** date. MIS commonly fixes something and records it
+  days later; that day is what `tickets.resolved_at` should hold.
 - **Confirm resolved**: when the reporter confirms the fix, the ticket goes to **CLOSED permanently** (the "Did this resolve your issue?" prompt does not reappear).
 - Reopen is allowed only by the reporter or MIS_ADMIN.
 - **Auto-close (as built).** A RESOLVED issue the reporter never confirms auto-CLOSES
@@ -152,6 +161,57 @@ react-hook-form field), plus one combined toast. Each clears as soon as it is sa
 > the action directly can have no attachment — accepted, and the reason the rule lives
 > in the form. Requirements 1 and 2 ARE server-enforced by zod (§9).
 
+### 5.2 Completion date — "Mark resolved" / "Mark complete" record the DAY the work finished
+Both modules ask WHEN, not just THAT. Resolving an ISSUE goes through **`ResolveDialog`**
+(`updateStatus(id, "RESOLVED", resolvedOn)`); marking a REQUEST build complete goes through
+**`CompleteDialog`** (`markComplete({ticketId, note, completedOn})`), which collects the date
+alongside the handover note. Both take a `"YYYY-MM-DD"` IST **calendar day**, never a
+timestamp, and both **default to today** — so the ordinary case is one extra click. The field
+exists for the common other case: MIS fixes something (or delivers a build) on Tuesday and
+only gets round to recording it on Thursday. Recording Thursday overstates the work in every
+dashboard average (§10) — `resolved_at − created_at` for issues, `completed_at − claimed_at`
+in the Team performance report — and tells the reporter the wrong story.
+
+**ANY date is accepted — past or future.** `completionDateFor(dayKey, now)` in
+`lib/ticket-state.ts` (pure, unit-tested, shared by both actions and both dialogs, so UI and
+server always agree) refuses ONLY a string that isn't a calendar day — `"2026-02-31"`,
+`"yesterday"`. The date inputs carry no `min`/`max` for the same reason.
+
+> **This deliberately removed two bounds** that the first implementation enforced — not in
+> the future, not before the ticket was raised — each of which described an impossible
+> history. **The risk they guarded is real and now live: a future or pre-creation date will
+> skew the resolution-time averages and the created-vs-resolved chart** (§10), and nothing
+> stops it. It was removed anyway, by product decision, because MIS needs to record dates the
+> bounds refused (a fix agreed before the ticket was filed; a delivery dated to an agreed
+> future hand-over). Accuracy of the record beat tidiness of the averages, and the audit row
+> below is what keeps it honest. **Do not re-add the bounds without raising it** — their
+> absence is a decision, not an oversight.
+
+The stored instant is the **END of the picked IST day**, except today, which collapses to
+`now()` (exactly what an undated completion has always stored). End-of-day, not midnight —
+**midnight would land before the ticket's own `created_at`** when the work and the report
+share a day, making the duration negative in the very averages above. IST day↔instant
+conversion lives in `istDayKey` / `istDayEnd` (`lib/format.ts`): IST is a fixed +05:30, so it
+is arithmetic, but two traps are handled there — reading the day in UTC would refuse "today"
+for anyone working before 05:30 IST, and `Date.parse` SILENTLY ROLLS OVER an out-of-range day
+(`"2026-02-31"` → 3 Mar), so `istDayEnd` round-trips the parse and rejects a mismatch.
+
+**A date other than today is audited (§12.5)**: a `COMPLETION_DATED` activity row is written
+in the SAME `db.batch` — `from_value` = when it was recorded, `to_value` = the date recorded.
+ONE activity type serves both modules (each timeline words it for its own vocabulary:
+"dated the resolution" / "dated the completion"). Required because the STATUS_CHANGED /
+MARKED_COMPLETE row cannot show it: its `created_at` says today while `resolved_at` /
+`completed_at` says last week, with nothing linking the two or naming who chose the date.
+Picking today writes no such row — nothing was moved.
+
+**Every resolve path goes through the dialog** — the detail action bar, the All-Tickets /
+My-Tickets status dropdown ("Mark resolved…"), the mobile board move, and a **board drag into
+Resolved** (which opens the dialog instead of moving optimistically; a drag can't supply a
+date). This is the §13.5 lesson applied: a prompt wired into one of several call sites is
+silently skipped by the others. Both `resolvedOn` and `completedOn` stay **OPTIONAL** in their
+schemas and stamp `now()` when absent, so any caller that legitimately has no date — the
+auto-close cron included — is unaffected.
+
 ## 6. Roles & permissions
 | Action | USER | MIS_STAFF | MIS_ADMIN |
 |---|---|---|---|
@@ -162,6 +222,7 @@ react-hook-form field), plus one combined toast. Each clears as soon as it is sa
 | Claim (assign to self + priority; stays Open) | ✗ | ✓ | ✓ |
 | Start task (set deadline; Open → In Progress) — own claimed ticket | ✗ | ✓ | ✓ |
 | Release own claim (Open-only; back to unclaimed Open) — own claimed ticket | ✗ | ✓ | ✓ |
+| **Mark resolved (with the resolution date, §5.2) — own claimed ticket** | ✗ | **✗** | **✓** |
 | Change status / priority | ✗ | ✓ | ✓ |
 | Bulk claim | ✗ | ✓ | ✓ |
 | Take over a ticket assigned to someone else | ✗ | ✗ | **✗ — see below** |
@@ -182,6 +243,15 @@ Enforce on the server (in actions/queries), never trust the client. USER may onl
 > **Consequence, same shape as `docs/known-issues/0003` for requests:** if an assignee is
 > deactivated mid-work, their ticket cannot be released or reassigned by anyone, and its
 > only exit is an admin marking it resolved. Accepted, unhit, tracked there.
+
+> **Resolving is admin-only AND assignee-locked (`canResolveIssue`), and those two combine
+> into a gap worth knowing.** An MIS_STAFF assignee cannot resolve their own ticket, and no
+> admin may resolve it for them either — that would be a takeover of the claim, which §6
+> forbids for everyone. So a staff-held ticket has no direct resolve path: the exit is the
+> staff member **releasing** it (§5) so an admin can claim and resolve it. This is why the
+> release hatch must stay open to MIS_STAFF. It affects nobody today — MIS_STAFF is retired
+> from the admin role picker (§12.1), so the whole MIS team is MIS_ADMIN — but
+> `adminBulkCreateUsers` can still mint an MIS_STAFF row (§13.3), so it is reachable.
 
 ## 7. Auth rules
 Google SSO **and** email + password. Google is first-class SSO; passwords are an
@@ -401,7 +471,8 @@ The APPROVED/DROPPED verdict is RECORDED BY AN MIS_ADMIN on the MD's behalf (wri
 md_decision, md_decision_recorded_by, md_decided_at, optional md_remark).
 APPROVED → CLAIMED (an MIS member self-claims: sets assigned_to + **priority**; no
 date yet) → IN_PROGRESS (`startWork` — the assignee **commits to the delivery
-`deadline` here**, and the requester is told) → IN_TESTING (MIS marks complete) →
+`deadline` here**, and the requester is told) → IN_TESTING (MIS marks complete, **dating
+`completed_at` to the day the build was actually finished — §5.2**) →
 CLOSED (requester accepts) OR
 CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (loops,
 uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
@@ -450,7 +521,7 @@ start-work — and the notice says so explicitly.
 | Release own claim (Claimed-only; back to the approved pool) | no | yes (assignee) | yes (own claim only) |
 | Change an in-flight deadline | no | yes (assignee) | yes |
 | Add progress log | no | yes (assignee only) | yes (assignee only — no override) |
-| Mark complete (→ IN_TESTING) | no | yes (assignee) | yes |
+| Mark complete (→ IN_TESTING, **with the completion date, §5.2**) | no | yes (assignee) | yes |
 | Request changes (→ CHANGES_REQUESTED) | yes (requester only) | no | yes — **detail-only override** |
 | Accept & close | yes (requester only) | no | no |
 | Comment | yes | yes | yes |

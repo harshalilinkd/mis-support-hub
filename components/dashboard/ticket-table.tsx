@@ -261,6 +261,8 @@ export function TicketTable({
                     status={t.status}
                     locked={lockedFor(t)}
                     mine={t.assignedToId === currentUser.id}
+                    role={currentUser.role}
+                    createdAt={t.createdAt}
                   />
                 </TableCell>
                 <TableCell>

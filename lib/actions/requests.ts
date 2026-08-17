@@ -25,6 +25,7 @@ import {
   REQUEST_RELEASABLE_FROM,
   canLogProgress,
   canTransition,
+  completionDateFor,
 } from "@/lib/ticket-state";
 import {
   acceptRequestSchema,
@@ -521,10 +522,16 @@ export async function addProgressLog(input: {
   return ok(undefined);
 }
 
-/** IN_PROGRESS → IN_TESTING — MIS marks the build complete, hands to the requester. */
+/**
+ * IN_PROGRESS → IN_TESTING — MIS marks the build complete, hands to the requester.
+ *
+ * `completedOn` is the IST day the build was actually finished (§5.2) — the request-side
+ * twin of the ISSUE resolution date. Omit it and it completes now, as before.
+ */
 export async function markComplete(input: {
   ticketId: string;
   note?: string;
+  completedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -543,11 +550,24 @@ export async function markComplete(input: {
     return fail(`Can't mark ${t.number} complete from ${t.status}.`);
   }
 
+  // The day the build was finished (§5.2) — any date; absent ⇒ now.
+  const now = new Date();
+  let completedAt = now;
+  let datedFrom: Date | undefined;
+  if (parsed.data.completedOn) {
+    const picked = completionDateFor(parsed.data.completedOn, now);
+    if (!picked.ok) return fail(picked.error);
+    completedAt = picked.at;
+    if (picked.dated) datedFrom = now;
+  }
+
   await q.markRequestCompleteRow({
     ticketId: t.id,
     actorId: user.id,
     from: t.status,
     note: parsed.data.note ?? null,
+    completedAt,
+    datedFrom,
   });
   await sendRequestReadyForTestingNotification(t.id);
   revalidateRequestRoutes(t.number);

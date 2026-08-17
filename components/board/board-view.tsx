@@ -23,10 +23,11 @@ import type { BoardTicketRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
 import { humanizeEnum } from "@/lib/format";
 import type { SessionUser } from "@/lib/session";
-import { canTransition } from "@/lib/ticket-state";
+import { canResolveIssue, canTransition } from "@/lib/ticket-state";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import { cn } from "@/lib/utils";
 import { ClaimDialog } from "@/components/tickets/claim-dialog";
+import { ResolveDialog } from "@/components/tickets/resolve-dialog";
 import { StartTaskDialog } from "@/components/tickets/start-task-dialog";
 import { TicketSheet } from "@/components/tickets/ticket-sheet";
 import {
@@ -78,6 +79,7 @@ export function BoardView({
   const [selected, setSelected] = useState<string | null>(null);
   const [claimTarget, setClaimTarget] = useState<string | null>(null);
   const [startTarget, setStartTarget] = useState<string | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<string | null>(null);
 
   // Re-sync to server truth when the underlying data changes (after refresh).
   const signature = tickets.map((t) => `${t.id}:${t.status}`).join(",");
@@ -148,6 +150,24 @@ export function BoardView({
     }
     if (to === "RESOLVED" && !card.assignedToId) {
       toast.error("Assign the ticket before resolving it.");
+      return;
+    }
+    // Resolving is admin + assignee (§6) — refuse the drop rather than opening a dialog
+    // whose submit the server would reject.
+    if (
+      to === "RESOLVED" &&
+      !canResolveIssue(currentUser.role, card.assignedToId === currentUser.id)
+    ) {
+      toast.error("Only an MIS admin can mark a ticket resolved.");
+      return;
+    }
+
+    // Resolving needs the DAY the work finished (§5), so a drop opens the same dialog
+    // the detail uses rather than silently stamping "now" — a drag can't supply a date.
+    // No optimistic move: the card snaps back until the dialog commits, exactly like
+    // the Open → In Progress drop above.
+    if (to === "RESOLVED") {
+      setResolveTarget(ticketId);
       return;
     }
 
@@ -311,6 +331,25 @@ export function BoardView({
         }}
         onDone={() => {
           setStartTarget(null);
+          router.refresh();
+        }}
+      />
+
+      {/* Card dragged to Resolved: record the day the work actually finished. */}
+      <ResolveDialog
+        ticketId={resolveTarget}
+        ticketNumber={
+          resolveTarget ? cardById.get(resolveTarget)?.number : undefined
+        }
+        createdAt={
+          resolveTarget ? cardById.get(resolveTarget)?.createdAt : undefined
+        }
+        open={!!resolveTarget}
+        onOpenChange={(o) => {
+          if (!o) setResolveTarget(null);
+        }}
+        onDone={() => {
+          setResolveTarget(null);
           router.refresh();
         }}
       />
