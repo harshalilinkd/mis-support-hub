@@ -127,6 +127,20 @@ export const claimTicketSchema = z.object({
     .min(1, "Pick a valid date")
     .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date")
     .optional(),
+  // The IST calendar DAY the ticket was actually claimed (§5.3). Omitted ⇒ claimed
+  // now (bulk claim, board drag). Any day, past or future.
+  claimedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid claim date")
+    .optional(),
+  // Only meaningful alongside `deadline` (the combined claim & start): the day work
+  // actually began. Omitted ⇒ now.
+  startedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid start date")
+    .optional(),
 });
 export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
 
@@ -138,6 +152,15 @@ export const startTaskSchema = z.object({
     .trim()
     .min(1, "Pick an expected completion date")
     .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+  // The IST calendar DAY work actually began (§5.3) — MIS often starts a task and only
+  // records it later. Omitted ⇒ started now. Any day is allowed, past or future; the
+  // shared startDateFor (lib/ticket-state.ts) turns it into the stored instant and
+  // refuses only a string that isn't a calendar date.
+  startedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid start date")
+    .optional(),
 });
 export type StartTaskInput = z.infer<typeof startTaskSchema>;
 
@@ -280,6 +303,13 @@ export const claimRequestSchema = z.object({
   ticketId: z.string().uuid(),
   // Claim sets ownership + priority only — the delivery date comes at start-work.
   priority: z.enum(PRIORITIES),
+  // The IST calendar DAY the build was actually claimed (§5.3), mirroring the ISSUE
+  // claim. Omitted ⇒ claimed now. Any day, past or future.
+  claimedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid claim date")
+    .optional(),
 });
 export type ClaimRequestInput = z.infer<typeof claimRequestSchema>;
 
@@ -291,6 +321,13 @@ export const startWorkSchema = z.object({
     .trim()
     .min(1, "Pick a delivery date")
     .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+  // The IST calendar DAY the build actually began (§5.3) — the request twin of
+  // startTaskSchema.startedOn. Omitted ⇒ started now. Any day, past or future.
+  startedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid start date")
+    .optional(),
 });
 export type StartWorkInput = z.infer<typeof startWorkSchema>;
 

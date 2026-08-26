@@ -93,6 +93,21 @@ export function istDayEnd(dayKey: string): Date | null {
   return istDayKey(at) === dayKey ? at : null;
 }
 
+/**
+ * The FIRST instant of an IST calendar day ("2026-08-24" → 24 Aug 00:00:00.000 IST).
+ * The mirror of istDayEnd, and the right end for a START date: a day's work began
+ * somewhere inside it, so the earliest moment is the safe bound — paired with
+ * istDayEnd for completions it yields the widest, never-negative duration.
+ * Returns null on a malformed or impossible date, with the same round-trip guard.
+ */
+export function istDayStart(dayKey: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return null;
+  const ms = Date.parse(`${dayKey}T00:00:00.000+05:30`);
+  if (Number.isNaN(ms)) return null;
+  const at = new Date(ms);
+  return istDayKey(at) === dayKey ? at : null;
+}
+
 /** "IN_PROGRESS" → "In progress"; passes through non-enum strings (names). */
 export function humanizeEnum(value: string | null): string {
   if (!value) return "";

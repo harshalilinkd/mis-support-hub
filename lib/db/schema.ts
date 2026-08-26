@@ -142,6 +142,13 @@ export const ACTIVITY_TYPES = [
   // its own vocabulary); written only when the two differ, since dating it today is
   // nothing to audit. TEXT-constrained, so no migration.
   "COMPLETION_DATED",
+  // Work was STARTED and dated to a day other than today (§5.3). from_value = when it
+  // was recorded, to_value = the start date recorded. Same shape and same reason as
+  // COMPLETION_DATED; written only when the two differ. TEXT-constrained, no migration.
+  "START_DATED",
+  // A ticket/build was CLAIMED and dated to a day other than today (§5.3). Same
+  // from/to shape as the two above; one type serves both modules.
+  "CLAIM_DATED",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -327,6 +334,15 @@ export const tickets = pgTable("tickets", {
     .notNull()
     .references(() => users.id),
   assignedTo: uuid("assigned_to").references(() => users.id),
+  // When the ticket was actually CLAIMED (§5.3) — the day MIS took ownership, which
+  // the claim dialog asks for, so not necessarily when the button was pressed. Cleared
+  // by a release. A REQUEST records its claim in request_details.claimed_at instead.
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  // When work actually STARTED (§5.3). Set by startTask — which asks for the day, so
+  // this is not necessarily when the button was pressed — and by the combined
+  // "claim & start" shortcut (which has no date input, so it stamps now). Cleared by a
+  // release, which undoes the start. Nullable: an unstarted ticket has no start date.
+  startedAt: timestamp("started_at", { withTimezone: true }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedBy: uuid("resolved_by").references(() => users.id),
   // Set when the SYSTEM auto-closes a ticket after the reporter didn't respond for
@@ -467,6 +483,9 @@ export const requestDetails = pgTable("request_details", {
   // Build state (set on claim / through the build).
   claimedBy: uuid("claimed_by").references(() => users.id),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  // When the BUILD actually began (§5.3) — the request twin of tickets.started_at,
+  // collected by "Start building". Cleared by a release.
+  startedAt: timestamp("started_at", { withTimezone: true }),
   deadline: date("deadline", { mode: "date" }),
   // Source of truth for "how many times it came back" (§12.5).
   revisionRound: integer("revision_round").notNull().default(0),

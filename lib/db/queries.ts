@@ -155,6 +155,32 @@ export async function listAssignableUsers() {
 
 export type AssignableUser = Awaited<ReturnType<typeof listAssignableUsers>>[number];
 
+/**
+ * Distinct people who have RAISED an issue — the option set for the All Issues
+ * "Reporter" facet. Unlike assignees (MIS staff only), reporters are mostly
+ * employees, so this is derived from the tickets themselves rather than a role.
+ * Same shape as AssignableUser so the toolbar reuses one Facet.
+ */
+export async function listIssueReporters(): Promise<AssignableUser[]> {
+  return db
+    .selectDistinct({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(users)
+    .innerJoin(
+      tickets,
+      and(
+        eq(tickets.createdBy, users.id),
+        eq(tickets.type, "ISSUE"),
+        isNull(tickets.deletedAt)
+      )
+    )
+    .orderBy(asc(users.name));
+}
+
 // NOTE: `createUserWithPassword` (self-signup) was removed deliberately — it was an
 // unauthenticated way to mint an active users row, which defeated the invite-only
 // gate in lib/auth.ts (§7). Admin account creation goes through `insertUserWithRole`,
@@ -616,15 +642,29 @@ export async function claimTicketRow(args: {
   deadline: Date | null;
   writeAssigned: boolean;
   startWork: boolean;
+  /** The day the ticket was actually claimed (§5.3). Defaults to now. */
+  claimedAt?: Date;
+  /** The day work began — only with the combined shortcut. Defaults to now. */
+  startedAt?: Date;
+  /** When the claim date was moved off today; drives the CLAIM_DATED audit row. */
+  claimDatedFrom?: Date;
+  /** When the start date was moved off today; drives the START_DATED audit row. */
+  startDatedFrom?: Date;
 }) {
+  const claimedAt = args.claimedAt ?? new Date();
   const set: Partial<typeof tickets.$inferInsert> = {
     assignedTo: args.actorId,
     priority: args.priority,
   };
+  // Only stamp the claim date on the FIRST self-claim — re-claiming your own ticket
+  // (to re-prioritise) must not move the date you took it on.
+  if (args.writeAssigned) set.claimedAt = claimedAt;
   // The deadline belongs to Start — only stamp it when we also start work here.
+  const startedAt = args.startedAt ?? new Date();
   if (args.startWork && args.deadline) {
     set.status = "IN_PROGRESS";
     set.deadline = args.deadline;
+    set.startedAt = startedAt;
   }
 
   const events = [];
@@ -667,6 +707,30 @@ export async function claimTicketRow(args: {
       })
     );
   }
+  // A date moved off the day it was recorded is audited (§5.3), same shape as
+  // COMPLETION_DATED: from = when it was entered, to = the date chosen.
+  if (args.claimDatedFrom && args.writeAssigned) {
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "CLAIM_DATED",
+        fromValue: args.claimDatedFrom.toISOString(),
+        toValue: claimedAt.toISOString(),
+      })
+    );
+  }
+  if (args.startDatedFrom && args.startWork) {
+    events.push(
+      db.insert(ticketActivity).values({
+        ticketId: args.ticketId,
+        actorId: args.actorId,
+        type: "START_DATED",
+        fromValue: args.startDatedFrom.toISOString(),
+        toValue: startedAt.toISOString(),
+      })
+    );
+  }
 
   await db.batch([
     db.update(tickets).set(set).where(eq(tickets.id, args.ticketId)),
@@ -685,11 +749,16 @@ export async function startTaskRow(args: {
   actorId: string;
   fromStatus: Status;
   deadline: Date;
+  /** The day work actually began (§5.3). Defaults to now when omitted. */
+  startedAt?: Date;
+  /** Set when startedAt is a day other than today — see setTicketStatus.datedFrom. */
+  datedFrom?: Date;
 }) {
+  const startedAt = args.startedAt ?? new Date();
   await db.batch([
     db
       .update(tickets)
-      .set({ status: "IN_PROGRESS", deadline: args.deadline })
+      .set({ status: "IN_PROGRESS", deadline: args.deadline, startedAt })
       .where(eq(tickets.id, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -698,6 +767,20 @@ export async function startTaskRow(args: {
       fromValue: args.fromStatus,
       toValue: args.deadline.toISOString(),
     }),
+    // Same audit shape as COMPLETION_DATED (§5.2): the start was moved off the day it
+    // was recorded, so the trail says who chose it and when. The STARTED row can't show
+    // it — its created_at is today while started_at says last week.
+    ...(args.datedFrom
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "START_DATED",
+            fromValue: args.datedFrom.toISOString(),
+            toValue: startedAt.toISOString(),
+          }),
+        ]
+      : []),
   ]);
 }
 
@@ -723,7 +806,16 @@ export async function releaseTicketRow(args: {
       .update(tickets)
       // status back to OPEN explicitly: a release from IN_PROGRESS/REOPENED has to
       // undo the start, not just the assignment. Harmless when already OPEN.
-      .set({ assignedTo: null, priority: null, deadline: null, status: "OPEN" })
+      // startedAt clears with the rest: a release undoes the start, so leaving the old
+      // start date behind would date a later re-start to the abandoned attempt.
+      .set({
+        assignedTo: null,
+        priority: null,
+        deadline: null,
+        claimedAt: null,
+        startedAt: null,
+        status: "OPEN",
+      })
       .where(eq(tickets.id, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -935,6 +1027,8 @@ export interface TicketFilters {
   priority?: Priority;
   department?: Department;
   assigneeId?: string | "unassigned";
+  /** Filter by who RAISED the ticket (tickets.created_by). */
+  reporterId?: string;
   search?: string;
   /** Optional ISSUE|REQUEST filter (§12). Defaults to no filter when unset. */
   type?: TicketType;
@@ -971,6 +1065,8 @@ const ticketBoardSelect = {
   priority: tickets.priority,
   sheetLink: tickets.sheetLink,
   deadline: tickets.deadline,
+  claimedAt: tickets.claimedAt,
+  startedAt: tickets.startedAt,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
   resolvedAt: tickets.resolvedAt,
@@ -1031,6 +1127,7 @@ function ticketFilterConditions(filters: TicketFilters): SQL[] {
   } else if (filters.assigneeId) {
     conds.push(eq(tickets.assignedTo, filters.assigneeId));
   }
+  if (filters.reporterId) conds.push(eq(tickets.createdBy, filters.reporterId));
   const search = filters.search?.trim();
   if (search) {
     const like = `%${search}%`;
@@ -1232,6 +1329,8 @@ export async function getTicketByNumber(
       sheetLink: tickets.sheetLink,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
+      claimedAt: tickets.claimedAt,
+      startedAt: tickets.startedAt,
       resolvedAt: tickets.resolvedAt,
       autoClosedAt: tickets.autoClosedAt,
       createdById: tickets.createdBy,
@@ -1798,6 +1897,7 @@ export async function getRequestByNumber(
       claimedById: requestDetails.claimedBy,
       claimedByName: claimerUser.name,
       claimedAt: requestDetails.claimedAt,
+      startedAt: requestDetails.startedAt,
       deadline: requestDetails.deadline,
       revisionRound: requestDetails.revisionRound,
       completedAt: requestDetails.completedAt,
@@ -1944,7 +2044,12 @@ export async function claimRequestRow(args: {
   actorId: string;
   from: Status;
   priority: Priority;
+  /** The day the build was actually claimed (§5.3). Defaults to now. */
+  claimedAt?: Date;
+  /** Set when claimedAt is a day other than today — drives the CLAIM_DATED row. */
+  datedFrom?: Date;
 }) {
+  const claimedAt = args.claimedAt ?? new Date();
   await db.batch([
     db
       .update(tickets)
@@ -1952,7 +2057,7 @@ export async function claimRequestRow(args: {
       .where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ claimedBy: args.actorId, claimedAt: new Date() })
+      .set({ claimedBy: args.actorId, claimedAt })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -1961,6 +2066,18 @@ export async function claimRequestRow(args: {
       fromValue: args.from,
       toValue: "CLAIMED",
     }),
+    // Claim date moved off the day it was recorded — audited exactly as on an ISSUE.
+    ...(args.datedFrom
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "CLAIM_DATED",
+            fromValue: args.datedFrom.toISOString(),
+            toValue: claimedAt.toISOString(),
+          }),
+        ]
+      : []),
   ]);
 }
 
@@ -1987,7 +2104,9 @@ export async function releaseRequestRow(args: {
       .where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ claimedBy: null, claimedAt: null, deadline: null })
+      // startedAt clears with the rest (§5.3): a release undoes the start too, so a
+      // later re-claim isn't dated to the abandoned attempt.
+      .set({ claimedBy: null, claimedAt: null, startedAt: null, deadline: null })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -2016,13 +2135,18 @@ export async function startWorkRow(args: {
   from: Status;
   deadline: Date;
   previousDeadline: Date | null;
+  /** The day the build actually began (§5.3). Defaults to now. */
+  startedAt?: Date;
+  /** Set when startedAt is a day other than today — drives the START_DATED row. */
+  datedFrom?: Date;
 }) {
   assertStatusForType("REQUEST", "IN_PROGRESS");
+  const startedAt = args.startedAt ?? new Date();
   await db.batch([
     db.update(tickets).set({ status: "IN_PROGRESS" }).where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ deadline: args.deadline })
+      .set({ deadline: args.deadline, startedAt })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -2038,6 +2162,17 @@ export async function startWorkRow(args: {
       fromValue: args.previousDeadline ? args.previousDeadline.toISOString() : null,
       toValue: args.deadline.toISOString(),
     }),
+    ...(args.datedFrom
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "START_DATED",
+            fromValue: args.datedFrom.toISOString(),
+            toValue: startedAt.toISOString(),
+          }),
+        ]
+      : []),
   ]);
 }
 

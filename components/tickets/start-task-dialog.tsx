@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { startTask } from "@/lib/actions/tickets";
+import { istDayKey } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,21 +53,31 @@ export function StartTaskDialog({
   };
 
   const [deadline, setDeadline] = useState("");
+  const [startedOn, setStartedOn] = useState("");
   const [pending, startTransition] = useTransition();
 
-  // Reset each time it opens so every start begins fresh.
+  // Reset each time it opens so every start begins fresh. The start date defaults to
+  // today — the common answer — while the deadline stays empty, because there is no
+  // sensible default for a date the assignee is committing to.
   useEffect(() => {
-    if (open) setDeadline("");
+    if (open) {
+      setDeadline("");
+      setStartedOn(istDayKey(new Date()));
+    }
   }, [open]);
 
   function submit() {
     if (!ticketId) return;
+    if (!startedOn) {
+      toast.error("Pick the date work started.");
+      return;
+    }
     if (!deadline) {
       toast.error("Pick an expected completion date.");
       return;
     }
     startTransition(async () => {
-      const res = await startTask({ ticketId, deadline });
+      const res = await startTask({ ticketId, deadline, startedOn });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -91,25 +102,49 @@ export function StartTaskDialog({
         <DialogHeader>
           <DialogTitle>Start task</DialogTitle>
           <DialogDescription>
-            Set an expected completion date to begin work. The ticket moves to In
-            Progress and the reporter is notified that work has started.
+            Record when work started and when you expect to finish. The ticket moves
+            to In Progress and the reporter is notified that work has started.
           </DialogDescription>
         </DialogHeader>
 
-        <div>
-          <label
-            htmlFor="start-deadline"
-            className="mb-1 block text-sm font-medium"
-          >
-            Expected completion date
-          </label>
-          <Input
-            id="start-deadline"
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            disabled={pending}
-          />
+        <div className="space-y-3">
+          <div>
+            <label
+              htmlFor="start-date"
+              className="mb-1 block text-sm font-medium"
+            >
+              Start date
+            </label>
+            {/* No min/max — any past or future date, matching the server (§5.3).
+                Today is filled in, so the ordinary case is one click. */}
+            <Input
+              id="start-date"
+              type="date"
+              value={startedOn}
+              onChange={(e) => setStartedOn(e.target.value)}
+              disabled={pending}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              When work actually began — change it if you started earlier. Any date is
+              allowed; anything other than today is recorded on the timeline.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="start-deadline"
+              className="mb-1 block text-sm font-medium"
+            >
+              Expected completion date
+            </label>
+            <Input
+              id="start-deadline"
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              disabled={pending}
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -118,7 +153,11 @@ export function StartTaskDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button type="button" onClick={submit} disabled={pending || !deadline}>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={pending || !deadline || !startedOn}
+          >
             {pending ? "Starting…" : "Start task"}
           </Button>
         </DialogFooter>

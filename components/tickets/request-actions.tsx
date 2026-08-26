@@ -194,9 +194,9 @@ export function RequestActions({
         open={dialog === "start"}
         pending={pending}
         onOpenChange={(o) => !o && setDialog(null)}
-        onSubmit={(deadline) =>
+        onSubmit={(deadline, startedOn) =>
           run("Build started — the requester has the delivery date", () =>
-            startWork({ ticketId: request.id, deadline })
+            startWork({ ticketId: request.id, deadline, startedOn })
           )
         }
       />
@@ -234,11 +234,15 @@ function StartWorkDialog({
   open: boolean;
   pending: boolean;
   onOpenChange: (o: boolean) => void;
-  onSubmit: (deadline: string) => void;
+  onSubmit: (deadline: string, startedOn: string) => void;
 }) {
   const [deadline, setDeadline] = useState("");
+  const [startedOn, setStartedOn] = useState("");
   useEffect(() => {
-    if (open) setDeadline("");
+    if (!open) return;
+    setDeadline("");
+    // The day the build actually began (§5.3) — defaults to today, any date allowed.
+    setStartedOn(istDayKey(new Date()));
   }, [open]);
 
   return (
@@ -248,26 +252,49 @@ function StartWorkDialog({
           <DialogTitle>Start building</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-text-muted">
-          Set the date you expect to hand this back for testing. The requester is
-          told, and any later change is recorded — a delivery date is never silent.
+          Record when the build began and the date you expect to hand it back for
+          testing. The requester is told the delivery date, and any later change is
+          recorded — a delivery date is never silent.
         </p>
-        <div>
-          <label htmlFor="start-deadline" className="mb-1 block text-sm font-medium">
-            Delivery date
-          </label>
-          <Input
-            id="start-deadline"
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            disabled={pending}
-          />
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="build-start-date" className="mb-1 block text-sm font-medium">
+              Start date
+            </label>
+            {/* No min/max — any past or future date, matching the server (§5.3). */}
+            <Input
+              id="build-start-date"
+              type="date"
+              value={startedOn}
+              onChange={(e) => setStartedOn(e.target.value)}
+              disabled={pending}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              When you actually began — change it if that was earlier. Anything other
+              than today is recorded on the timeline.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="start-deadline" className="mb-1 block text-sm font-medium">
+              Delivery date
+            </label>
+            <Input
+              id="start-deadline"
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              disabled={pending}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={() => onSubmit(deadline)} disabled={pending || !deadline}>
+          <Button
+            onClick={() => onSubmit(deadline, startedOn)}
+            disabled={pending || !deadline || !startedOn}
+          >
             {pending ? "Starting…" : "Start building"}
           </Button>
         </DialogFooter>

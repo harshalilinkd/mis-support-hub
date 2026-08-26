@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Hand } from "lucide-react";
 import { toast } from "sonner";
 
 import { bulkClaimTickets } from "@/lib/actions/tickets";
+import { istDayKey } from "@/lib/format";
 import type { TicketListRow } from "@/lib/db/queries";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS, PRIORITIES } from "@/lib/validators/ticket";
@@ -55,6 +56,10 @@ export function BulkClaimDialog({
   const router = useRouter();
   const [index, setIndex] = useState(0);
   const [values, setValues] = useState<Record<string, Entry>>({});
+  // ONE claim date for the whole batch (§5.3) — per-ticket dates would mean a date
+  // picker on every step of the wizard for a case that doesn't arise: a bulk claim is
+  // one act of taking a pile of tickets on, on one day.
+  const [claimedOn, setClaimedOn] = useState("");
   const [pending, startTransition] = useTransition();
 
   // Initialise fresh entries only when the modal OPENS — not when the selection
@@ -65,6 +70,7 @@ export function BulkClaimDialog({
   useEffect(() => {
     if (!open) return;
     setIndex(0);
+    setClaimedOn(istDayKey(new Date()));
     setValues(
       Object.fromEntries(tickets.map((t) => [t.id, { priority: "MEDIUM" }]))
     );
@@ -85,6 +91,8 @@ export function BulkClaimDialog({
     const items = tickets.map((t) => ({
       ticketId: t.id,
       priority: values[t.id]?.priority ?? "MEDIUM",
+      // The same claim date rides along with every ticket in the batch.
+      ...(claimedOn ? { claimedOn } : {}),
     }));
     startTransition(async () => {
       const res = await bulkClaimTickets({ items });
@@ -200,6 +208,24 @@ export function BulkClaimDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* One claim date for the whole batch — any past or future day (§5.3). */}
+            <div className="border-t border-border px-6 py-3">
+              <label
+                htmlFor="bulk-claim-date"
+                className="mb-1 block text-sm font-medium"
+              >
+                Claim date <span className="font-normal text-text-muted">· applies to all {total}</span>
+              </label>
+              <Input
+                id="bulk-claim-date"
+                type="date"
+                className="max-w-xs"
+                value={claimedOn}
+                onChange={(e) => setClaimedOn(e.target.value)}
+                disabled={pending}
+              />
             </div>
 
             {/* Footer: navigation + submit */}

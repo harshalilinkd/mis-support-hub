@@ -8,7 +8,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import type { AssignableUser, RequestDetail as RequestDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import { isStaff } from "@/lib/roles";
-import { formatDueDate, isUrl } from "@/lib/format";
+import { formatDueDate, isUrl, toIso } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AttachmentGrid } from "./attachment-grid";
 import { AutoClosedBanner } from "./auto-closed-banner";
@@ -275,7 +275,12 @@ export function RequestDetail({
       {/* The two-way conversation + audit trail. Open at every stage from SUBMITTED
           onwards — requester and MIS both comment and attach here (P12 item 3). */}
       <Section title="Conversation">
-        <RequestTimeline activity={request.activity} comments={request.comments} />
+        <RequestTimeline
+          activity={request.activity}
+          comments={request.comments}
+          claimedAt={request.claimedAt ? toIso(request.claimedAt) : null}
+          startedAt={request.startedAt ? toIso(request.startedAt) : null}
+        />
         <div className="mt-4">
           <CommentComposer ticketId={request.id} onDone={onMutate} />
         </div>

@@ -26,21 +26,31 @@ function formatDue(value: string | null): string {
   return Number.isNaN(d.getTime()) ? value : DUE_FMT.format(d);
 }
 
-function describe(a: ActivityRow): string {
+function describe(
+  a: ActivityRow,
+  startedAt?: string | null,
+  claimedAt?: string | null
+): string {
   const actor = a.actorName ?? "Someone";
   switch (a.type) {
     case "CREATED":
       return `${actor} raised the ticket`;
     case "CLAIMED": {
       // A claim now only assigns + sets priority — no deadline (that's STARTED).
+      // `claimedAt` is the ticket's recorded claim day (§5.3), passed in because it
+      // lives on the ticket row, not on this event.
       const from = a.fromValue ? ` from ${a.fromValue}` : "";
-      return `${actor} claimed the ticket${from}`;
+      const on = claimedAt ? ` on ${formatDue(claimedAt)}` : "";
+      return `${actor} claimed the ticket${from}${on}`;
     }
     case "STARTED": {
       // toValue holds the expected completion date (ISO); fromValue the prior
       // status (OPEN/REOPENED), which the transition implies — so we omit it.
+      // `startedAt` is the ticket's recorded start day (§5.3), passed in because it
+      // lives on the ticket row, not on this event.
       const due = a.toValue ? ` · due by ${formatDue(a.toValue)}` : "";
-      return `${actor} started work${due}`;
+      const on = startedAt ? ` on ${formatDue(startedAt)}` : "";
+      return `${actor} started work${on}${due}`;
     }
     case "UNCLAIMED":
       // Undid a claim — back to the unclaimed open pool (assignee/priority cleared).
@@ -55,6 +65,13 @@ function describe(a: ActivityRow): string {
       return `${actor} assigned it to ${a.toValue}`;
     case "STATUS_CHANGED":
       return `${actor} changed status: ${humanize(a.fromValue)} → ${humanize(a.toValue)}`;
+    case "CLAIM_DATED":
+      // Written only when the claim was dated to a day OTHER than today (§5.3).
+      return `${actor} dated the claim ${formatDue(a.toValue)}`;
+    case "START_DATED":
+      // Written only when the start was dated to a day OTHER than today (§5.3);
+      // toValue is that date, and this row's own timestamp is when it was recorded.
+      return `${actor} dated the start ${formatDue(a.toValue)}`;
     case "COMPLETION_DATED":
       // Written only when the resolution was dated to a day OTHER than today (§5.2).
       // toValue is that date; the row's own created_at (rendered beside this line) is
@@ -93,9 +110,20 @@ function initials(name: string | null): string {
 export function ActivityTimeline({
   activity,
   comments,
+  startedAt,
+  claimedAt,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
+  /**
+   * The ticket's recorded start date (§5.3), shown on the STARTED line. It lives on
+   * the ticket row rather than the event, so a ticket started → released → re-started
+   * shows the CURRENT start date on the older STARTED row too; the START_DATED rows
+   * keep the exact per-event trail.
+   */
+  startedAt?: string | null;
+  /** The ticket's recorded claim date (§5.3), shown on the CLAIMED line. */
+  claimedAt?: string | null;
 }) {
   const items = [
     ...activity
@@ -139,7 +167,9 @@ export function ActivityTimeline({
               aria-hidden
               className="ml-2.5 size-1.5 shrink-0 rounded-full bg-border"
             />
-            <span className="text-text-muted">{describe(item.row)}</span>
+            <span className="text-text-muted">
+              {describe(item.row, startedAt, claimedAt)}
+            </span>
             <AbsoluteTime date={item.at} className="text-xs text-text-muted" />
           </li>
         )

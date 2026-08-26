@@ -27,11 +27,13 @@ import { TicketTable } from "./ticket-table";
 export function AllTicketsView({
   tickets,
   users,
+  reporters,
   currentUser,
   initialTab,
 }: {
   tickets: TicketListRow[];
   users: AssignableUser[];
+  reporters: AssignableUser[];
   currentUser: SessionUser;
   initialTab: TicketTabKey;
 }) {
@@ -145,7 +147,7 @@ export function AllTicketsView({
           })}
         </div>
         <div className="w-full sm:min-w-[240px] sm:flex-1">
-          <TableToolbar users={users} />
+          <TableToolbar users={users} reporters={reporters} />
         </div>
       </div>
 

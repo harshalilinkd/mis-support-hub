@@ -47,6 +47,22 @@ export type EditUserInput = z.infer<typeof editUserSchema>;
 export const editUserFormSchema = editUserSchema.omit({ userId: true });
 export type EditUserFormInput = z.infer<typeof editUserFormSchema>;
 
+/**
+ * Admin "set password": replace another user's password outright.
+ *
+ * There is deliberately NO `currentPassword` here, unlike changeMyPassword — an admin
+ * doing a reset does not know the user's password and never can (see the note on
+ * adminSetUserPassword). The gate is the MIS_ADMIN role, checked server-side.
+ */
+export const adminSetPasswordSchema = z.object({
+  userId: z.string().uuid(),
+  newPassword: z
+    .string()
+    .min(8, "Use at least 8 characters")
+    .max(200, "Keep it under 200 characters"),
+});
+export type AdminSetPasswordInput = z.infer<typeof adminSetPasswordSchema>;
+
 export const deleteUserSchema = z.object({
   userId: z.string().uuid(),
 });

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { claimRequest, updateDeadline } from "@/lib/actions/requests";
 import type { RequestDetail } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
-import { formatDueDate } from "@/lib/format";
+import { formatDueDate, istDayKey } from "@/lib/format";
 import { isStaff } from "@/lib/roles";
 import { PRIORITIES } from "@/lib/validators/ticket";
 import { UserAvatar } from "@/components/user-avatar";
@@ -61,6 +61,8 @@ export function RequestBuildPanel({
 }) {
   const [pending, startTransition] = useTransition();
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>("MEDIUM");
+  // The day the build was actually claimed (§5.3) — defaults to today, any date.
+  const [claimedOn, setClaimedOn] = useState(() => istDayKey(new Date()));
   const [editing, setEditing] = useState(false);
 
   const staff = isStaff(currentUser.role);
@@ -111,11 +113,25 @@ export function RequestBuildPanel({
           <h2 className="font-display text-sm font-semibold">Claim this request</h2>
         </div>
         <p className="mt-0.5 text-xs text-text-muted">
-          It&apos;s approved and waiting for an MIS member. Claiming assigns it to you and
-          sets its priority — you&apos;ll commit to a delivery date when you start work.
+          It&apos;s approved and waiting for an MIS member. Claiming assigns it to you,
+          sets its priority and records the day you took it on — you&apos;ll commit to a
+          delivery date when you start work.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div className="min-w-[10rem] flex-1">
+          <div className="min-w-[9rem] flex-1">
+            <label htmlFor="request-claim-date" className="mb-1 block text-xs font-medium">
+              Claim date
+            </label>
+            {/* No min/max — any past or future date, matching the server (§5.3). */}
+            <Input
+              id="request-claim-date"
+              type="date"
+              value={claimedOn}
+              onChange={(e) => setClaimedOn(e.target.value)}
+              disabled={pending}
+            />
+          </div>
+          <div className="min-w-[9rem] flex-1">
             <label className="mb-1 block text-xs font-medium">Priority</label>
             <Select
               value={priority}
@@ -135,10 +151,14 @@ export function RequestBuildPanel({
             </Select>
           </div>
           <Button
-            disabled={pending}
+            disabled={pending || !claimedOn}
             onClick={() =>
               startTransition(async () => {
-                const res = await claimRequest({ ticketId: request.id, priority });
+                const res = await claimRequest({
+                  ticketId: request.id,
+                  priority,
+                  claimedOn,
+                });
                 if (!res.ok) {
                   toast.error(res.error);
                   return;
@@ -177,6 +197,13 @@ export function RequestBuildPanel({
               ) : (
                 "No delivery date set yet"
               )}
+            </p>
+            {/* The recorded claim/start days (§5.3) — not necessarily when the
+                buttons were pressed. */}
+            <p className="text-xs text-text-muted">
+              {request.claimedAt ? `Claimed ${formatDueDate(request.claimedAt)}` : null}
+              {request.claimedAt && request.startedAt ? " · " : null}
+              {request.startedAt ? `Started ${formatDueDate(request.startedAt)}` : null}
             </p>
           </div>
         </div>

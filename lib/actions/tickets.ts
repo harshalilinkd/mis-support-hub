@@ -24,6 +24,7 @@ import {
   canTransition,
   completionDateFor,
   releaseNeedsNotice,
+  startDateFor,
 } from "@/lib/ticket-state";
 import {
   bulkClaimSchema,
@@ -260,7 +261,11 @@ async function claimOne(
   user: SessionUser,
   ticketId: string,
   priority: Priority,
-  deadline?: string
+  deadline?: string,
+  /** The IST day the claim actually happened (§5.3). Absent ⇒ now. */
+  claimedOn?: string,
+  /** The IST day work began — only meaningful with `deadline`. Absent ⇒ now. */
+  startedOn?: string
 ): Promise<
   | { ok: true; ticketId: string; ticketNumber: string; started: boolean }
   | { ok: false; error: string }
@@ -302,6 +307,26 @@ async function claimOne(
   // Only the combined "claim & start" shortcut carries a deadline → also start.
   const startWork =
     !!deadline && (ticket.status === "OPEN" || ticket.status === "REOPENED");
+  // The claim and (when starting in the same step) the start can each be dated to any
+  // day (§5.3) — both default to now when the caller has no date to offer.
+  const now = new Date();
+  let claimedAt = now;
+  let claimDatedFrom: Date | undefined;
+  if (claimedOn) {
+    const picked = startDateFor(claimedOn, now);
+    if (!picked.ok) return { ok: false, error: picked.error };
+    claimedAt = picked.at;
+    if (picked.dated) claimDatedFrom = now;
+  }
+  let startedAt = now;
+  let startDatedFrom: Date | undefined;
+  if (startedOn) {
+    const picked = startDateFor(startedOn, now);
+    if (!picked.ok) return { ok: false, error: picked.error };
+    startedAt = picked.at;
+    if (picked.dated) startDatedFrom = now;
+  }
+
   await q.claimTicketRow({
     ticketId: ticket.id,
     actorId: user.id,
@@ -313,6 +338,10 @@ async function claimOne(
     deadline: deadline ? new Date(deadline) : null,
     writeAssigned,
     startWork,
+    claimedAt,
+    startedAt,
+    claimDatedFrom,
+    startDatedFrom,
   });
 
   return {
@@ -327,6 +356,8 @@ export async function claimTicket(input: {
   ticketId: string;
   priority: string;
   deadline?: string;
+  claimedOn?: string;
+  startedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -341,7 +372,9 @@ export async function claimTicket(input: {
     user,
     parsed.data.ticketId,
     parsed.data.priority,
-    parsed.data.deadline
+    parsed.data.deadline,
+    parsed.data.claimedOn,
+    parsed.data.startedOn
   );
   if (!res.ok) return fail(res.error);
 
@@ -361,6 +394,7 @@ export async function claimTicket(input: {
 export async function startTask(input: {
   ticketId: string;
   deadline: string;
+  startedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -393,11 +427,24 @@ export async function startTask(input: {
     return fail(`${ticket.number} has already been started.`);
   }
 
+  // The day work actually began (§5.3) — any date; absent ⇒ now.
+  const now = new Date();
+  let startedAt = now;
+  let datedFrom: Date | undefined;
+  if (parsed.data.startedOn) {
+    const picked = startDateFor(parsed.data.startedOn, now);
+    if (!picked.ok) return fail(picked.error);
+    startedAt = picked.at;
+    if (picked.dated) datedFrom = now;
+  }
+
   await q.startTaskRow({
     ticketId: ticket.id,
     actorId: user.id,
     fromStatus: ticket.status,
     deadline: new Date(parsed.data.deadline),
+    startedAt,
+    datedFrom,
   });
 
   // Work has actually started now — tell the reporter (priority + ETA; §8).
@@ -497,7 +544,15 @@ export async function bulkClaimTickets(input: {
     // the rest (there is no cross-ticket transaction under neon-http anyway).
     try {
       // Claim only (no deadline) — nothing is started, so no reporter notice (§8).
-      const res = await claimOne(user, item.ticketId, item.priority);
+      // Each row carries its own claim date (§5.3); the bulk dialog offers one date
+      // for the whole selection, which lands here per ticket.
+      const res = await claimOne(
+        user,
+        item.ticketId,
+        item.priority,
+        undefined,
+        item.claimedOn
+      );
       if (res.ok) claimedIds.push(res.ticketId);
       else failed.push({ ticketId: item.ticketId, error: res.error });
     } catch (e) {

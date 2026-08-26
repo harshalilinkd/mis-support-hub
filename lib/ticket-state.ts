@@ -1,5 +1,5 @@
 import type { Role, Status, TicketType } from "@/lib/db/schema";
-import { istDayEnd, istDayKey } from "@/lib/format";
+import { istDayEnd, istDayKey, istDayStart } from "@/lib/format";
 
 /**
  * Ticket lifecycle state machines (CLAUDE.md §5 for ISSUE, §12.3 for REQUEST).
@@ -332,7 +332,8 @@ export function canReleaseTicket(
  * day and records it on another.
  * ------------------------------------------------------------------ */
 
-export type CompletionDate =
+/** Result of turning a picked IST day into a stored instant (completion or start). */
+export type PickedDate =
   | { ok: true; at: Date; dated: boolean }
   | { ok: false; error: string };
 
@@ -368,12 +369,33 @@ export type CompletionDate =
  * Pure + unit-tested, shared by `updateStatus`, `markComplete` and their dialogs, so
  * the UI and the server can't disagree (the same convention as `canReleaseTicket`).
  */
-export function completionDateFor(dayKey: string, now: Date): CompletionDate {
+export function completionDateFor(dayKey: string, now: Date): PickedDate {
   const end = istDayEnd(dayKey);
   if (!end) return { ok: false, error: "Pick a valid date." };
   const today = istDayKey(now);
   if (dayKey === today) return { ok: true, at: now, dated: false };
   return { ok: true, at: end, dated: true };
+}
+
+/**
+ * Turn a picked IST day into the instant stored in `tickets.started_at` — the day work
+ * actually began (§5.3).
+ *
+ * Same rule set as `completionDateFor` and the same freedom: **any real date, past or
+ * future**; only a non-date is refused. The one difference is which end of the day it
+ * takes — the FIRST instant, not the last. A start and a completion are opposite bounds
+ * of the same interval, so taking the earliest moment for one and the latest for the
+ * other keeps a same-day start→finish positive instead of collapsing to zero, and can
+ * never produce a negative duration.
+ *
+ * Today collapses to `now`, exactly as completions do: when the answer is "today", the
+ * honest value is the actual timestamp, not a rounded-off midnight.
+ */
+export function startDateFor(dayKey: string, now: Date): PickedDate {
+  const at = istDayStart(dayKey);
+  if (!at) return { ok: false, error: "Pick a valid start date." };
+  if (dayKey === istDayKey(now)) return { ok: true, at: now, dated: false };
+  return { ok: true, at, dated: true };
 }
 
 /**

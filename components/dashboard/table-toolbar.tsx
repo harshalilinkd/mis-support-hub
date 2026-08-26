@@ -57,12 +57,18 @@ function Facet({
 }
 
 /**
- * Faceted filters (department / priority / assignee) that reflect into the URL
- * query. Search lives separately in <TicketSearch> (up by the Table/Board
+ * Faceted filters (department / priority / assignee / reporter) that reflect into
+ * the URL query. Search lives separately in <TicketSearch> (up by the Table/Board
  * toggle); the Clear here still removes `q` too, so one button resets everything.
- * On mobile the three dropdowns sit in one 3-column row.
+ * On mobile the dropdowns sit in a 3-column grid.
  */
-export function TableToolbar({ users }: { users: AssignableUser[] }) {
+export function TableToolbar({
+  users,
+  reporters,
+}: {
+  users: AssignableUser[];
+  reporters: AssignableUser[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -78,8 +84,9 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
   const dept = searchParams.get("department") ?? ALL;
   const priority = searchParams.get("priority") ?? ALL;
   const assignee = searchParams.get("assignee") ?? ALL;
+  const reporter = searchParams.get("reporter") ?? ALL;
   const hasFilters =
-    [dept, priority, assignee].some((v) => v !== ALL) ||
+    [dept, priority, assignee, reporter].some((v) => v !== ALL) ||
     !!searchParams.get("q");
 
   return (
@@ -108,6 +115,15 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
           ...users.map((u) => ({ value: u.id, label: u.name ?? u.email ?? "—" })),
         ]}
       />
+      <Facet
+        label="Reporter"
+        value={reporter}
+        onValueChange={(v) => setParam("reporter", v)}
+        options={reporters.map((u) => ({
+          value: u.id,
+          label: u.name ?? u.email ?? "—",
+        }))}
+      />
       {/* Desktop: search sits next to the dropdowns (on mobile it's up in the
           header instead, so it's hidden here). */}
       <TicketSearch className="hidden sm:block sm:w-60" />
@@ -119,7 +135,13 @@ export function TableToolbar({ users }: { users: AssignableUser[] }) {
           onClick={() => {
             // Clear the facets AND the search, but keep the active status tab.
             const params = new URLSearchParams(searchParams.toString());
-            for (const key of ["department", "priority", "assignee", "q"]) {
+            for (const key of [
+              "department",
+              "priority",
+              "assignee",
+              "reporter",
+              "q",
+            ]) {
               params.delete(key);
             }
             const qs = params.toString();

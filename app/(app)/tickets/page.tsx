@@ -4,6 +4,7 @@ import { requireRole, STAFF_ROLES } from "@/lib/authz";
 import {
   listAllTickets,
   listAssignableUsers,
+  listIssueReporters,
   type TicketFilters,
 } from "@/lib/db/queries";
 import { ticketTabFromParam } from "@/lib/ticket-tabs";
@@ -39,8 +40,10 @@ export default async function TicketsPage({
   const sp = await searchParams;
 
   const assignee = pick(sp.assignee);
-  // Facet filters only (department / priority / assignee / search). The status
-  // tabs are applied client-side in <AllTicketsView> so switching is instant.
+  const reporter = pick(sp.reporter);
+  // Facet filters only (department / priority / assignee / reporter / search).
+  // The status tabs are applied client-side in <AllTicketsView> so switching is
+  // instant.
   const filters: TicketFilters = {
     department: oneOf(pick(sp.department), DEPARTMENTS),
     priority: oneOf(pick(sp.priority), PRIORITIES),
@@ -50,12 +53,15 @@ export default async function TicketsPage({
         : assignee && /^[0-9a-f-]{36}$/i.test(assignee)
           ? assignee
           : undefined,
+    reporterId:
+      reporter && /^[0-9a-f-]{36}$/i.test(reporter) ? reporter : undefined,
     search: pick(sp.q)?.trim() || undefined,
   };
 
-  const [tickets, users] = await Promise.all([
+  const [tickets, users, reporters] = await Promise.all([
     listAllTickets(filters),
     listAssignableUsers(),
+    listIssueReporters(),
   ]);
 
   return (
@@ -73,6 +79,7 @@ export default async function TicketsPage({
       <AllTicketsView
         tickets={tickets}
         users={users}
+        reporters={reporters}
         currentUser={user}
         initialTab={ticketTabFromParam(pick(sp.tab))}
       />

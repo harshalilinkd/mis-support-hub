@@ -21,6 +21,7 @@ import { isEmailDomainAllowed } from "@/lib/email-domains";
 import { getCurrentUser } from "@/lib/session";
 import { DEPARTMENT_LABELS, DEPARTMENTS } from "@/lib/validators/ticket";
 import {
+  adminSetPasswordSchema,
   createUserSchema,
   deleteUserSchema,
   editUserSchema,
@@ -357,6 +358,46 @@ export async function adminUpdateUser(input: {
   } catch {
     return fail("Could not update the user. Please try again.");
   }
+
+  revalidatePath("/settings/users");
+  return ok(undefined);
+}
+
+/**
+ * Set (or reset) another user's password — MIS_ADMIN only.
+ *
+ * **An admin cannot be shown the user's existing password, and no change here can make
+ * that possible.** `users.password_hash` stores a bcrypt hash, which is a ONE-WAY
+ * function: the hash is what the login check re-computes against, and the original text
+ * is not stored anywhere and cannot be derived from it. The only way an admin could
+ * "see" a password is if the app stored it in plain text, which would hand every
+ * password in the company to anyone who ever read the database — exactly the failure a
+ * hash exists to prevent. So the admin power is to REPLACE the password, not read it.
+ *
+ * Unlike `changeMyPassword`, no current password is required: an admin doing a reset
+ * doesn't have it. That makes this a genuine account-takeover tool, which is why it is
+ * MIS_ADMIN-gated and why the new password is only ever handed over out-of-band by the
+ * admin who set it. The user can change it themselves afterwards in Profile.
+ */
+export async function adminSetUserPassword(input: {
+  userId: string;
+  newPassword: string;
+}): Promise<ActionResult> {
+  const admin = await getCurrentUser();
+  if (!admin || admin.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can set a user's password.");
+  }
+
+  const parsed = adminSetPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(parsed.error.issues[0]?.message ?? "Check the password and try again.");
+  }
+
+  const target = await getUserById(parsed.data.userId);
+  if (!target) return fail("User not found.");
+
+  const hash = await bcrypt.hash(parsed.data.newPassword, 10);
+  await setUserPasswordHash(target.id, hash);
 
   revalidatePath("/settings/users");
   return ok(undefined);

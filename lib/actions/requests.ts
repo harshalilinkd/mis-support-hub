@@ -26,6 +26,7 @@ import {
   canLogProgress,
   canTransition,
   completionDateFor,
+  startDateFor,
 } from "@/lib/ticket-state";
 import {
   acceptRequestSchema,
@@ -250,6 +251,7 @@ export async function reviveRequest(ticketId: string): Promise<ActionResult> {
 export async function claimRequest(input: {
   ticketId: string;
   priority: string;
+  claimedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -275,11 +277,24 @@ export async function claimRequest(input: {
     return fail(`Can't claim ${t.number} from ${t.status}.`);
   }
 
+  // The day the build was actually claimed (§5.3) — any date; absent ⇒ now.
+  const now = new Date();
+  let claimedAt = now;
+  let datedFrom: Date | undefined;
+  if (parsed.data.claimedOn) {
+    const picked = startDateFor(parsed.data.claimedOn, now);
+    if (!picked.ok) return fail(picked.error);
+    claimedAt = picked.at;
+    if (picked.dated) datedFrom = now;
+  }
+
   await q.claimRequestRow({
     ticketId: t.id,
     actorId: user.id,
     from: t.status,
     priority: parsed.data.priority,
+    claimedAt,
+    datedFrom,
   });
   await sendRequestClaimedNotification(t.id);
   revalidateRequestRoutes(t.number);
@@ -383,6 +398,7 @@ async function enterProgress(
 export async function startWork(input: {
   ticketId: string;
   deadline: string;
+  startedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -407,12 +423,25 @@ export async function startWork(input: {
   const details = await q.getRequestDetailsRow(t.id);
   const previous = details?.deadline ?? null;
 
+  // The day the build actually began (§5.3) — any date; absent ⇒ now.
+  const now = new Date();
+  let startedAt = now;
+  let datedFrom: Date | undefined;
+  if (parsed.data.startedOn) {
+    const picked = startDateFor(parsed.data.startedOn, now);
+    if (!picked.ok) return fail(picked.error);
+    startedAt = picked.at;
+    if (picked.dated) datedFrom = now;
+  }
+
   await q.startWorkRow({
     ticketId: t.id,
     actorId: user.id,
     from: t.status,
     deadline: new Date(parsed.data.deadline),
     previousDeadline: previous,
+    startedAt,
+    datedFrom,
   });
   // The requester always hears the date — a first set reads "targeted for X", a
   // move reads "moved from X to Y". Never silent either way.

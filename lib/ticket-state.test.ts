@@ -16,6 +16,7 @@ import {
   releaseNeedsNotice,
   canResolveIssue,
   completionDateFor,
+  startDateFor,
   type RequestMoveId,
 } from "./ticket-state";
 
@@ -509,4 +510,56 @@ test("the transition map agrees: → RESOLVED is admin-only", () => {
   }
   // Starting work is still open to staff — only resolving was narrowed.
   assert.equal(canTransition("ISSUE", "OPEN", "IN_PROGRESS", STAFF, false, true), true);
+});
+
+/* ------------------------------------------------------------------ *
+ * Dating a START (§5.3) — startDateFor. Same freedom as a completion, but it takes
+ * the FIRST instant of the day rather than the last.
+ * ------------------------------------------------------------------ */
+
+test("today starts now and is not a 'dated' start", () => {
+  const r = startDateFor("2026-08-17", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.at.getTime(), NOW.getTime());
+  assert.equal(r.ok && r.dated, false);
+});
+
+test("a past start day lands at the START of that IST day", () => {
+  const r = startDateFor("2026-08-15", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.dated, true);
+  // 15 Aug 00:00 IST = 14 Aug 18:30Z.
+  assert.equal(r.ok && r.at.toISOString(), "2026-08-14T18:30:00.000Z");
+});
+
+test("a FUTURE start day is accepted — no bounds either way (§5.3)", () => {
+  const r = startDateFor("2026-09-01", NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.dated, true);
+  assert.equal(r.ok && r.at.getTime() > NOW.getTime(), true);
+});
+
+test("start and completion on the same past day give a POSITIVE duration", () => {
+  // The reason the two take opposite ends of the day: same-day start→finish would
+  // otherwise collapse to zero (both end-of-day) or go negative (both start-of-day).
+  const start = startDateFor("2026-08-15", NOW);
+  const done = completionDateFor("2026-08-15", NOW);
+  assert.equal(start.ok && done.ok && done.at.getTime() > start.at.getTime(), true);
+});
+
+test("'today' is read in IST for starts too", () => {
+  const earlyIst = new Date("2026-08-16T20:30:00Z"); // 17 Aug 02:00 IST
+  const r = startDateFor("2026-08-17", earlyIst);
+  assert.equal(r.ok && r.dated, false);
+  assert.equal(r.ok && r.at.getTime(), earlyIst.getTime());
+});
+
+test("a malformed or impossible start date is refused, never coerced", () => {
+  for (const bad of ["", "17-08-2026", "2026-8-17", "2026-02-31", "tomorrow"]) {
+    assert.equal(
+      startDateFor(bad, NOW).ok,
+      false,
+      `expected "${bad}" to be refused`
+    );
+  }
 });

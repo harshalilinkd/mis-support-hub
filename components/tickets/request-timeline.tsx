@@ -18,7 +18,11 @@ function formatDue(value: string | null): string {
 }
 
 /** The REQUEST lifecycle, told from the audit trail (CLAUDE.md §12.5). */
-function describe(a: ActivityRow): string {
+function describe(
+  a: ActivityRow,
+  claimedAt?: string | null,
+  startedAt?: string | null
+): string {
   const actor = a.actorName ?? "Someone";
   switch (a.type) {
     case "SUBMITTED":
@@ -36,15 +40,23 @@ function describe(a: ActivityRow): string {
     case "REVIVED":
       return `${actor} revived the request`;
     case "CLAIMED":
-      return `${actor} claimed the build`;
+      // claimedAt is the request's recorded claim day (§5.3) — it lives on
+      // request_details, not on this event.
+      return `${actor} claimed the build${claimedAt ? ` on ${formatDue(claimedAt)}` : ""}`;
     case "UNCLAIMED":
       return `${actor} released the claim — back to the approved pool`;
     case "DEADLINE_SET":
       return a.toValue ? `${actor} set delivery for ${formatDue(a.toValue)}` : `${actor} set a delivery date`;
     case "STARTED":
-      return `${actor} started building`;
+      return `${actor} started building${startedAt ? ` on ${formatDue(startedAt)}` : ""}`;
     case "MARKED_COMPLETE":
       return `${actor} marked the build complete — ready to test`;
+    case "CLAIM_DATED":
+      // Written only when the claim was dated to a day OTHER than today (§5.3).
+      return `${actor} dated the claim ${formatDue(a.toValue)}`;
+    case "START_DATED":
+      // Written only when the start was dated to a day OTHER than today (§5.3).
+      return `${actor} dated the start ${formatDue(a.toValue)}`;
     case "COMPLETION_DATED":
       // Written only when the completion was dated to a day OTHER than today (§5.2);
       // toValue is that date, and this row's own timestamp is when it was recorded.
@@ -84,9 +96,19 @@ function initials(name: string | null): string {
 export function RequestTimeline({
   activity,
   comments,
+  claimedAt,
+  startedAt,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
+  /**
+   * The request's recorded claim / start days (§5.3), shown on the CLAIMED and
+   * STARTED lines. They live on request_details rather than on the events, so a
+   * re-claim after a release shows the CURRENT dates on older rows; the
+   * CLAIM_DATED / START_DATED rows keep the exact per-event trail.
+   */
+  claimedAt?: string | null;
+  startedAt?: string | null;
 }) {
   const items = [
     // PROGRESS_LOGGED + COMMENTED are shown as their own richer items below.
@@ -122,7 +144,9 @@ export function RequestTimeline({
         return (
           <li key={item.id} className="flex items-center gap-3 text-sm">
             <span aria-hidden className="ml-2.5 size-1.5 shrink-0 rounded-full bg-border" />
-            <span className="text-text-muted">{describe(item.row)}</span>
+            <span className="text-text-muted">
+              {describe(item.row, claimedAt, startedAt)}
+            </span>
             <AbsoluteTime date={item.at} className="text-xs text-text-muted" />
           </li>
         );

@@ -70,13 +70,13 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM) | **COMPLETION_DATED** (§5.2 — an issue resolved / a build marked complete, dated to a day other than today; from_value = when it was recorded, to_value = the date recorded)
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM) | **COMPLETION_DATED** (§5.2 — an issue resolved / a build marked complete, dated to a day other than today; from_value = when it was recorded, to_value = the date recorded) | **START_DATED** (§5.3 — work started, dated to a day other than today; same from/to shape)
 - `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | ACCESS_REQUESTED (→ admins) | ACCESS_APPROVED (→ the new user) | **TICKET_AUTO_CLOSED** (§5 → the reporter)
 - `access_request_status`: PENDING | APPROVED | REJECTED (§7)
 
 Tables:
 - `users`: id (uuid), name, email (unique), email_verified, image, **password_hash (nullable — bcrypt; null = Google-only)**, role (default USER), **department (nullable)**, is_active (bool, default true), created_at. Auth.js adapter also owns `accounts`, `sessions`, `verification_tokens`.
-- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **auto_closed_at (timestamp, nullable — set when the SYSTEM auto-closes it (§5); marks the close as reopenable, vs a permanent manual confirm)**, **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
+- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **auto_closed_at (timestamp, nullable — set when the SYSTEM auto-closes it (§5); marks the close as reopenable, vs a permanent manual confirm)**, **started_at (timestamp, nullable — the DAY work actually began, §5.3; set by startTask from a picked date, cleared by a release)**, **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
 - `ticket_comments`: id, ticket_id (fk, cascade), author_id (fk), body, created_at. Index on ticket_id.
 - `ticket_attachments`: id, ticket_id (fk, cascade), comment_id (fk, nullable), url (Vercel Blob), filename, content_type, size_bytes, uploaded_by (fk), created_at.
 - `ticket_activity`: id, ticket_id (fk, cascade), actor_id (fk), type (see enum above), from_value (nullable), to_value (nullable), created_at. **Audit trail — write a row on EVERY mutation.** Index on ticket_id.
@@ -92,7 +92,7 @@ explicitly started.
 - **Release / undo a claim** (`releaseTicket`): the mis-claim AND mis-start escape hatch — the assignee sends a ticket back to the **open pool**. Clears the assignee, priority and deadline, and forces the status back to **OPEN**; it is claimable again. Writes an UNCLAIMED activity row carrying the status it left (so the timeline distinguishes "never started" from "abandoned mid-work"). **Assignee-locked** — even an MIS_ADMIN may release only a ticket assigned to themselves, never someone else's claim (§6). Allowed from **OPEN, IN_PROGRESS and REOPENED**; never from RESOLVED/CLOSED, where the reporter is mid-verification. Gated by `canReleaseTicket` in `lib/ticket-state.ts` — one unit-tested predicate shared by the action and the button.
   - **Notification is conditional, and the rule decides — not the status.** Releasing from OPEN is **silent**: the claim was silent (§8), so nothing needs correcting. Releasing from IN_PROGRESS/REOPENED **notifies the reporter** (`sendTicketReleasedNotification`, in-app + email): starting told them "work has started, expected by {date}", and abandoning it makes that false. `releaseNeedsNotice(status)` encodes exactly that. This is §12.6's reversal rule applied to issues.
   > §5 originally forbade release once started, reasoning that the reporter had already been told so it was "no longer a quiet undo". The premise was right and the conclusion was backwards: the answer to "an announcement would be falsified" is to **announce the reversal**, not to ban it. Forbidding it left a mis-started ticket with **no exit but "Mark resolved"** — resolving work nobody did, then asking the reporter to confirm a fix that doesn't exist. Issues also forbade the very undo requests permit (§12.3), for no reason other than the rule not having been applied here yet.
-- **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date). This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
+- **Start task** (`startTask`, OPEN/REOPENED → IN_PROGRESS): when the assignee is ready to begin, they Start the task — **required to set a deadline** (expected completion date) **and a start date (§5.3, defaulted to today, any date allowed)**. This moves it to IN_PROGRESS ("officially started"), writes a STARTED activity row (deadline in `to_value`), and **notifies the reporter** (priority + ETA; §8). Only the assignee may start their own claimed ticket.
 - **Combined "claim & start" shortcut**: dragging/moving an **unassigned** ticket straight to In Progress (Kanban drag, All-Tickets status dropdown, mobile move) does both at once — `claimTicket` with a deadline claims + starts in one step. A bare status change must never leave a ticket unassigned; starting always needs an assignee + a deadline. `updateStatus` therefore **refuses OPEN → IN_PROGRESS** — that path goes through `startTask`.
 - Only the assignee/MIS may move to IN_PROGRESS. Setting RESOLVED requires an assignee.
 - **Resolving is MIS_ADMIN-only, and only their own claimed ticket** — `canResolveIssue`
@@ -212,6 +212,39 @@ silently skipped by the others. Both `resolvedOn` and `completedOn` stay **OPTIO
 schemas and stamp `now()` when absent, so any caller that legitimately has no date — the
 auto-close cron included — is unaffected.
 
+### 5.3 Start date — "Start task" records the DAY work actually began
+`StartTaskDialog` asks for **two** dates: the **start date** (`tickets.started_at`) and the
+expected completion date (`tickets.deadline`). The start date defaults to today and, like
+§5.2's completion date, accepts **ANY date, past or future** — MIS often begins a task and
+only records it a day or two later, and the ticket should say when the work really started.
+`startDateFor(dayKey, now)` in `lib/ticket-state.ts` (pure, unit-tested, shared by the action
+and the dialog) refuses only a string that isn't a calendar day. The input carries no
+`min`/`max`.
+
+**It takes the FIRST instant of the IST day, not the last** — the opposite end from
+`completionDateFor` (§5.2), and deliberately so. A start and a finish are the two bounds of
+one interval: earliest-for-start + latest-for-finish keeps a same-day start→resolve
+**positive** instead of collapsing to zero, and can never go negative. Today still collapses
+to `now()` in both, because when the answer is "today" the honest value is the real timestamp.
+`istDayStart` mirrors `istDayEnd`, round-trip guard included.
+
+**Where it shows:** the ticket detail header (a "Started" field beside Created), and the
+timeline's STARTED line — "Mahesh started work on 24 Aug 2026 · due by 28 Aug 2026". A start
+dated to a day other than today ALSO writes a `START_DATED` activity row (§12.5), exactly as
+§5.2 does for completions: `from_value` = when it was recorded, `to_value` = the date chosen.
+
+**Set, and cleared, in the right places.** The combined **claim & start** shortcut (board
+drag / status dropdown on an unassigned ticket) has no date input — a drag can't supply one —
+so it stamps `now()`. **Release clears `started_at`** along with the assignee, priority and
+deadline: a release undoes the start, and leaving the old date behind would date a later
+re-start to the abandoned attempt. `startedOn` stays OPTIONAL in `startTaskSchema` (absent ⇒
+now), so no other caller is affected.
+
+> The timeline reads `started_at` from the ticket row, not from the STARTED event, so a
+> ticket that was started → released → re-started shows the CURRENT start date on the older
+> STARTED line too. The `START_DATED` rows keep the exact per-event trail. Accepted:
+> per-event storage would mean encoding two dates in one activity row.
+
 ## 6. Roles & permissions
 | Action | USER | MIS_STAFF | MIS_ADMIN |
 |---|---|---|---|
@@ -231,6 +264,7 @@ auto-close cron included — is unaffected.
 | Soft-delete a ticket | ✗ | ✓ | ✓ |
 | Recycle bin: restore / permanently delete | ✗ | ✗ | ✓ |
 | Manage users / change roles / bulk-add users | ✗ | ✗ | ✓ |
+| **Set (reset) another user's password — never READ it (§7)** | ✗ | ✗ | ✓ |
 | Approve / reject Google access requests (§7) | ✗ | ✗ | ✓ |
 Enforce on the server (in actions/queries), never trust the client. USER may only read tickets where `created_by = session.user.id`.
 
@@ -292,6 +326,22 @@ Settings → Users) and `is_active` is true. An unknown Google account is refuse
 first sign-in, and are promoted to MIS_ADMIN on every sign-in (idempotent, never
 downgrades). Without it a fresh deployment with an empty `users` table would admit
 nobody — an unrecoverable lockout, since the only way in is a UI you can't reach.
+
+**Passwords can be SET by an admin, never READ by anyone.** `users.password_hash` holds a
+bcrypt hash — a one-way function the login check re-computes against — so the original
+text is stored nowhere and cannot be derived. Three write paths, no read path:
+- `changeMyPassword` (Profile) — your own; requires the CURRENT password when you already
+  have one (a Google-only account may set its first without).
+- `adminSetUserPassword` (Settings → Users → Edit user) — an MIS_ADMIN **replaces** anyone's
+  password. **No current password is required**, because a resetting admin doesn't have it;
+  that makes it a genuine account-takeover tool, hence MIS_ADMIN-only, and the new password
+  is handed over out-of-band by the admin who set it.
+- `adminCreateUser` / `adminBulkCreateUsers` — the initial password at account creation.
+
+The Edit-user dialog therefore shows only whether password sign-in is enabled
+(`hasPassword`, already selected by `listAllUsers`) plus a field to set a NEW one — there
+is no "current password" display, and adding one would mean storing plaintext, which hands
+every password in the company to anyone who reads the database. Do not add it.
 
 **There is NO self-service sign-up that mints an account.** Admins create accounts with
 a password (bulk add in Settings → Users); a user sets/changes their own password in

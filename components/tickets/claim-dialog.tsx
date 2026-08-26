@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { claimTicket } from "@/lib/actions/tickets";
+import { istDayKey } from "@/lib/format";
 import { PRIORITIES } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,27 +74,43 @@ export function ClaimDialog({
 
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [deadline, setDeadline] = useState("");
+  const [claimedOn, setClaimedOn] = useState("");
+  const [startedOn, setStartedOn] = useState("");
   const [pending, startTransition] = useTransition();
 
-  // Reset the fields each time it opens so every claim starts fresh.
+  // Reset the fields each time it opens so every claim starts fresh. The two "when
+  // did this happen" dates default to today — the common answer (§5.3); the deadline
+  // stays empty, because a date being COMMITTED to has no sensible default.
   useEffect(() => {
     if (open) {
+      const today = istDayKey(new Date());
       setPriority("MEDIUM");
       setDeadline("");
+      setClaimedOn(today);
+      setStartedOn(today);
     }
   }, [open]);
 
   function submit() {
     if (!ticketId) return;
+    if (!claimedOn) {
+      toast.error("Pick the date this was claimed.");
+      return;
+    }
     if (withStart && !deadline) {
       toast.error("Pick an expected completion date.");
+      return;
+    }
+    if (withStart && !startedOn) {
+      toast.error("Pick the date work started.");
       return;
     }
     startTransition(async () => {
       const res = await claimTicket({
         ticketId,
         priority,
-        ...(withStart ? { deadline } : {}),
+        claimedOn,
+        ...(withStart ? { deadline, startedOn } : {}),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -126,8 +143,8 @@ export function ClaimDialog({
           </DialogTitle>
           <DialogDescription>
             {withStart
-              ? "Set the priority and when you expect to complete it. The ticket is assigned to you, moved to In Progress, and the reporter is notified work has started."
-              : "Set the priority and take ownership. It's assigned to you and stays Open until you Start the task."}
+              ? "Set the priority and the dates. The ticket is assigned to you, moved to In Progress, and the reporter is notified work has started."
+              : "Set the priority, the date you took it on, and take ownership. It's assigned to you and stays Open until you Start the task."}
           </DialogDescription>
         </DialogHeader>
 
@@ -152,22 +169,61 @@ export function ClaimDialog({
             </Select>
           </div>
 
+          {/* When ownership was actually taken (§5.3). No min/max — any past or
+              future date, matching the server. Today is filled in. */}
+          <div>
+            <label
+              htmlFor="claim-date"
+              className="mb-1 block text-sm font-medium"
+            >
+              Claim date
+            </label>
+            <Input
+              id="claim-date"
+              type="date"
+              value={claimedOn}
+              onChange={(e) => setClaimedOn(e.target.value)}
+              disabled={pending}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              When you actually took this on — change it if that was earlier. Any date
+              is allowed; anything other than today is recorded on the timeline.
+            </p>
+          </div>
+
           {withStart ? (
-            <div>
-              <label
-                htmlFor="claim-deadline"
-                className="mb-1 block text-sm font-medium"
-              >
-                Expected completion date
-              </label>
-              <Input
-                id="claim-deadline"
-                type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                disabled={pending}
-              />
-            </div>
+            <>
+              <div>
+                <label
+                  htmlFor="claim-start-date"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Start date
+                </label>
+                <Input
+                  id="claim-start-date"
+                  type="date"
+                  value={startedOn}
+                  onChange={(e) => setStartedOn(e.target.value)}
+                  disabled={pending}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="claim-deadline"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Expected completion date
+                </label>
+                <Input
+                  id="claim-deadline"
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  disabled={pending}
+                />
+              </div>
+            </>
           ) : null}
         </div>
 
@@ -180,7 +236,9 @@ export function ClaimDialog({
           <Button
             type="button"
             onClick={submit}
-            disabled={pending || (withStart && !deadline)}
+            disabled={
+              pending || !claimedOn || (withStart && (!deadline || !startedOn))
+            }
           >
             {pending ? "Claiming…" : withStart ? "Claim & start" : "Claim"}
           </Button>

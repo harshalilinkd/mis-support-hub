@@ -5,6 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { AbsoluteTime } from "@/components/absolute-time";
 import type { TicketDetail as TicketDetailData } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
+import { formatDueDate, toIso } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { ActivityTimeline } from "./activity-timeline";
 import { AttachmentGrid } from "./attachment-grid";
@@ -101,6 +102,14 @@ export function TicketDetail({
             value={ticket.assignedToName ?? "Unassigned"}
           />
           <Meta label="Created" value={<AbsoluteTime date={ticket.createdAt} />} />
+          {/* The recorded claim/start days (§5.3) — not necessarily when the buttons
+              were pressed. */}
+          {ticket.claimedAt ? (
+            <Meta label="Claimed" value={formatDueDate(ticket.claimedAt) ?? "—"} />
+          ) : null}
+          {ticket.startedAt ? (
+            <Meta label="Started" value={formatDueDate(ticket.startedAt) ?? "—"} />
+          ) : null}
         </dl>
       </div>
 
@@ -173,6 +182,8 @@ export function TicketDetail({
         <ActivityTimeline
           activity={ticket.activity}
           comments={ticket.comments}
+          startedAt={ticket.startedAt ? toIso(ticket.startedAt) : null}
+          claimedAt={ticket.claimedAt ? toIso(ticket.claimedAt) : null}
         />
         <div className="pt-2">
           <CommentComposer ticketId={ticket.id} onDone={onMutate} />
