@@ -16,6 +16,11 @@ export type TicketCardData = {
   priority: Priority | null;
   deadline: string | null;
   createdAt: string | Date;
+  /** The day MIS took it on (§5.3) — powers "same day as claimed" in bulk start. */
+  claimedAt?: string | Date | null;
+  /** Present on the assigned queue; the wizard shows it before setting a deadline. */
+  description?: string | null;
+  createdByImage?: string | null;
   updatedAt: string | Date;
   /** Presence drives the Open vs Claimed tab split (§5). */
   assignedToId: string | null;

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Inbox, MessageSquare, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Inbox, MessageSquare, Play, Search, X } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -34,6 +35,7 @@ import { PriorityControl, StatusControl } from "@/components/dashboard/inline-co
 import { PriorityChip, StatusChip, statusColor } from "./chips";
 import type { TicketCardData } from "./ticket-card";
 import { TicketLinkFiles } from "./ticket-link-files";
+import { BulkStartDialog } from "./bulk-start-dialog";
 import { TicketSheet } from "./ticket-sheet";
 
 export function MyTicketsView({
@@ -64,6 +66,8 @@ export function MyTicketsView({
   const [priority, setPriority] = useState(FACET_ALL);
   const [reporter, setReporter] = useState(FACET_ALL);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [startOpen, setStartOpen] = useState(false);
 
   const showAssignee = variant === "raised";
   // MIS staff working their own queue get inline status/priority controls (same
@@ -124,6 +128,49 @@ export function MyTicketsView({
     () => searched.filter((t) => matchesTicketTab(tab, t)),
     [searched, tab]
   );
+
+  // Rows this queue can bulk-START: unstarted claims (§5 — startTask moves
+  // OPEN/REOPENED → IN_PROGRESS). Only on the ASSIGNED variant, where every row is
+  // already the viewer's own claim; the "raised" variant is an employee's read-only
+  // list and gets no checkboxes at all.
+  const startableIds = useMemo(() => {
+    if (!canControl) return new Set<string>();
+    return new Set(
+      filtered
+        .filter((t) => t.status === "OPEN" || t.status === "REOPENED")
+        .map((t) => t.id)
+    );
+  }, [filtered, canControl]);
+
+  const selectedTickets = useMemo(
+    () => filtered.filter((t) => selectedIds.has(t.id)),
+    [filtered, selectedIds]
+  );
+
+  // Drop any id that stops being startable when a tab/facet/refresh changes the rows,
+  // so the "N selected" count can never lie or dead-end (same rule as All Issues).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => startableIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [startableIds]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const allSelected =
+      startableIds.size > 0 &&
+      [...startableIds].every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(startableIds));
+  }
 
   const open = (number: string) => setSelected(number);
   const onKeyOpen = (number: string) => (e: React.KeyboardEvent) => {
@@ -225,6 +272,22 @@ export function MyTicketsView({
           />
         </div>
       </div>
+
+      {selectedIds.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-primary/30 bg-accent-soft px-3 py-2">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <Button size="sm" onClick={() => setStartOpen(true)}>
+            <Play className="size-4" /> Start selected
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
+      ) : null}
 
       {filtered.length === 0 ? (
         tickets.length === 0 ? (
@@ -335,6 +398,21 @@ export function MyTicketsView({
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-surface-muted/95 backdrop-blur [&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
                 <TableRow className="hover:bg-transparent">
+                  {/* Multi-select for bulk Start — assigned queue only, and only for
+                      rows that can actually be started (§5). */}
+                  {canControl ? (
+                    <TableHead className="w-9 pl-4">
+                      <Checkbox
+                        checked={
+                          startableIds.size > 0 &&
+                          [...startableIds].every((id) => selectedIds.has(id))
+                        }
+                        onCheckedChange={toggleSelectAll}
+                        disabled={startableIds.size === 0}
+                        aria-label="Select all startable tickets"
+                      />
+                    </TableHead>
+                  ) : null}
                   <TableHead className="pl-4">Ticket</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Dept</TableHead>
@@ -353,8 +431,24 @@ export function MyTicketsView({
                     onClick={() => open(t.number)}
                     tabIndex={0}
                     onKeyDown={onKeyOpen(t.number)}
+                    data-state={selectedIds.has(t.id) ? "selected" : undefined}
                     className="cursor-pointer transition-colors hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>td]:py-2.5 [&>td]:align-top"
                   >
+                    {canControl ? (
+                      <TableCell
+                        className="w-9 pl-4"
+                        // The row opens the ticket; the checkbox must not.
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {startableIds.has(t.id) ? (
+                          <Checkbox
+                            checked={selectedIds.has(t.id)}
+                            onCheckedChange={() => toggleSelect(t.id)}
+                            aria-label={`Select ${t.number}`}
+                          />
+                        ) : null}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="whitespace-nowrap pl-4">
                       <div className="flex items-center gap-2">
                         <span
@@ -435,6 +529,16 @@ export function MyTicketsView({
           </div>
         </>
       )}
+
+      <BulkStartDialog
+        tickets={selectedTickets}
+        open={startOpen}
+        onOpenChange={setStartOpen}
+        onDone={() => {
+          setStartOpen(false);
+          setSelectedIds(new Set());
+        }}
+      />
 
       <TicketSheet
         number={selected}

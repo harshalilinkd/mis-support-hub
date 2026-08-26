@@ -55,6 +55,11 @@ export default async function MyTicketsPage({
     deadline: r.deadline ? toIso(r.deadline) : null,
     // Lower-bounds the "Resolved on" picker on a staff row (§5).
     createdAt: toIso(r.createdAt),
+    claimedAt: r.claimedAt ? toIso(r.claimedAt) : null,
+    // Only the ASSIGNED query selects the body (the bulk-start wizard shows it); an
+    // employee's own list stays lean, so read it defensively rather than widening both.
+    description: (r as { description?: string | null }).description ?? null,
+    createdByImage: r.createdByImage,
     updatedAt: toIso(r.updatedAt),
     assignedToId: r.assignedToId,
     assignedToName: r.assignedToName,

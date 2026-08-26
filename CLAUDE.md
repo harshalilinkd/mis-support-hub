@@ -286,7 +286,11 @@ caught up on, where each ticket was genuinely taken on a different day, and one 
 field made the later pick silently overwrite the earlier one. A date the user actively
 clears blocks the submit and jumps the wizard to that ticket rather than defaulting it.
 
-**Bulk start (`bulkStartTasks`, All Issues → "Start selected").** The twin of bulk claim:
+**Bulk start (`bulkStartTasks`) lives on BOTH issue lists** — All Issues and, more
+usefully, **Assigned to Me** (whose Claimed tab IS your unstarted queue, so that is where
+the multi-select belongs; All Issues mixes in other people's claims, which are not
+startable by you). Same wizard, same action, both restricted to rows that are yours and
+unstarted. The twin of bulk claim:
 step through the selected tickets with Prev/Next and give each its OWN start date and
 delivery deadline. Per ticket it asks the question MIS actually has — **"did work start on
 the day it was claimed?"** — because most tickets did: answering *Same day* fills the start

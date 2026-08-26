@@ -1168,7 +1168,9 @@ export async function listMyTickets(userId: string, filters: TicketFilters = {})
  */
 export async function listAssignedToMe(userId: string) {
   return db
-    .select(ticketListSelectLite)
+    // Full select (with the body): "Assigned to Me" feeds the bulk-start wizard, which
+    // shows each ticket's description before you commit to a completion date.
+    .select(ticketListSelect)
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
     .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))

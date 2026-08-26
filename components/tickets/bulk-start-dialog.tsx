@@ -7,7 +7,8 @@ import { toast } from "sonner";
 
 import { bulkStartTasks } from "@/lib/actions/tickets";
 import { formatDueDate, istDayKey, isUrl } from "@/lib/format";
-import type { TicketListRow } from "@/lib/db/queries";
+import type { TicketAttachmentThumb } from "@/lib/db/queries";
+import type { Department } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AbsoluteTime } from "@/components/absolute-time";
@@ -33,6 +34,26 @@ import { AttachmentGrid } from "./attachment-grid";
 type Entry = { sameAsClaim: boolean; startedOn: string; deadline: string };
 
 /**
+ * What the wizard actually reads off a ticket — declared structurally rather than as
+ * one query's row type, because it is opened from two lists whose selects differ
+ * (All Issues and the "Assigned to Me" queue). Optional fields degrade to a muted
+ * placeholder instead of forcing both queries to converge.
+ */
+export type BulkStartTicket = {
+  id: string;
+  number: string;
+  title: string;
+  department: Department;
+  createdAt: string | Date;
+  createdByName: string | null;
+  createdByImage?: string | null;
+  description?: string | null;
+  sheetLink: string | null;
+  attachments: TicketAttachmentThumb[];
+  claimedAt?: string | Date | null;
+};
+
+/**
  * Start several of MY claimed tickets in one pass: step through each with Prev/Next,
  * say when work began and when it should be done, then submit them together. Each
  * ticket moves OPEN/REOPENED → IN_PROGRESS and its reporter is told work has started
@@ -47,7 +68,7 @@ export function BulkStartDialog({
   onOpenChange,
   onDone,
 }: {
-  tickets: TicketListRow[];
+  tickets: BulkStartTicket[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
