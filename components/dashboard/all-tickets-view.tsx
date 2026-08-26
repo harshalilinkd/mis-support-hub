@@ -11,6 +11,7 @@ import {
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
+import { TabScroller } from "@/components/shell/tab-scroller";
 import { BulkClaimDialog } from "@/components/tickets/bulk-claim-dialog";
 import { Button } from "@/components/ui/button";
 import { TableToolbar } from "./table-toolbar";
@@ -111,10 +112,7 @@ export function AllTicketsView({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         {/* Status tabs: on mobile a full-width, no-wrap strip that scrolls if the
             four labels don't fit (so "In Progress" never breaks onto two lines). */}
-        <div
-          aria-label="Filter tickets by status"
-          className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden"
-        >
+        <TabScroller aria-label="Filter tickets by status">
           {TICKET_TABS.map((t) => {
             const active = tab === t.key;
             return (
@@ -144,7 +142,7 @@ export function AllTicketsView({
               </button>
             );
           })}
-        </div>
+        </TabScroller>
         <div className="w-full sm:min-w-[240px] sm:flex-1">
           <TableToolbar users={users} reporters={reporters} />
         </div>

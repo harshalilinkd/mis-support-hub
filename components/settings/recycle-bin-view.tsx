@@ -75,7 +75,66 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
 
   return (
     <>
-      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
+      {/* Phone: one card per deleted ticket. Restore and Delete-for-good are the point
+          of this screen, so they must be reachable without scrolling a table sideways —
+          in a scroller they sit in the last column, furthest from the ticket they act on. */}
+      <ul className="space-y-2 md:hidden">
+        {tickets.map((t) => (
+          <li
+            key={t.id}
+            className="rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-elevation)]"
+          >
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 font-mono text-xs font-semibold">
+                {t.number}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {t.title}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <StatusChip status={t.status} />
+              <PriorityChip priority={t.priority} />
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
+              <span>{DEPARTMENT_LABELS[t.department]}</span>
+              <span aria-hidden>·</span>
+              <span className="truncate">{t.createdByName ?? "—"}</span>
+            </div>
+            <div className="mt-1 text-xs text-text-muted">
+              Deleted{" "}
+              <AbsoluteTime
+                date={t.deletedAt}
+                dateOnly
+                className="font-mono tabular-nums"
+              />
+              {t.deletedByName ? ` by ${t.deletedByName}` : null}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={() => run(() => restoreTicket(t.id), `${t.number} restored`)}
+                disabled={pending}
+              >
+                <RotateCcw className="size-3.5" /> Restore
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="flex-1 text-destructive hover:text-destructive"
+                onClick={() => setConfirm(t)}
+                disabled={pending}
+              >
+                <Trash2 className="size-3.5" /> Delete
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
         <Table>
           <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>

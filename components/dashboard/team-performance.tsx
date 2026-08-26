@@ -55,7 +55,40 @@ export function TeamPerformance({
           Nothing assigned to anyone in this view yet.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Phone: one card per member. A six-column report inside a horizontal
+            scroller is unreadable on a 375px screen — you lose the member's name
+            (the row's subject) the moment you scroll to the numbers. The card keeps
+            the name fixed and lays the five figures out as a labelled grid. */}
+        <ul className="space-y-2 md:hidden">
+          {rows.map((r) => (
+            <li
+              key={r.id}
+              className="rounded-[var(--radius-input)] border border-border bg-surface p-3"
+            >
+              <div className="flex items-center gap-2">
+                <UserAvatar name={r.name} image={r.image} />
+                <span className="truncate text-sm font-medium">{r.name ?? "—"}</span>
+              </div>
+              <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-center">
+                <Stat label="Claimed" value={r.claimed} />
+                <Stat label="Not started" value={r.notStarted} />
+                <Stat label="In progress" value={r.inProgress} />
+                <Stat label={completedLabel} value={r.completed} />
+                <div className="col-span-2">
+                  <dt className="text-[11px] uppercase tracking-wider text-text-muted">
+                    {avgLabel}
+                  </dt>
+                  <dd className="mt-0.5 font-mono text-sm tabular-nums">
+                    {fmtDuration(r.avgHours, r.completed > 0)}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader className="[&_th]:h-9 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
               <TableRow className="hover:bg-transparent">
@@ -117,7 +150,27 @@ export function TeamPerformance({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
     </section>
+  );
+}
+
+/** One labelled figure in the mobile card — mono numerals, like the table's cells. */
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt className="text-[11px] uppercase tracking-wider text-text-muted">
+        {label}
+      </dt>
+      <dd
+        className={
+          "mt-0.5 font-mono text-sm tabular-nums " +
+          (value > 0 ? "font-semibold" : "text-text-muted")
+        }
+      >
+        {value}
+      </dd>
+    </div>
   );
 }

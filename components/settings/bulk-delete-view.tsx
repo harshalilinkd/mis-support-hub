@@ -175,7 +175,72 @@ export function BulkDeleteView({ tickets }: { tickets: BulkDeleteTicket[] }) {
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
+      {/* Phone: one tappable card per ticket. An eight-column table with a leading
+          checkbox is unusable at 375px — the checkbox and the ticket it selects end up
+          on opposite sides of a horizontal scroll, which is exactly the wrong thing to
+          get wrong on a destructive screen. The whole card toggles selection here. */}
+      <ul className="space-y-2 md:hidden">
+        {searched.length === 0 ? (
+          <li className="rounded-[var(--radius-card)] border border-border bg-surface px-3 py-8 text-center text-sm text-text-muted">
+            {counts[tab] === 0
+              ? tab === "REQUEST"
+                ? "No active system requests to delete."
+                : "No active issues to delete."
+              : "No tickets match your search."}
+          </li>
+        ) : null}
+        {searched.map((t) => {
+          const checked = selectedIds.has(t.id);
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => toggle(t.id)}
+                aria-pressed={checked}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-[var(--radius-card)] border p-3 text-left transition-colors",
+                  checked
+                    ? "border-primary bg-accent-soft/40"
+                    : "border-border bg-surface hover:bg-surface-muted"
+                )}
+              >
+                <Checkbox
+                  checked={checked}
+                  aria-label={`Select ${t.number}`}
+                  className="pointer-events-none mt-0.5 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="shrink-0 font-mono text-xs font-semibold">
+                      {t.number}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {t.title}
+                    </span>
+                  </span>
+                  <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <StatusChip status={t.status} />
+                    <PriorityChip priority={t.priority} />
+                  </span>
+                  <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
+                    <span>{DEPARTMENT_LABELS[t.department]}</span>
+                    <span aria-hidden>·</span>
+                    <span className="truncate">{t.createdByName ?? "—"}</span>
+                    <span aria-hidden>·</span>
+                    <AbsoluteTime
+                      date={t.createdAt}
+                      dateOnly
+                      className="font-mono tabular-nums"
+                    />
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)] md:block">
         <Table>
           <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>

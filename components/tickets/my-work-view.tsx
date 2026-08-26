@@ -57,7 +57,9 @@ export function MyWorkView({
 
   return (
     <div className="space-y-4">
-      <div className="inline-flex rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
+      {/* max-w-full + min-w-0 so the two pills shrink rather than pushing the page
+          into a horizontal scroll on a narrow phone. */}
+      <div className="inline-flex max-w-full rounded-[var(--radius-input)] border border-border bg-surface p-0.5">
         {SECTIONS.map((s) => {
           const active = section === s.key;
           const Icon = s.icon;

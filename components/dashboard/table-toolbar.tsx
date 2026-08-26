@@ -89,8 +89,10 @@ export function TableToolbar({
     [dept, priority, assignee, reporter].some((v) => v !== ALL) ||
     !!searchParams.get("q");
 
+  // Two facets per row on a phone, not three: at 375px a third column truncates the
+  // value mid-word, which is the one thing a facet must not hide.
   return (
-    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
       <Facet
         label="Department"
         value={dept}

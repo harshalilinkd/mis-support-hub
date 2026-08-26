@@ -22,6 +22,7 @@ import type { RequestListRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { TabScroller } from "@/components/shell/tab-scroller";
 import { formatDueDate, humanizeEnum } from "@/lib/format";
 import {
   DEPARTMENT_LABELS,
@@ -198,7 +199,7 @@ export function RequestsView({
           narrow within it), search on the right. */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
+          <TabScroller>
             {TABS.map((t) => {
               const active = tab === t.key;
               return (
@@ -224,8 +225,11 @@ export function RequestsView({
                 </button>
               );
             })}
-          </div>
-          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          </TabScroller>
+          {/* Two per row on a phone, not three: at 375px a third column truncates the
+              value mid-word ("Requester: …"), which is the one thing a facet must not
+              hide. They still sit inline from sm up. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <FacetSelect
               label="Dept"
               value={dept}
