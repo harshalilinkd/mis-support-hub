@@ -35,7 +35,10 @@ const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
   URGENT: "Urgent",
 };
 
-type Entry = { priority: string };
+// Per ticket, not per batch: each ticket carries its own priority AND its own claim
+// date (§5.3). A shared date was wrong — a batch is often a backlog being caught up
+// on, where each ticket was actually taken on a different day.
+type Entry = { priority: string; claimedOn: string };
 
 /**
  * Claim several tickets in one pass: step through each selected ticket with
@@ -57,10 +60,6 @@ export function BulkClaimDialog({
   const router = useRouter();
   const [index, setIndex] = useState(0);
   const [values, setValues] = useState<Record<string, Entry>>({});
-  // ONE claim date for the whole batch (§5.3) — per-ticket dates would mean a date
-  // picker on every step of the wizard for a case that doesn't arise: a bulk claim is
-  // one act of taking a pile of tickets on, on one day.
-  const [claimedOn, setClaimedOn] = useState("");
   const [pending, startTransition] = useTransition();
 
   // Initialise fresh entries only when the modal OPENS — not when the selection
@@ -71,16 +70,23 @@ export function BulkClaimDialog({
   useEffect(() => {
     if (!open) return;
     setIndex(0);
-    setClaimedOn(istDayKey(new Date()));
+    const today = istDayKey(new Date());
     setValues(
-      Object.fromEntries(tickets.map((t) => [t.id, { priority: "MEDIUM" }]))
+      Object.fromEntries(
+        tickets.map((t) => [t.id, { priority: "MEDIUM", claimedOn: today }])
+      )
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const total = tickets.length;
   const ticket = tickets[Math.min(index, total - 1)];
-  const entry: Entry = (ticket && values[ticket.id]) ?? { priority: "MEDIUM" };
+  const entry: Entry = (ticket && values[ticket.id]) ?? {
+    priority: "MEDIUM",
+    claimedOn: istDayKey(new Date()),
+  };
+  // Every ticket needs a date; a cleared field must not silently claim it as "today".
+  const missingDate = tickets.filter((t) => !values[t.id]?.claimedOn);
 
   function setEntry(patch: Partial<Entry>) {
     if (!ticket) return;
@@ -88,12 +94,19 @@ export function BulkClaimDialog({
   }
 
   function submit() {
-    // Priority defaults to Medium for every ticket, so there's nothing to gate.
+    // Priority defaults to Medium, and each date to today, so the only thing to gate
+    // is a date the user actively cleared — jump to that ticket rather than guessing.
+    if (missingDate.length > 0) {
+      const first = missingDate[0];
+      setIndex(tickets.findIndex((t) => t.id === first.id));
+      toast.error(`Pick a claim date for ${first.number}.`);
+      return;
+    }
     const items = tickets.map((t) => ({
       ticketId: t.id,
       priority: values[t.id]?.priority ?? "MEDIUM",
-      // The same claim date rides along with every ticket in the batch.
-      ...(claimedOn ? { claimedOn } : {}),
+      // Each ticket carries the date it was actually taken on.
+      claimedOn: values[t.id]?.claimedOn,
     }));
     startTransition(async () => {
       const res = await bulkClaimTickets({ items });
@@ -126,7 +139,7 @@ export function BulkClaimDialog({
             Claim {total} ticket{total === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Set a priority for each, then claim them all. They&apos;ll be assigned
+            Set a priority and the date you took each one on, then claim them all. They&apos;ll be assigned
             to you and stay Open until you Start each one.
           </DialogDescription>
         </DialogHeader>
@@ -189,44 +202,44 @@ export function BulkClaimDialog({
                 />
               </div>
 
-              {/* Priority for THIS ticket */}
-              <div className="mt-5 max-w-xs">
-                <label className="mb-1 block text-sm font-medium">Priority</label>
-                <Select
-                  value={entry.priority}
-                  onValueChange={(v) => setEntry({ priority: v })}
-                  disabled={pending}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {PRIORITY_LABELS[p]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Priority + claim date for THIS ticket — both per ticket (§5.3). */}
+              <div className="mt-5 grid gap-4 sm:max-w-lg sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Priority</label>
+                  <Select
+                    value={entry.priority}
+                    onValueChange={(v) => setEntry({ priority: v })}
+                    disabled={pending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITIES.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {PRIORITY_LABELS[p]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label
+                    htmlFor="bulk-claim-date"
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    Claim date
+                  </label>
+                  {/* No min/max — any past or future day, matching the server. */}
+                  <Input
+                    id="bulk-claim-date"
+                    type="date"
+                    value={entry.claimedOn}
+                    onChange={(e) => setEntry({ claimedOn: e.target.value })}
+                    disabled={pending}
+                  />
+                </div>
               </div>
-            </div>
-
-            {/* One claim date for the whole batch — any past or future day (§5.3). */}
-            <div className="border-t border-border px-6 py-3">
-              <label
-                htmlFor="bulk-claim-date"
-                className="mb-1 block text-sm font-medium"
-              >
-                Claim date <span className="font-normal text-text-muted">· applies to all {total}</span>
-              </label>
-              <Input
-                id="bulk-claim-date"
-                type="date"
-                className="max-w-xs"
-                value={claimedOn}
-                onChange={(e) => setClaimedOn(e.target.value)}
-                disabled={pending}
-              />
             </div>
 
             {/* Footer: navigation + submit */}
@@ -251,7 +264,7 @@ export function BulkClaimDialog({
               </Button>
               <div className="ml-auto flex items-center gap-3">
                 <span className="text-xs text-text-muted">
-                  Priority defaults to Medium
+                  Priority Medium · date today, per ticket
                 </span>
                 <Button type="button" onClick={submit} disabled={pending}>
                   <Hand className="size-4" />

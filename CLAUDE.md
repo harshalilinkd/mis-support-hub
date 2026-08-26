@@ -270,8 +270,14 @@ nothing: there is nothing to audit.
 took it on. The combined **claim & start** shortcut collects both dates; a **board drag** has
 no dialog, so it stamps `now()`. **Release clears `claimed_at` and `started_at`** (both
 modules) along with the assignee, priority and deadline — a release undoes the claim, and a
-stale date would attach a later re-claim to the abandoned attempt. **Bulk claim takes ONE
-date for the whole batch** — it is one act of taking a pile of tickets on, on one day.
+stale date would attach a later re-claim to the abandoned attempt. **Bulk claim collects a date PER
+TICKET**, alongside that ticket's priority, on each step of the wizard (both default to
+today, so claiming a batch as "all today" is still zero extra clicks). It first shipped
+with one shared date for the batch, on the reasoning that a bulk claim is a single act on
+a single day; that was wrong about how the batch arises — it is usually a backlog being
+caught up on, where each ticket was genuinely taken on a different day, and one shared
+field made the later pick silently overwrite the earlier one. A date the user actively
+clears blocks the submit and jumps the wizard to that ticket rather than defaulting it.
 
 Every `*On` field stays **OPTIONAL** in its schema and stamps `now()` when absent, so callers
 with no date (board drag, auto-close cron) are unaffected.
