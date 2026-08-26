@@ -131,7 +131,7 @@ export function BulkResolveDialog({
     const items = tickets.map((t) => ({
       ticketId: t.id,
       // Each ticket ships its OWN date.
-      resolvedOn: values[t.id]!.resolvedOn,
+      resolvedOn: values[t.id]?.resolvedOn,
     }));
     startTransition(async () => {
       const res = await bulkResolveTickets({ items });

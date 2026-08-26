@@ -162,8 +162,8 @@ export function BulkStartDialog({
     const items = tickets.map((t) => ({
       ticketId: t.id,
       // Each ticket ships its OWN pair of dates.
-      deadline: values[t.id]!.deadline,
-      startedOn: values[t.id]!.startedOn,
+      deadline: values[t.id]?.deadline ?? "",
+      startedOn: values[t.id]?.startedOn,
     }));
     startTransition(async () => {
       const res = await bulkStartTasks({ items });
