@@ -94,18 +94,22 @@ export function AllTicketsView({
   // Rows the selection can START: MY claim, not yet started (§5/§6 — startTask is
   // assignee-locked). Bulk start acts on exactly these, so the button never sends the
   // server something it must refuse.
-  // Rows the selection can RESOLVE: my claim, not yet resolved, and only for an admin
-  // (§6 — canResolveIssue is admin + assignee). Mirrors the server exactly, so the
-  // button never offers what the action must refuse.
+  // Rows the selection can RESOLVE: my claim, admin only (§6 — canResolveIssue is
+  // admin + assignee), and **already started**.
+  //
+  // OPEN is deliberately excluded even though the machine permits OPEN → RESOLVED:
+  // on the Claimed tab every row is claimed-but-unstarted, so offering "Resolve
+  // selected" there skipped a lifecycle step, and the wizard's own question — "was it
+  // completed on the day work started?" — is unanswerable for a ticket that never
+  // started. Start is the next step there; the single-ticket "Mark resolved…" still
+  // allows the shortcut for the odd ticket that turned out to be nothing.
   const resolvableSelected = useMemo(
     () =>
       currentUser.role === "MIS_ADMIN"
         ? selectedTickets.filter(
             (t) =>
               t.assignedToId === currentUser.id &&
-              (t.status === "OPEN" ||
-                t.status === "IN_PROGRESS" ||
-                t.status === "REOPENED")
+              (t.status === "IN_PROGRESS" || t.status === "REOPENED")
           )
         : [],
     [selectedTickets, currentUser.id, currentUser.role]

@@ -145,17 +145,14 @@ export function MyTicketsView({
   }, [filtered, canControl]);
 
   // Rows this queue can bulk-RESOLVE: admin only (§6 — canResolveIssue is admin +
-  // assignee, and on this view every row is already the viewer's own claim).
+  // assignee, and on this view every row is already the viewer's own claim), and
+  // **already started**. A claimed-but-unstarted ticket gets Start, not Resolve —
+  // see the note in all-tickets-view.
   const resolvableIds = useMemo(() => {
     if (!canControl || currentUser.role !== "MIS_ADMIN") return new Set<string>();
     return new Set(
       filtered
-        .filter(
-          (t) =>
-            t.status === "OPEN" ||
-            t.status === "IN_PROGRESS" ||
-            t.status === "REOPENED"
-        )
+        .filter((t) => t.status === "IN_PROGRESS" || t.status === "REOPENED")
         .map((t) => t.id)
     );
   }, [filtered, canControl, currentUser.role]);

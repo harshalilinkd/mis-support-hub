@@ -293,7 +293,16 @@ day work started?"** — *Same day* fills `resolved_at` from THAT ticket's `star
 started) says so and asks outright. `resolveOne` is extracted from `updateStatus` and
 shared, so the single "Mark resolved" and the bulk one apply the same §5/§6 guards —
 including `canResolveIssue`, which makes bulk resolve **admin-only in effect**: both
-lists offer the button only to an MIS_ADMIN, and only for their own unresolved claims.
+lists offer the button only to an MIS_ADMIN, and only for their own **started**
+claims — IN_PROGRESS / REOPENED, never OPEN.
+
+> **Bulk resolve excludes OPEN deliberately, though the machine permits OPEN → RESOLVED.**
+> On the Claimed tab every row is claimed-but-unstarted, so offering "Resolve selected"
+> there skipped a lifecycle step, and the wizard's own question ("completed on the day
+> work started?") is unanswerable for a ticket that never started. Start is the next step
+> there. The SINGLE-ticket "Mark resolved…" keeps the OPEN shortcut, for the odd ticket
+> that turns out to be nothing — so the state machine is unchanged and only what the bulk
+> bar offers is narrowed.
 
 **Bulk start (`bulkStartTasks`) lives on BOTH issue lists** — All Issues and, more
 usefully, **Assigned to Me** (whose Claimed tab IS your unstarted queue, so that is where
