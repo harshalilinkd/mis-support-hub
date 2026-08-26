@@ -18,6 +18,9 @@ export type TicketCardData = {
   createdAt: string | Date;
   updatedAt: string | Date;
   assignedToName: string | null;
+  /** Who raised it — powers the Reporter facet on the assigned-work view. */
+  createdById: string | null;
+  createdByName: string | null;
   commentCount: number;
   sheetLink: string | null;
   attachments: TicketAttachmentThumb[];

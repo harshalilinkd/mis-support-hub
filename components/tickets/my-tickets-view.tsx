@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Inbox, MessageSquare, Search } from "lucide-react";
+import { Inbox, MessageSquare, Search, X } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { EmptyState } from "@/components/shell/empty-state";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -14,15 +15,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { FacetSelect, FACET_ALL } from "@/components/dashboard/facet-select";
 import type { SessionUser } from "@/lib/session";
 import {
   TICKET_TABS,
   statusesForTab,
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
-import { formatDueDate } from "@/lib/format";
+import { formatDueDate, humanizeEnum } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
+import {
+  DEPARTMENT_LABELS,
+  DEPARTMENTS,
+  PRIORITIES,
+} from "@/lib/validators/ticket";
 import { PriorityControl, StatusControl } from "@/components/dashboard/inline-controls";
 import { PriorityChip, StatusChip, statusColor } from "./chips";
 import type { TicketCardData } from "./ticket-card";
@@ -51,24 +57,57 @@ export function MyTicketsView({
     return firstNonEmpty?.key ?? "open";
   });
   const [query, setQuery] = useState("");
+  const [dept, setDept] = useState(FACET_ALL);
+  const [priority, setPriority] = useState(FACET_ALL);
+  const [reporter, setReporter] = useState(FACET_ALL);
   const [selected, setSelected] = useState<string | null>(null);
 
   const showAssignee = variant === "raised";
   // MIS staff working their own queue get inline status/priority controls (same
   // as All Tickets); employees viewing tickets they raised see read-only chips.
   const canControl = variant === "assigned";
+  // Reporter only varies on the ASSIGNED queue — on the raised view every ticket
+  // is the viewer's own, so the facet would be a single, pointless option.
+  const showReporterFacet = variant === "assigned";
 
-  // Search-filtered set — shared by the table and the per-tab counts, so the
-  // counts reflect the current search (like the admin All Tickets tabs).
+  // Reporter options: the distinct people who raised the tickets in this list.
+  const reporterOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const t of tickets) {
+      if (t.createdById) byId.set(t.createdById, t.createdByName ?? "—");
+    }
+    return [...byId]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tickets]);
+
+  const hasFacets =
+    dept !== FACET_ALL ||
+    priority !== FACET_ALL ||
+    (showReporterFacet && reporter !== FACET_ALL);
+
+  const clearFacets = () => {
+    setDept(FACET_ALL);
+    setPriority(FACET_ALL);
+    setReporter(FACET_ALL);
+    setQuery("");
+  };
+
+  // Facets (dept / priority / reporter) + search — shared by the table and the
+  // per-tab counts, so the counts reflect the active facets (like All Tickets).
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return tickets;
-    return tickets.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.number.toLowerCase().includes(q)
-    );
-  }, [tickets, query]);
+    return tickets.filter((t) => {
+      if (dept !== FACET_ALL && t.department !== dept) return false;
+      if (priority !== FACET_ALL && t.priority !== priority) return false;
+      if (showReporterFacet && reporter !== FACET_ALL && t.createdById !== reporter)
+        return false;
+      if (!q) return true;
+      return (
+        t.title.toLowerCase().includes(q) || t.number.toLowerCase().includes(q)
+      );
+    });
+  }, [tickets, query, dept, priority, reporter, showReporterFacet]);
 
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
@@ -140,6 +179,45 @@ export function MyTicketsView({
             aria-label="Search my tickets"
           />
         </div>
+      </div>
+
+      {/* Facets — Status is the tab row above; these narrow within it. Reporter
+          only appears on the assigned queue (own-raised tickets are all yours). */}
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <FacetSelect
+          label="Dept"
+          value={dept}
+          onValueChange={setDept}
+          options={DEPARTMENTS.map((d) => ({
+            value: d,
+            label: DEPARTMENT_LABELS[d],
+          }))}
+        />
+        <FacetSelect
+          label="Priority"
+          value={priority}
+          onValueChange={setPriority}
+          options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
+        />
+        {showReporterFacet ? (
+          <FacetSelect
+            label="Reporter"
+            value={reporter}
+            onValueChange={setReporter}
+            options={reporterOptions}
+          />
+        ) : null}
+        {hasFacets ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="col-span-3 justify-self-start sm:col-auto"
+            onClick={clearFacets}
+          >
+            <X className="size-4" />
+            Clear
+          </Button>
+        ) : null}
       </div>
 
       {filtered.length === 0 ? (

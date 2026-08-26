@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Library, Search, Sparkles } from "lucide-react";
+import { CheckCircle2, Library, Search, Sparkles, X } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { EmptyState } from "@/components/shell/empty-state";
 import { UserAvatar } from "@/components/user-avatar";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -16,12 +17,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { FacetSelect, FACET_ALL } from "@/components/dashboard/facet-select";
 import type { RequestListRow } from "@/lib/db/queries";
 import type { Status } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
-import { formatDueDate } from "@/lib/format";
-import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
+import { formatDueDate, humanizeEnum } from "@/lib/format";
+import {
+  DEPARTMENT_LABELS,
+  DEPARTMENTS,
+  PRIORITIES,
+} from "@/lib/validators/ticket";
 import { PriorityChip, statusColor } from "./chips";
 import { RequestSheet } from "./request-sheet";
 import { RequestStageControl } from "./request-stage-control";
@@ -111,19 +117,51 @@ export function RequestsView({
 }) {
   const [tab, setTab] = useState<TabKey>("all");
   const [query, setQuery] = useState("");
+  const [dept, setDept] = useState(FACET_ALL);
+  const [priority, setPriority] = useState(FACET_ALL);
+  const [requester, setRequester] = useState(FACET_ALL);
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Requester options are the distinct people who appear in THIS list (all
+  // requests, or just those assigned to me on /my) — derived from the rows, no
+  // extra query, exactly like the issue table's Reporter facet.
+  const requesterOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const r of requests) {
+      if (r.createdById) byId.set(r.createdById, r.createdByName ?? "—");
+    }
+    return [...byId]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [requests]);
+
+  const hasFacets =
+    dept !== FACET_ALL || priority !== FACET_ALL || requester !== FACET_ALL;
+
+  const clearFacets = () => {
+    setDept(FACET_ALL);
+    setPriority(FACET_ALL);
+    setRequester(FACET_ALL);
+    setQuery("");
+  };
+
+  // Facets (dept / priority / requester) + search. Applied before the stage tabs
+  // so the tab counts reflect the active facets, mirroring All Issues.
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return requests;
-    return requests.filter(
-      (r) =>
+    return requests.filter((r) => {
+      if (dept !== FACET_ALL && r.department !== dept) return false;
+      if (priority !== FACET_ALL && r.priority !== priority) return false;
+      if (requester !== FACET_ALL && r.createdById !== requester) return false;
+      if (!q) return true;
+      return (
         r.systemName.toLowerCase().includes(q) ||
         r.number.toLowerCase().includes(q) ||
         (r.createdByName ?? "").toLowerCase().includes(q) ||
         (r.assignedToName ?? "").toLowerCase().includes(q)
-    );
-  }, [requests, query]);
+      );
+    });
+  }, [requests, query, dept, priority, requester]);
 
   const counts = useMemo(() => {
     const c = {} as Record<TabKey, number>;
@@ -193,6 +231,43 @@ export function RequestsView({
             aria-label="Search requests"
           />
         </div>
+      </div>
+
+      {/* Facets — Stage is the tab row above; these narrow within it. On mobile
+          they sit in a 3-column grid. */}
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <FacetSelect
+          label="Dept"
+          value={dept}
+          onValueChange={setDept}
+          options={DEPARTMENTS.map((d) => ({
+            value: d,
+            label: DEPARTMENT_LABELS[d],
+          }))}
+        />
+        <FacetSelect
+          label="Priority"
+          value={priority}
+          onValueChange={setPriority}
+          options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
+        />
+        <FacetSelect
+          label="Requester"
+          value={requester}
+          onValueChange={setRequester}
+          options={requesterOptions}
+        />
+        {hasFacets ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="col-span-3 justify-self-start sm:col-auto"
+            onClick={clearFacets}
+          >
+            <X className="size-4" />
+            Clear
+          </Button>
+        ) : null}
       </div>
 
       {filtered.length === 0 ? (

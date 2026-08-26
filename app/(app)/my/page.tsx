@@ -57,6 +57,8 @@ export default async function MyTicketsPage({
     createdAt: toIso(r.createdAt),
     updatedAt: toIso(r.updatedAt),
     assignedToName: r.assignedToName,
+    createdById: r.createdById,
+    createdByName: r.createdByName,
     commentCount: r.commentCount,
     sheetLink: r.sheetLink,
     attachments: r.attachments,
