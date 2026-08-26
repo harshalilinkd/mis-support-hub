@@ -123,6 +123,22 @@ export function BulkStartDialog({
   const incomplete = tickets.filter(
     (t) => !values[t.id]?.startedOn || !values[t.id]?.deadline
   );
+  // How many tickets still have NO completion date — the count the shortcut offers to
+  // fill, and what the footer reports.
+  const emptyDeadlines = tickets.filter((t) => !values[t.id]?.deadline).length;
+
+  function applyDeadlineToRest() {
+    if (!ticket) return;
+    const date = values[ticket.id]?.deadline;
+    if (!date) return;
+    setValues((v) => {
+      const next = { ...v };
+      for (const t of tickets) {
+        if (!next[t.id]?.deadline) next[t.id] = { ...next[t.id], deadline: date };
+      }
+      return next;
+    });
+  }
 
   function setEntry(patch: Partial<Entry>) {
     if (!ticket) return;
@@ -162,8 +178,19 @@ export function BulkStartDialog({
         );
       }
       if (failed.length > 0) {
+        // Name the reason the SERVER gave, per ticket. The old copy guessed
+        // ("already started, or claimed by someone else"), which is useless when the
+        // real cause is something else — you cannot act on a guess.
+        const byNumber = new Map(tickets.map((t) => [t.id, t.number]));
+        const lines = failed
+          .slice(0, 3)
+          .map((f) => `${byNumber.get(f.ticketId) ?? "A ticket"}: ${f.error}`);
+        const more =
+          failed.length > lines.length
+            ? [`…and ${failed.length - lines.length} more`]
+            : [];
         toast.error(
-          `${failed.length} couldn't be started (already started, or claimed by someone else).`
+          [`${failed.length} couldn't be started.`, ...lines, ...more].join(" · ")
         );
       }
       onOpenChange(false);
@@ -386,6 +413,20 @@ export function BulkStartDialog({
                     <p className="mt-1 text-xs text-text-muted">
                       Required — the reporter is told this date.
                     </p>
+                    {/* Twelve tickets means twelve completion dates, which is what
+                        made "Start all" unreachable. This fills the ones still EMPTY
+                        with the date on screen — never overwrites a date already set,
+                        and never touches a start date, which stays per ticket. */}
+                    {entry.deadline && emptyDeadlines > 0 ? (
+                      <button
+                        type="button"
+                        onClick={applyDeadlineToRest}
+                        disabled={pending}
+                        className="mt-1.5 text-xs font-medium text-primary hover:underline disabled:opacity-60"
+                      >
+                        Use this date for the {emptyDeadlines} without one
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -413,9 +454,9 @@ export function BulkStartDialog({
               </Button>
               <div className="ml-auto flex items-center gap-3">
                 <span className="hidden text-xs text-text-muted sm:inline">
-                  {incomplete.length > 0
-                    ? `${incomplete.length} still need a date`
-                    : "Dates set per ticket"}
+                  {emptyDeadlines > 0
+                    ? `${emptyDeadlines} still need a completion date`
+                    : "Ready — dates set per ticket"}
                 </span>
                 <Button type="button" onClick={submit} disabled={pending}>
                   <Play className="size-4" />
