@@ -57,10 +57,13 @@ export function AllTicketsView({
     [tickets, tab]
   );
 
-  // Rows the user can CLAIM (same rule as the per-row Claim button): not
-  // resolved/closed, and unassigned or already mine — never someone else's, not
-  // even for an admin (§6 ownership lock). Only these get a checkbox here.
-  const claimableIds = useMemo(() => {
+  // Rows that get a CHECKBOX: not resolved/closed, and unassigned or already mine —
+  // never someone else's, not even for an admin (§6 ownership lock). This is
+  // "selectable", which is deliberately WIDER than either bulk action: an unassigned
+  // row can be claimed, one of mine can be started, and the action bar derives each
+  // set below. Conflating the two was the bug where the Claimed tab offered "Claim
+  // selected" for tickets that were already claimed.
+  const selectableIds = useMemo(() => {
     const ids = new Set<string>();
     for (const t of filtered) {
       const done = t.status === "RESOLVED" || t.status === "CLOSED";
@@ -77,10 +80,18 @@ export function AllTicketsView({
     [filtered, selectedIds]
   );
 
+  // Rows the selection can CLAIM: genuinely UNASSIGNED ones. A ticket already claimed
+  // by me is selectable (so it can be started) but claiming it again would only
+  // re-set its priority — offering "Claim selected" for it on the Claimed tab read as
+  // a bug, and was one.
+  const claimableSelected = useMemo(
+    () => selectedTickets.filter((t) => !t.assignedToId),
+    [selectedTickets]
+  );
+
   // Rows the selection can START: MY claim, not yet started (§5/§6 — startTask is
-  // assignee-locked). A subset of the claimable set, because an UNCLAIMED ticket is
-  // claimable but has nothing to start. Bulk start acts on exactly these, so the
-  // button never sends the server something it must refuse.
+  // assignee-locked). Bulk start acts on exactly these, so the button never sends the
+  // server something it must refuse.
   const startableSelected = useMemo(
     () =>
       selectedTickets.filter(
@@ -96,10 +107,10 @@ export function AllTicketsView({
   // the "N selected" count never lies or dead-ends.
   useEffect(() => {
     setSelectedIds((prev) => {
-      const next = new Set([...prev].filter((id) => claimableIds.has(id)));
+      const next = new Set([...prev].filter((id) => selectableIds.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [claimableIds]);
+  }, [selectableIds]);
 
   // Selection is scoped to the visible set — switching tabs clears it.
   function switchTab(key: TicketTabKey) {
@@ -118,9 +129,9 @@ export function AllTicketsView({
 
   function toggleSelectAll() {
     const allSelected =
-      claimableIds.size > 0 &&
-      [...claimableIds].every((id) => selectedIds.has(id));
-    setSelectedIds(allSelected ? new Set() : new Set(claimableIds));
+      selectableIds.size > 0 &&
+      [...selectableIds].every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
   }
 
   return (
@@ -167,9 +178,12 @@ export function AllTicketsView({
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-primary/30 bg-accent-soft px-3 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
-          <Button size="sm" onClick={() => setBulkOpen(true)}>
-            <Hand className="size-4" /> Claim selected
-          </Button>
+          {claimableSelected.length > 0 ? (
+            <Button size="sm" onClick={() => setBulkOpen(true)}>
+              <Hand className="size-4" /> Claim selected (
+              {claimableSelected.length})
+            </Button>
+          ) : null}
           {/* Start is offered only for the tickets in the selection that are MINE and
               unstarted — the count says so, rather than the button silently doing less
               than it says. Hidden when none qualify. */}
@@ -197,7 +211,7 @@ export function AllTicketsView({
         tickets={filtered}
         currentUser={currentUser}
         selectedIds={selectedIds}
-        selectableIds={claimableIds}
+        selectableIds={selectableIds}
         onToggleSelect={toggleSelect}
         onToggleSelectAll={toggleSelectAll}
       />
@@ -213,7 +227,7 @@ export function AllTicketsView({
       />
 
       <BulkClaimDialog
-        tickets={selectedTickets}
+        tickets={claimableSelected}
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         onDone={() => {
