@@ -9,7 +9,7 @@ import { MyWorkView } from "@/components/tickets/my-work-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
 
-const TAB_KEYS = ["open", "in_progress", "resolved", "closed"] as const;
+const TAB_KEYS = ["open", "claimed", "in_progress", "resolved", "closed"] as const;
 
 export default async function MyTicketsPage({
   searchParams,
@@ -56,6 +56,7 @@ export default async function MyTicketsPage({
     // Lower-bounds the "Resolved on" picker on a staff row (§5).
     createdAt: toIso(r.createdAt),
     updatedAt: toIso(r.updatedAt),
+    assignedToId: r.assignedToId,
     assignedToName: r.assignedToName,
     createdById: r.createdById,
     createdByName: r.createdByName,

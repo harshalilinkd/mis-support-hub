@@ -36,6 +36,7 @@ type TabKey =
   | "all"
   | "awaiting"
   | "approved"
+  | "claimed"
   | "in_progress"
   | "testing"
   | "closed"
@@ -46,10 +47,9 @@ type TabKey =
  * one tab.
  *
  * "In progress" means the build has genuinely STARTED — an assignee committed to a
- * delivery date via startWork (§12.3). Approved-but-unclaimed and claimed-but-not-
- * started are NOT in progress: nobody has promised a date yet, so they get their own
- * tab. That mirrors the board, whose Approved column holds both statuses for exactly
- * the same reason.
+ * delivery date via startWork (§12.3). Approved-but-unclaimed (Approved) and
+ * claimed-but-not-started (Claimed) are NOT in progress — nobody has promised a date
+ * yet — so each gets its own tab.
  *
  * CHANGES_REQUESTED belongs here: that build started long ago (it has a deadline and
  * has already been through testing) and is back in the build loop.
@@ -61,7 +61,8 @@ const TABS: { key: TabKey; label: string; statuses: Status[] | null }[] = [
     label: "Awaiting approval",
     statuses: ["SUBMITTED", "UNDER_REVIEW", "PENDING_MD_APPROVAL"],
   },
-  { key: "approved", label: "Approved", statuses: ["APPROVED", "CLAIMED"] },
+  { key: "approved", label: "Approved", statuses: ["APPROVED"] },
+  { key: "claimed", label: "Claimed", statuses: ["CLAIMED"] },
   {
     key: "in_progress",
     label: "In progress",
@@ -193,35 +194,73 @@ export function RequestsView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
-          {TABS.map((t) => {
-            const active = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
-                  active ? "bg-accent-soft text-primary" : "text-foreground hover:bg-surface-muted"
-                )}
-              >
-                {t.label}
-                <span
+      {/* Stage tabs + facets grouped on the left (Stage is the tab row; the facets
+          narrow within it), search on the right. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTab(t.key)}
                   className={cn(
-                    "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
-                    active ? "bg-primary/15 text-primary" : "bg-surface-muted text-text-muted"
+                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
+                    active ? "bg-accent-soft text-primary" : "text-foreground hover:bg-surface-muted"
                   )}
                 >
-                  {counts[t.key]}
-                </span>
-              </button>
-            );
-          })}
+                  {t.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                      active ? "bg-primary/15 text-primary" : "bg-surface-muted text-text-muted"
+                    )}
+                  >
+                    {counts[t.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <FacetSelect
+              label="Dept"
+              value={dept}
+              onValueChange={setDept}
+              options={DEPARTMENTS.map((d) => ({
+                value: d,
+                label: DEPARTMENT_LABELS[d],
+              }))}
+            />
+            <FacetSelect
+              label="Priority"
+              value={priority}
+              onValueChange={setPriority}
+              options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
+            />
+            <FacetSelect
+              label="Requester"
+              value={requester}
+              onValueChange={setRequester}
+              options={requesterOptions}
+            />
+            {hasFacets ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="col-span-3 justify-self-start sm:col-auto"
+                onClick={clearFacets}
+              >
+                <X className="size-4" />
+                Clear
+              </Button>
+            ) : null}
+          </div>
         </div>
-        <div className="relative sm:w-64">
+        <div className="relative lg:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
           <Input
             value={query}
@@ -231,43 +270,6 @@ export function RequestsView({
             aria-label="Search requests"
           />
         </div>
-      </div>
-
-      {/* Facets — Stage is the tab row above; these narrow within it. On mobile
-          they sit in a 3-column grid. */}
-      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <FacetSelect
-          label="Dept"
-          value={dept}
-          onValueChange={setDept}
-          options={DEPARTMENTS.map((d) => ({
-            value: d,
-            label: DEPARTMENT_LABELS[d],
-          }))}
-        />
-        <FacetSelect
-          label="Priority"
-          value={priority}
-          onValueChange={setPriority}
-          options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
-        />
-        <FacetSelect
-          label="Requester"
-          value={requester}
-          onValueChange={setRequester}
-          options={requesterOptions}
-        />
-        {hasFacets ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="col-span-3 justify-self-start sm:col-auto"
-            onClick={clearFacets}
-          >
-            <X className="size-4" />
-            Clear
-          </Button>
-        ) : null}
       </div>
 
       {filtered.length === 0 ? (

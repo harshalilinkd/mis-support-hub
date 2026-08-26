@@ -17,6 +17,8 @@ export type TicketCardData = {
   deadline: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+  /** Presence drives the Open vs Claimed tab split (§5). */
+  assignedToId: string | null;
   assignedToName: string | null;
   /** Who raised it — powers the Reporter facet on the assigned-work view. */
   createdById: string | null;

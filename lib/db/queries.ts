@@ -39,7 +39,7 @@ import {
   systems,
   accessRequests,
 } from "./schema";
-import { TICKET_TABS, statusesForTab, type TicketTabKey } from "@/lib/ticket-tabs";
+import { type TicketTabKey } from "@/lib/ticket-tabs";
 import { assertStatusForType, AUTO_CLOSE_DAYS } from "@/lib/ticket-state";
 
 /* ------------------------------------------------------------------ *
@@ -1288,23 +1288,36 @@ export async function countTicketsByTab(
       search: filters.search,
     }),
   ];
-  const rows = await db
+  // Open/Claimed split the OPEN status by assignee (§5), so this can't be a plain
+  // group-by-status — count each tab's bucket explicitly.
+  const [row] = await db
     .select({
-      status: tickets.status,
-      count: sql<number>`count(*)`.mapWith(Number),
+      open: sql<number>`count(*) filter (where ${tickets.status} = 'OPEN' and ${tickets.assignedTo} is null)`.mapWith(
+        Number
+      ),
+      claimed: sql<number>`count(*) filter (where ${tickets.status} = 'OPEN' and ${tickets.assignedTo} is not null)`.mapWith(
+        Number
+      ),
+      in_progress: sql<number>`count(*) filter (where ${tickets.status} in ('IN_PROGRESS', 'REOPENED'))`.mapWith(
+        Number
+      ),
+      resolved: sql<number>`count(*) filter (where ${tickets.status} = 'RESOLVED')`.mapWith(
+        Number
+      ),
+      closed: sql<number>`count(*) filter (where ${tickets.status} = 'CLOSED')`.mapWith(
+        Number
+      ),
     })
     .from(tickets)
-    .where(conds.length ? and(...conds) : undefined)
-    .groupBy(tickets.status);
+    .where(conds.length ? and(...conds) : undefined);
 
-  const byStatus = new Map<Status, number>(rows.map((r) => [r.status, r.count]));
-  const result = {} as Record<TicketTabKey, number>;
-  for (const tab of TICKET_TABS) {
-    result[tab.key] = statusesForTab(tab.key).reduce(
-      (sum, s) => sum + (byStatus.get(s) ?? 0),
-      0
-    );
-  }
+  const result: Record<TicketTabKey, number> = {
+    open: row?.open ?? 0,
+    claimed: row?.claimed ?? 0,
+    in_progress: row?.in_progress ?? 0,
+    resolved: row?.resolved ?? 0,
+    closed: row?.closed ?? 0,
+  };
   return result;
 }
 

@@ -19,7 +19,7 @@ import { FacetSelect, FACET_ALL } from "@/components/dashboard/facet-select";
 import type { SessionUser } from "@/lib/session";
 import {
   TICKET_TABS,
-  statusesForTab,
+  matchesTicketTab,
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
 import { formatDueDate, humanizeEnum } from "@/lib/format";
@@ -52,7 +52,7 @@ export function MyTicketsView({
   const [tab, setTab] = useState<TicketTabKey>(() => {
     if (initialTab) return initialTab;
     const firstNonEmpty = TICKET_TABS.find((t) =>
-      tickets.some((x) => statusesForTab(t.key).includes(x.status))
+      tickets.some((x) => matchesTicketTab(t.key, x))
     );
     return firstNonEmpty?.key ?? "open";
   });
@@ -112,16 +112,15 @@ export function MyTicketsView({
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
     for (const t of TICKET_TABS) {
-      const set = statusesForTab(t.key);
-      c[t.key] = searched.filter((x) => set.includes(x.status)).length;
+      c[t.key] = searched.filter((x) => matchesTicketTab(t.key, x)).length;
     }
     return c;
   }, [searched]);
 
-  const filtered = useMemo(() => {
-    const set = statusesForTab(tab);
-    return searched.filter((t) => set.includes(t.status));
-  }, [searched, tab]);
+  const filtered = useMemo(
+    () => searched.filter((t) => matchesTicketTab(tab, t)),
+    [searched, tab]
+  );
 
   const open = (number: string) => setSelected(number);
   const onKeyOpen = (number: string) => (e: React.KeyboardEvent) => {

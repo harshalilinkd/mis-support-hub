@@ -7,7 +7,7 @@ import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
 import {
   TICKET_TABS,
-  statusesForTab,
+  matchesTicketTab,
   type TicketTabKey,
 } from "@/lib/ticket-tabs";
 import { cn } from "@/lib/utils";
@@ -44,16 +44,15 @@ export function AllTicketsView({
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
     for (const t of TICKET_TABS) {
-      const set = statusesForTab(t.key);
-      c[t.key] = tickets.filter((x) => set.includes(x.status)).length;
+      c[t.key] = tickets.filter((x) => matchesTicketTab(t.key, x)).length;
     }
     return c;
   }, [tickets]);
 
-  const filtered = useMemo(() => {
-    const set = statusesForTab(tab);
-    return tickets.filter((t) => set.includes(t.status));
-  }, [tickets, tab]);
+  const filtered = useMemo(
+    () => tickets.filter((t) => matchesTicketTab(tab, t)),
+    [tickets, tab]
+  );
 
   // Rows the user can CLAIM (same rule as the per-row Claim button): not
   // resolved/closed, and unassigned or already mine — never someone else's, not
