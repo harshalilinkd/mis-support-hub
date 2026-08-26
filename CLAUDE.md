@@ -286,6 +286,18 @@ caught up on, where each ticket was genuinely taken on a different day, and one 
 field made the later pick silently overwrite the earlier one. A date the user actively
 clears blocks the submit and jumps the wizard to that ticket rather than defaulting it.
 
+**Bulk start (`bulkStartTasks`, All Issues → "Start selected").** The twin of bulk claim:
+step through the selected tickets with Prev/Next and give each its OWN start date and
+delivery deadline. Per ticket it asks the question MIS actually has — **"did work start on
+the day it was claimed?"** — because most tickets did: answering *Same day* fills the start
+date from THAT ticket's `claimed_at`, *Different day* reveals a free date field, and a
+ticket with no recorded claim date (claimed before the column existed) says so and asks for
+the date outright rather than inventing one. Both actions share `startOne`, so the single
+Start task and the bulk one cannot drift on the §5/§6 rules; it is **assignee-locked**, so
+the button offers only the tickets in the selection that are yours and unstarted, and the
+count on it says how many. Best-effort per ticket like bulk claim, and each started ticket
+notifies its reporter (§8) — starting is the announced step, unlike a claim.
+
 Every `*On` field stays **OPTIONAL** in its schema and stamps `now()` when absent, so callers
 with no date (board drag, auto-close cron) are unaffected.
 

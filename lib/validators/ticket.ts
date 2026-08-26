@@ -164,6 +164,14 @@ export const startTaskSchema = z.object({
 });
 export type StartTaskInput = z.infer<typeof startTaskSchema>;
 
+/** Start several claimed tickets in one go — each carries its OWN start date and
+ *  deadline (§5.3). No batch-wide date: a backlog being started is precisely where
+ *  the days differ per ticket. */
+export const bulkStartSchema = z.object({
+  items: z.array(startTaskSchema).min(1, "Select at least one ticket"),
+});
+export type BulkStartInput = z.infer<typeof bulkStartSchema>;
+
 /** Claim several tickets in one go — each carries its own priority (stays OPEN). */
 export const bulkClaimSchema = z.object({
   items: z.array(claimTicketSchema).min(1, "Select at least one ticket"),

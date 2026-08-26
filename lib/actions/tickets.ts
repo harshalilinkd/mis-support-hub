@@ -29,6 +29,7 @@ import {
 import {
   bulkClaimSchema,
   bulkDeleteSchema,
+  bulkStartSchema,
   claimTicketSchema,
   createTicketSchema,
   deleteTicketSchema,
@@ -391,6 +392,68 @@ export async function claimTicket(input: {
  * completion date and move it OPEN/REOPENED → IN_PROGRESS (§5). This is when the
  * ticket is "officially started"; the reporter is notified (priority + ETA; §8).
  */
+/**
+ * Core start logic for a single ticket, shared by startTask and bulkStartTasks.
+ * Runs the §5/§6 checks and writes the start, but does NOT notify or revalidate —
+ * the caller does that (once, for bulk). Same split as claimOne, and for the same
+ * reason: the two entry points must not grow separate copies of the rules.
+ */
+async function startOne(
+  user: SessionUser,
+  input: { ticketId: string; deadline: string; startedOn?: string }
+): Promise<
+  | { ok: true; ticketId: string; ticketNumber: string }
+  | { ok: false; error: string }
+> {
+  const ticket = await q.getTicketById(input.ticketId);
+  if (!ticket) return { ok: false, error: "Ticket not found." };
+  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
+  // (lib/actions/requests.ts) owns its state machine and permissions.
+  if (ticket.type !== "ISSUE") {
+    return {
+      ok: false,
+      error: `${ticket.number} is a system request — use the request actions.`,
+    };
+  }
+
+  // You start your OWN claimed ticket (§6): must be assigned, and to you.
+  if (!ticket.assignedTo) {
+    return { ok: false, error: `Claim ${ticket.number} before starting work on it.` };
+  }
+  if (ticket.assignedTo !== user.id) {
+    const owner = await q.getUserById(ticket.assignedTo);
+    return {
+      ok: false,
+      error: `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can start it.`,
+    };
+  }
+  if (ticket.status !== "OPEN" && ticket.status !== "REOPENED") {
+    return { ok: false, error: `${ticket.number} has already been started.` };
+  }
+
+  // The day work actually began (§5.3) — any date; absent ⇒ now.
+  const now = new Date();
+  let startedAt = now;
+  let datedFrom: Date | undefined;
+  if (input.startedOn) {
+    const picked = startDateFor(input.startedOn, now);
+    if (!picked.ok) return { ok: false, error: picked.error };
+    startedAt = picked.at;
+    if (picked.dated) datedFrom = now;
+  }
+
+  await q.startTaskRow({
+    ticketId: ticket.id,
+    actorId: user.id,
+    fromStatus: ticket.status,
+    deadline: new Date(input.deadline),
+    startedAt,
+    datedFrom,
+  });
+
+  return { ok: true, ticketId: ticket.id, ticketNumber: ticket.number };
+}
+
 export async function startTask(input: {
   ticketId: string;
   deadline: string;
@@ -405,53 +468,71 @@ export async function startTask(input: {
   const parsed = startTaskSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
-  const ticket = await q.getTicketById(parsed.data.ticketId);
-  if (!ticket) return fail("Ticket not found.");
-  // §12: a REQUEST never flows through the ISSUE actions — the request workflow
-  // (lib/actions/requests.ts) owns its state machine and permissions.
-  if (ticket.type !== "ISSUE") {
-    return fail(`${ticket.number} is a system request — use the request actions.`);
-  }
-
-  // You start your OWN claimed ticket (§6): must be assigned, and to you.
-  if (!ticket.assignedTo) {
-    return fail("Claim the ticket before starting work on it.");
-  }
-  if (ticket.assignedTo !== user.id) {
-    const owner = await q.getUserById(ticket.assignedTo);
-    return fail(
-      `${ticket.number} is claimed by ${owner?.name ?? owner?.email ?? "another staff member"} — only they can start it.`
-    );
-  }
-  if (ticket.status !== "OPEN" && ticket.status !== "REOPENED") {
-    return fail(`${ticket.number} has already been started.`);
-  }
-
-  // The day work actually began (§5.3) — any date; absent ⇒ now.
-  const now = new Date();
-  let startedAt = now;
-  let datedFrom: Date | undefined;
-  if (parsed.data.startedOn) {
-    const picked = startDateFor(parsed.data.startedOn, now);
-    if (!picked.ok) return fail(picked.error);
-    startedAt = picked.at;
-    if (picked.dated) datedFrom = now;
-  }
-
-  await q.startTaskRow({
-    ticketId: ticket.id,
-    actorId: user.id,
-    fromStatus: ticket.status,
-    deadline: new Date(parsed.data.deadline),
-    startedAt,
-    datedFrom,
-  });
+  const res = await startOne(user, parsed.data);
+  if (!res.ok) return fail(res.error);
 
   // Work has actually started now — tell the reporter (priority + ETA; §8).
-  await sendClaimNotification(ticket.id);
+  await sendClaimNotification(res.ticketId);
 
-  revalidateTicketRoutes(ticket.number);
+  revalidateTicketRoutes(res.ticketNumber);
   return ok(undefined);
+}
+
+/**
+ * Start several of MY claimed tickets in one pass (§5.3) — the twin of
+ * bulkClaimTickets, with the same best-effort contract: each ticket is independent,
+ * one failure never aborts the rest, and the caller is told exactly how many landed.
+ *
+ * Each item carries its OWN start date and deadline. There is no batch-wide date:
+ * a backlog being started is exactly the case where the days differ per ticket, which
+ * is why the wizard asks per ticket (the same lesson bulk claim learned).
+ *
+ * Assignee-locked like the single start — a ticket claimed by someone else is refused
+ * here too, not silently skipped, so the summary can name what didn't go through.
+ */
+export async function bulkStartTasks(input: {
+  items: { ticketId: string; deadline: string; startedOn?: string }[];
+}): Promise<
+  ActionResult<{
+    started: number;
+    failed: { ticketId: string; error: string }[];
+  }>
+> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can start work on a ticket.");
+  }
+
+  const parsed = bulkStartSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const startedIds: string[] = [];
+  const failed: { ticketId: string; error: string }[] = [];
+  for (const item of parsed.data.items) {
+    // Best-effort per ticket: neon-http has no cross-statement transaction (§2), so
+    // partial success is the only honest contract — report it rather than pretend.
+    try {
+      const res = await startOne(user, item);
+      if (res.ok) startedIds.push(res.ticketId);
+      else failed.push({ ticketId: item.ticketId, error: res.error });
+    } catch (e) {
+      console.error("[bulkStartTasks] failed to start", item.ticketId, e);
+      failed.push({
+        ticketId: item.ticketId,
+        error: "Something went wrong starting this ticket.",
+      });
+    }
+  }
+
+  // Starting is what the reporter hears about (§8) — one notice per ticket that
+  // actually started, best-effort so a failed send never fails the batch.
+  for (const id of startedIds) {
+    await sendClaimNotification(id);
+  }
+
+  if (startedIds.length > 0) revalidateTicketRoutes();
+  return ok({ started: startedIds.length, failed });
 }
 
 /**
@@ -521,7 +602,7 @@ export async function releaseTicket(ticketId: string): Promise<ActionResult> {
  * (already claimed, resolved, …) is reported back without blocking the others (§6).
  */
 export async function bulkClaimTickets(input: {
-  items: { ticketId: string; priority: string }[];
+  items: { ticketId: string; priority: string; claimedOn?: string }[];
 }): Promise<
   ActionResult<{
     claimed: number;
@@ -544,8 +625,8 @@ export async function bulkClaimTickets(input: {
     // the rest (there is no cross-ticket transaction under neon-http anyway).
     try {
       // Claim only (no deadline) — nothing is started, so no reporter notice (§8).
-      // Each row carries its own claim date (§5.3); the bulk dialog offers one date
-      // for the whole selection, which lands here per ticket.
+      // Each row carries ITS OWN claim date (§5.3): the wizard collects one per ticket,
+      // because a batch is usually a backlog caught up on, not one day's work.
       const res = await claimOne(
         user,
         item.ticketId,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Hand } from "lucide-react";
+import { Hand, Play } from "lucide-react";
 
 import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TabScroller } from "@/components/shell/tab-scroller";
 import { BulkClaimDialog } from "@/components/tickets/bulk-claim-dialog";
+import { BulkStartDialog } from "@/components/tickets/bulk-start-dialog";
 import { Button } from "@/components/ui/button";
 import { TableToolbar } from "./table-toolbar";
 import { TicketTable } from "./ticket-table";
@@ -41,6 +42,7 @@ export function AllTicketsView({
   const [tab, setTab] = useState<TicketTabKey>(initialTab);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
 
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
@@ -73,6 +75,20 @@ export function AllTicketsView({
   const selectedTickets = useMemo(
     () => filtered.filter((t) => selectedIds.has(t.id)),
     [filtered, selectedIds]
+  );
+
+  // Rows the selection can START: MY claim, not yet started (§5/§6 — startTask is
+  // assignee-locked). A subset of the claimable set, because an UNCLAIMED ticket is
+  // claimable but has nothing to start. Bulk start acts on exactly these, so the
+  // button never sends the server something it must refuse.
+  const startableSelected = useMemo(
+    () =>
+      selectedTickets.filter(
+        (t) =>
+          t.assignedToId === currentUser.id &&
+          (t.status === "OPEN" || t.status === "REOPENED")
+      ),
+    [selectedTickets, currentUser.id]
   );
 
   // Keep the selection in sync with what's actually claimable — drop any id no
@@ -154,6 +170,19 @@ export function AllTicketsView({
           <Button size="sm" onClick={() => setBulkOpen(true)}>
             <Hand className="size-4" /> Claim selected
           </Button>
+          {/* Start is offered only for the tickets in the selection that are MINE and
+              unstarted — the count says so, rather than the button silently doing less
+              than it says. Hidden when none qualify. */}
+          {startableSelected.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setStartOpen(true)}
+            >
+              <Play className="size-4" /> Start selected (
+              {startableSelected.length})
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"
@@ -171,6 +200,16 @@ export function AllTicketsView({
         selectableIds={claimableIds}
         onToggleSelect={toggleSelect}
         onToggleSelectAll={toggleSelectAll}
+      />
+
+      <BulkStartDialog
+        tickets={startableSelected}
+        open={startOpen}
+        onOpenChange={setStartOpen}
+        onDone={() => {
+          setStartOpen(false);
+          setSelectedIds(new Set());
+        }}
       />
 
       <BulkClaimDialog
