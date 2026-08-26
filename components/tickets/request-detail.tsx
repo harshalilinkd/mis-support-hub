@@ -280,6 +280,7 @@ export function RequestDetail({
           comments={request.comments}
           claimedAt={request.claimedAt ? toIso(request.claimedAt) : null}
           startedAt={request.startedAt ? toIso(request.startedAt) : null}
+          completedAt={request.completedAt ? toIso(request.completedAt) : null}
         />
         <div className="mt-4">
           <CommentComposer ticketId={request.id} onDone={onMutate} />

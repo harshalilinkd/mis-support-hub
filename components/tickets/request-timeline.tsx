@@ -1,6 +1,6 @@
 import { AbsoluteTime } from "@/components/absolute-time";
 import type { RequestDetail } from "@/lib/db/queries";
-import { toIso } from "@/lib/format";
+import { istDayKey, toIso } from "@/lib/format";
 
 type ActivityRow = RequestDetail["activity"][number];
 type CommentRow = RequestDetail["comments"][number];
@@ -11,6 +11,21 @@ const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   year: "numeric",
 });
+// Date + time in IST, for the "Recorded …" tooltip on a picked date.
+const RECORDED_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+function formatRecorded(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : RECORDED_FMT.format(d);
+}
+
 function formatDue(value: string | null): string {
   if (!value) return "";
   const d = new Date(value);
@@ -18,11 +33,7 @@ function formatDue(value: string | null): string {
 }
 
 /** The REQUEST lifecycle, told from the audit trail (CLAUDE.md §12.5). */
-function describe(
-  a: ActivityRow,
-  claimedAt?: string | null,
-  startedAt?: string | null
-): string {
+function describe(a: ActivityRow): string {
   const actor = a.actorName ?? "Someone";
   switch (a.type) {
     case "SUBMITTED":
@@ -40,15 +51,14 @@ function describe(
     case "REVIVED":
       return `${actor} revived the request`;
     case "CLAIMED":
-      // claimedAt is the request's recorded claim day (§5.3) — it lives on
-      // request_details, not on this event.
-      return `${actor} claimed the build${claimedAt ? ` on ${formatDue(claimedAt)}` : ""}`;
+      // The claim DATE is the row's own date (§5.3) — never repeated in the sentence.
+      return `${actor} claimed the build`;
     case "UNCLAIMED":
       return `${actor} released the claim — back to the approved pool`;
     case "DEADLINE_SET":
       return a.toValue ? `${actor} set delivery for ${formatDue(a.toValue)}` : `${actor} set a delivery date`;
     case "STARTED":
-      return `${actor} started building${startedAt ? ` on ${formatDue(startedAt)}` : ""}`;
+      return `${actor} started building`;
     case "MARKED_COMPLETE":
       return `${actor} marked the build complete — ready to test`;
     case "CLAIM_DATED":
@@ -78,6 +88,33 @@ function describe(
   }
 }
 
+type RequestDates = {
+  claimedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+};
+
+/**
+ * The DATE an event happened on, as MIS recorded it (§5.3) — the claim / start /
+ * completion day THEY picked, not when the row was written. Mirrors the ISSUE
+ * timeline: one date per line, the picked one.
+ */
+function eventDate(a: ActivityRow, dates: RequestDates): string | null {
+  switch (a.type) {
+    case "CLAIMED":
+      return dates.claimedAt ?? null;
+    case "STARTED":
+      return dates.startedAt ?? null;
+    case "MARKED_COMPLETE":
+      return dates.completedAt ?? null;
+    default:
+      return null;
+  }
+}
+
+/** Audit rows for those picked dates — kept in the DB (§12.5), not rendered here. */
+const DATED_TYPES = ["CLAIM_DATED", "START_DATED", "COMPLETION_DATED"];
+
 function initials(name: string | null): string {
   const base = (name ?? "?").trim();
   const parts = base.split(/\s+/);
@@ -98,6 +135,7 @@ export function RequestTimeline({
   comments,
   claimedAt,
   startedAt,
+  completedAt,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
@@ -109,11 +147,19 @@ export function RequestTimeline({
    */
   claimedAt?: string | null;
   startedAt?: string | null;
+  /** The recorded completion date (§5.2), shown on the MARKED_COMPLETE line. */
+  completedAt?: string | null;
 }) {
+  const dates: RequestDates = { claimedAt, startedAt, completedAt };
   const items = [
     // PROGRESS_LOGGED + COMMENTED are shown as their own richer items below.
     ...activity
-      .filter((a) => a.type !== "COMMENTED" && a.type !== "PROGRESS_LOGGED")
+      .filter(
+        (a) =>
+          a.type !== "COMMENTED" &&
+          a.type !== "PROGRESS_LOGGED" &&
+          !DATED_TYPES.includes(a.type)
+      )
       .map((a) => ({ kind: "activity" as const, id: `a-${a.id}`, at: toIso(a.createdAt), row: a })),
     ...comments.map((c) => ({ kind: "comment" as const, id: `c-${c.id}`, at: toIso(c.createdAt), row: c })),
   ].sort((a, b) => a.at.localeCompare(b.at));
@@ -144,13 +190,36 @@ export function RequestTimeline({
         return (
           <li key={item.id} className="flex items-center gap-3 text-sm">
             <span aria-hidden className="ml-2.5 size-1.5 shrink-0 rounded-full bg-border" />
-            <span className="text-text-muted">
-              {describe(item.row, claimedAt, startedAt)}
-            </span>
-            <AbsoluteTime date={item.at} className="text-xs text-text-muted" />
+            <span className="text-text-muted">{describe(item.row)}</span>
+            <EventDate row={item.row} at={item.at} dates={dates} />
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/** One date per line — the picked claim/start/completion day, else the timestamp. */
+function EventDate({
+  row,
+  at,
+  dates,
+}: {
+  row: ActivityRow;
+  at: string;
+  dates: RequestDates;
+}) {
+  const picked = eventDate(row, dates);
+  if (!picked) {
+    return <AbsoluteTime date={at} className="text-xs text-text-muted" />;
+  }
+  const moved = istDayKey(picked) !== istDayKey(at);
+  return (
+    <span
+      className="text-xs text-text-muted"
+      title={moved ? `Recorded ${formatRecorded(at)}` : undefined}
+    >
+      <AbsoluteTime date={picked} dateOnly className="text-xs text-text-muted" />
+    </span>
   );
 }

@@ -1,6 +1,6 @@
 import { AbsoluteTime } from "@/components/absolute-time";
 import type { TicketDetail } from "@/lib/db/queries";
-import { toIso } from "@/lib/format";
+import { istDayKey, toIso } from "@/lib/format";
 
 type ActivityRow = TicketDetail["activity"][number];
 type CommentRow = TicketDetail["comments"][number];
@@ -20,37 +20,43 @@ const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   year: "numeric",
 });
+// Date + time in IST, for the "Recorded …" tooltip on a picked date.
+const RECORDED_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+function formatRecorded(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : RECORDED_FMT.format(d);
+}
+
 function formatDue(value: string | null): string {
   if (!value) return "";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? value : DUE_FMT.format(d);
 }
 
-function describe(
-  a: ActivityRow,
-  startedAt?: string | null,
-  claimedAt?: string | null
-): string {
+function describe(a: ActivityRow): string {
   const actor = a.actorName ?? "Someone";
   switch (a.type) {
     case "CREATED":
       return `${actor} raised the ticket`;
     case "CLAIMED": {
       // A claim now only assigns + sets priority — no deadline (that's STARTED).
-      // `claimedAt` is the ticket's recorded claim day (§5.3), passed in because it
-      // lives on the ticket row, not on this event.
       const from = a.fromValue ? ` from ${a.fromValue}` : "";
-      const on = claimedAt ? ` on ${formatDue(claimedAt)}` : "";
-      return `${actor} claimed the ticket${from}${on}`;
+      return `${actor} claimed the ticket${from}`;
     }
     case "STARTED": {
       // toValue holds the expected completion date (ISO); fromValue the prior
       // status (OPEN/REOPENED), which the transition implies — so we omit it.
-      // `startedAt` is the ticket's recorded start day (§5.3), passed in because it
-      // lives on the ticket row, not on this event.
+      // The START DATE is not repeated here — it is the row's own date (§5.3).
       const due = a.toValue ? ` · due by ${formatDue(a.toValue)}` : "";
-      const on = startedAt ? ` on ${formatDue(startedAt)}` : "";
-      return `${actor} started work${on}${due}`;
+      return `${actor} started work${due}`;
     }
     case "UNCLAIMED":
       // Undid a claim — back to the unclaimed open pool (assignee/priority cleared).
@@ -96,6 +102,46 @@ function describe(
   }
 }
 
+/**
+ * The DATE an event happened on, as MIS recorded it (§5.3) — the claim / start /
+ * resolution day THEY picked, not the moment the row was written. One date per line:
+ * the picked day replaces the timestamp rather than sitting beside it.
+ *
+ * Events nobody dates (raised, priority changed, edited, comments) return null and keep
+ * their real timestamp, which for those IS when they happened.
+ */
+function eventDate(
+  a: ActivityRow,
+  dates: TicketDates
+): string | null {
+  switch (a.type) {
+    case "CLAIMED":
+      return dates.claimedAt ?? null;
+    case "STARTED":
+      return dates.startedAt ?? null;
+    case "STATUS_CHANGED":
+      // Only the resolve carries a picked date; other status moves are immediate.
+      return a.toValue === "RESOLVED" ? (dates.resolvedAt ?? null) : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The audit rows behind those picked dates (§12.5). They stay in the database — they
+ * are the record of WHO chose a date and WHEN they entered it — but they are not
+ * rendered: the line they annotate now shows that date itself, so a row saying
+ * "dated the start 07 Aug 2026" directly above "started work … 07 Aug 2026" is pure
+ * duplication. The recording time survives in the date's tooltip.
+ */
+const DATED_TYPES = ["CLAIM_DATED", "START_DATED", "COMPLETION_DATED"];
+
+type TicketDates = {
+  claimedAt?: string | null;
+  startedAt?: string | null;
+  resolvedAt?: string | null;
+};
+
 function initials(name: string | null): string {
   const base = (name ?? "?").trim();
   const parts = base.split(/\s+/);
@@ -112,6 +158,7 @@ export function ActivityTimeline({
   comments,
   startedAt,
   claimedAt,
+  resolvedAt,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
@@ -124,10 +171,13 @@ export function ActivityTimeline({
   startedAt?: string | null;
   /** The ticket's recorded claim date (§5.3), shown on the CLAIMED line. */
   claimedAt?: string | null;
+  /** The recorded resolution date (§5.2), shown on the → Resolved status line. */
+  resolvedAt?: string | null;
 }) {
+  const dates: TicketDates = { claimedAt, startedAt, resolvedAt };
   const items = [
     ...activity
-      .filter((a) => a.type !== "COMMENTED")
+      .filter((a) => a.type !== "COMMENTED" && !DATED_TYPES.includes(a.type))
       .map((a) => ({ kind: "activity" as const, id: a.id, at: toIso(a.createdAt), row: a })),
     ...comments.map((c) => ({
       kind: "comment" as const,
@@ -168,12 +218,43 @@ export function ActivityTimeline({
               className="ml-2.5 size-1.5 shrink-0 rounded-full bg-border"
             />
             <span className="text-text-muted">
-              {describe(item.row, startedAt, claimedAt)}
+              {describe(item.row)}
             </span>
-            <AbsoluteTime date={item.at} className="text-xs text-text-muted" />
+            <EventDate row={item.row} at={item.at} dates={dates} />
           </li>
         )
       )}
     </ol>
+  );
+}
+
+/**
+ * One date per activity line. A picked claim/start/resolution day renders as a plain
+ * date (no clock time — MIS chose a DAY, and the stored instant is just that day's
+ * boundary, so a time would be invented precision). Anything else keeps its real
+ * timestamp. When the two differ, the tooltip carries when it was recorded, so the
+ * backdate is still discoverable without a second date on the line.
+ */
+function EventDate({
+  row,
+  at,
+  dates,
+}: {
+  row: ActivityRow;
+  at: string;
+  dates: TicketDates;
+}) {
+  const picked = eventDate(row, dates);
+  if (!picked) {
+    return <AbsoluteTime date={at} className="text-xs text-text-muted" />;
+  }
+  const moved = istDayKey(picked) !== istDayKey(at);
+  return (
+    <span
+      className="text-xs text-text-muted"
+      title={moved ? `Recorded ${formatRecorded(at)}` : undefined}
+    >
+      <AbsoluteTime date={picked} dateOnly className="text-xs text-text-muted" />
+    </span>
   );
 }

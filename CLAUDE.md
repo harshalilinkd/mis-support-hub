@@ -239,14 +239,31 @@ lifecycle to zero, or invert it. Today always collapses to `now()` in both — w
 is "today" the honest value is the real timestamp, not a rounded-off midnight.
 
 **Where the dates show:** the ISSUE detail header (Claimed / Started beside Created), the
-request build panel ("Claimed 24 Aug · Started 25 Aug"), and both timelines, which read the
-dates off the ticket row and word each line with them — "claimed the ticket on 24 Aug 2026",
-"started work on 25 Aug 2026 · due by 28 Aug 2026".
+request build panel ("Claimed 24 Aug · Started 25 Aug"), and both timelines.
+
+> **ONE date per timeline line, and it is the picked one.** A dated event (claim, start,
+> resolve/complete) shows the day MIS chose **in place of** the row's `created_at`, as a
+> plain date with no clock time — the stored instant is just that day's boundary, so a time
+> would be invented precision. Events nobody dates (raised, priority changed, edited,
+> comments) keep their real timestamp, which for them IS when they happened. The picked date
+> is never also repeated inside the sentence.
+>
+> This replaced a version that showed both — "started work on 07 Aug 2026 · due by 27 Aug
+> 2026" followed by "26 Aug 2026, 12:22 PM" — where the timestamp was the one date the
+> reader did not want, and every dated event also rendered its own audit line above it
+> ("dated the start 07 Aug 2026"), so each event read twice. `eventDate()` in each timeline
+> maps event → picked date; keep the two in step when a new dated event is added.
 
 **A date moved off today is audited (§12.5)** with a row in the SAME batch —
 `CLAIM_DATED` / `START_DATED` / `COMPLETION_DATED`, `from_value` = when it was recorded,
-`to_value` = the date chosen. One type per step serves both modules (each timeline words it
-in its own vocabulary). Picking today writes nothing: there is nothing to audit.
+`to_value` = the date chosen. One type per step serves both modules. Picking today writes
+nothing: there is nothing to audit.
+
+> **These rows are written but NOT rendered.** They are the record of who chose a date and
+> when they entered it, and they stay in the database for exactly that. Showing them was
+> duplication once the line they annotate carries the date itself. The recording time is not
+> lost from the UI — it is the `title` tooltip on any date that differs from the day it was
+> entered. Do not re-add them to the timeline; widen the tooltip instead.
 
 **Set and cleared in the right places.** A claim date is stamped only on the FIRST self-claim
 (`writeAssigned`), so re-claiming your own ticket to re-prioritise never moves the day you

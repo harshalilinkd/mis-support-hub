@@ -236,6 +236,7 @@ export function TicketDetail({
           comments={ticket.comments}
           startedAt={ticket.startedAt ? toIso(ticket.startedAt) : null}
           claimedAt={ticket.claimedAt ? toIso(ticket.claimedAt) : null}
+          resolvedAt={ticket.resolvedAt ? toIso(ticket.resolvedAt) : null}
         />
         <div className="pt-2">
           <CommentComposer ticketId={ticket.id} onDone={onMutate} />
