@@ -201,7 +201,7 @@ export function BulkStartDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle>
             Start {total} ticket{total === 1 ? "" : "s"}
