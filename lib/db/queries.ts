@@ -1050,6 +1050,7 @@ export type TicketAttachmentThumb = {
   url: string;
   filename: string;
   contentType: string;
+  sizeBytes: number;
 };
 
 // Layered projections so each list fetches only what it renders (perf): the
@@ -1095,7 +1096,8 @@ const ticketListSelectLite = {
         'id', ${ticketAttachments.id},
         'url', ${ticketAttachments.url},
         'filename', ${ticketAttachments.filename},
-        'contentType', ${ticketAttachments.contentType}
+        'contentType', ${ticketAttachments.contentType},
+        'sizeBytes', ${ticketAttachments.sizeBytes}
       ) order by ${ticketAttachments.createdAt}),
       '[]'::json
     )

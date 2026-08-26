@@ -2,14 +2,16 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Hand } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Hand } from "lucide-react";
 import { toast } from "sonner";
 
 import { bulkClaimTickets } from "@/lib/actions/tickets";
-import { istDayKey } from "@/lib/format";
+import { istDayKey, isUrl } from "@/lib/format";
 import type { TicketListRow } from "@/lib/db/queries";
 import { cn } from "@/lib/utils";
 import { DEPARTMENT_LABELS, PRIORITIES } from "@/lib/validators/ticket";
+import { AbsoluteTime } from "@/components/absolute-time";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TicketLinkFiles } from "./ticket-link-files";
+import { AttachmentGrid } from "./attachment-grid";
 
 const PRIORITY_LABELS: Record<(typeof PRIORITIES)[number], string> = {
   LOW: "Low",
@@ -171,7 +173,8 @@ export function BulkClaimDialog({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              {/* Ticket detail as submitted by the reporter */}
+              {/* Full ticket detail as submitted by the reporter — everything MIS
+                  needs to decide priority before claiming. */}
               <div className="flex items-center gap-2 text-sm">
                 <span className="font-mono text-xs text-text-muted">
                   {ticket.number}
@@ -180,27 +183,78 @@ export function BulkClaimDialog({
                 <span className="text-text-muted">
                   {DEPARTMENT_LABELS[ticket.department]}
                 </span>
-                <span className="text-text-muted">·</span>
-                <span className="text-text-muted">
-                  {ticket.createdByName ?? "Unknown reporter"}
-                </span>
               </div>
               <h3 className="mt-1 text-lg font-semibold">{ticket.title}</h3>
-              {ticket.description ? (
-                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-foreground">
-                  {ticket.description}
-                </p>
-              ) : (
-                <p className="mt-2 text-sm text-text-muted">
-                  No description provided.
-                </p>
-              )}
-              <div className="mt-3">
-                <TicketLinkFiles
-                  sheetLink={ticket.sheetLink}
-                  attachments={ticket.attachments}
-                />
+
+              {/* Who raised it + when */}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="inline-flex items-center gap-1.5">
+                  <UserAvatar
+                    name={ticket.createdByName}
+                    image={ticket.createdByImage}
+                  />
+                  <span className="font-medium text-foreground">
+                    {ticket.createdByName ?? "Unknown reporter"}
+                  </span>
+                </span>
+                <span className="text-text-muted">
+                  Raised{" "}
+                  <AbsoluteTime
+                    date={ticket.createdAt}
+                    className="font-mono text-foreground"
+                  />
+                </span>
               </div>
+
+              {/* Problem description */}
+              <div className="mt-4">
+                <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Problem
+                </h4>
+                {ticket.description ? (
+                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                    {ticket.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-text-muted">
+                    No description provided.
+                  </p>
+                )}
+              </div>
+
+              {/* Linked sheet / system */}
+              {ticket.sheetLink ? (
+                <div className="mt-4">
+                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    System / sheet
+                  </h4>
+                  {isUrl(ticket.sheetLink) ? (
+                    <a
+                      href={ticket.sheetLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                    >
+                      <ExternalLink className="size-4" />
+                      Open linked sheet
+                    </a>
+                  ) : (
+                    <p className="break-words text-sm text-foreground">
+                      {ticket.sheetLink}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Attachments — full grid with lightbox, not just a thumbnail */}
+              {ticket.attachments.length > 0 ? (
+                <div className="mt-4">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    Attachments
+                  </h4>
+                  <AttachmentGrid attachments={ticket.attachments} />
+                </div>
+              ) : null}
 
               {/* Priority + claim date for THIS ticket — both per ticket (§5.3). */}
               <div className="mt-5 grid gap-4 sm:max-w-lg sm:grid-cols-2">
