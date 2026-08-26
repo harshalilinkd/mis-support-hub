@@ -246,7 +246,15 @@ function EventDate({
 }) {
   const picked = eventDate(row, dates);
   if (!picked) {
-    return <AbsoluteTime date={at} className="text-xs text-text-muted" />;
+    // Date only, never a clock time: the timeline answers "when did this happen" at
+    // day resolution, and a time on some rows but not others (the dated ones can't
+    // have one) made the column read inconsistently. The exact instant stays in the
+    // tooltip for anyone who needs it.
+    return (
+      <span className="text-xs text-text-muted" title={formatRecorded(at)}>
+        <AbsoluteTime date={at} dateOnly className="text-xs text-text-muted" />
+      </span>
+    );
   }
   const moved = istDayKey(picked) !== istDayKey(at);
   return (

@@ -241,6 +241,13 @@ is "today" the honest value is the real timestamp, not a rounded-off midnight.
 **Where the dates show:** the ISSUE detail header (Claimed / Started beside Created), the
 request build panel ("Claimed 24 Aug · Started 25 Aug"), and both timelines.
 
+> **Timeline lines carry a DATE ONLY — never a clock time.** Both timelines answer
+> "when did this happen" at day resolution: a dated event cannot have a meaningful time
+> (its stored instant is just the day's boundary), so showing a time on the undated rows
+> beside it made one column read two different ways. The exact instant is not lost — it
+> is the `title` tooltip on every date. Comment bubbles keep their time, deliberately:
+> several can land on one day and their order within it is the conversation.
+>
 > **ONE date per timeline line, and it is the picked one.** A dated event (claim, start,
 > resolve/complete) shows the day MIS chose **in place of** the row's `created_at`, as a
 > plain date with no clock time — the stored instant is just that day's boundary, so a time
