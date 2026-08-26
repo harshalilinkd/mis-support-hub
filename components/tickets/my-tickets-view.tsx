@@ -136,40 +136,80 @@ export function MyTicketsView({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: status tabs (with counts) + search */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
-          {TICKET_TABS.map((t) => {
-            const active = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
-                  active
-                    ? "bg-accent-soft text-primary"
-                    : "text-foreground hover:bg-surface-muted"
-                )}
-              >
-                {t.label}
-                <span
+      {/* Toolbar: status tabs + facets grouped together on the left (Status is the
+          tab row; the facets narrow within it), search on the right. Reporter only
+          appears on the assigned queue (own-raised tickets are all yours). */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex w-full overflow-x-auto rounded-[var(--radius-input)] border border-border bg-surface p-0.5 [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
+            {TICKET_TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTab(t.key)}
                   className={cn(
-                    "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3",
                     active
-                      ? "bg-primary/15 text-primary"
-                      : "bg-surface-muted text-text-muted"
+                      ? "bg-accent-soft text-primary"
+                      : "text-foreground hover:bg-surface-muted"
                   )}
                 >
-                  {counts[t.key]}
-                </span>
-              </button>
-            );
-          })}
+                  {t.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                      active
+                        ? "bg-primary/15 text-primary"
+                        : "bg-surface-muted text-text-muted"
+                    )}
+                  >
+                    {counts[t.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <FacetSelect
+              label="Dept"
+              value={dept}
+              onValueChange={setDept}
+              options={DEPARTMENTS.map((d) => ({
+                value: d,
+                label: DEPARTMENT_LABELS[d],
+              }))}
+            />
+            <FacetSelect
+              label="Priority"
+              value={priority}
+              onValueChange={setPriority}
+              options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
+            />
+            {showReporterFacet ? (
+              <FacetSelect
+                label="Reporter"
+                value={reporter}
+                onValueChange={setReporter}
+                options={reporterOptions}
+              />
+            ) : null}
+            {hasFacets ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="col-span-3 justify-self-start sm:col-auto"
+                onClick={clearFacets}
+              >
+                <X className="size-4" />
+                Clear
+              </Button>
+            ) : null}
+          </div>
         </div>
-        <div className="relative sm:w-64">
+        <div className="relative lg:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
           <Input
             value={query}
@@ -179,45 +219,6 @@ export function MyTicketsView({
             aria-label="Search my tickets"
           />
         </div>
-      </div>
-
-      {/* Facets — Status is the tab row above; these narrow within it. Reporter
-          only appears on the assigned queue (own-raised tickets are all yours). */}
-      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <FacetSelect
-          label="Dept"
-          value={dept}
-          onValueChange={setDept}
-          options={DEPARTMENTS.map((d) => ({
-            value: d,
-            label: DEPARTMENT_LABELS[d],
-          }))}
-        />
-        <FacetSelect
-          label="Priority"
-          value={priority}
-          onValueChange={setPriority}
-          options={PRIORITIES.map((p) => ({ value: p, label: humanizeEnum(p) }))}
-        />
-        {showReporterFacet ? (
-          <FacetSelect
-            label="Reporter"
-            value={reporter}
-            onValueChange={setReporter}
-            options={reporterOptions}
-          />
-        ) : null}
-        {hasFacets ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="col-span-3 justify-self-start sm:col-auto"
-            onClick={clearFacets}
-          >
-            <X className="size-4" />
-            Clear
-          </Button>
-        ) : null}
       </div>
 
       {filtered.length === 0 ? (
