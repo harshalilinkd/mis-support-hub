@@ -51,8 +51,10 @@ export function MyTicketsView({
   // (Open → In Progress → Resolved) so the employee sees their tickets, not an empty tab.
   const [tab, setTab] = useState<TicketTabKey>(() => {
     if (initialTab) return initialTab;
-    const firstNonEmpty = TICKET_TABS.find((t) =>
-      tickets.some((x) => matchesTicketTab(t.key, x))
+    // Skip "all" here so the auto-landing still picks the first non-empty status
+    // tab (Open → …) rather than always defaulting to All.
+    const firstNonEmpty = TICKET_TABS.find(
+      (t) => t.key !== "all" && tickets.some((x) => matchesTicketTab(t.key, x))
     );
     return firstNonEmpty?.key ?? "open";
   });

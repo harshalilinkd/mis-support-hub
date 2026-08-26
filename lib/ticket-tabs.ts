@@ -7,6 +7,7 @@ import type { Status } from "@/lib/db/schema";
  * turn it into an uncallable client reference.
  *
  * Issue lifecycle tabs:
+ *  - All         → every ticket, any status
  *  - Open        → raised, not claimed yet (OPEN, unassigned)
  *  - Claimed     → an MIS member took it but hasn't started (OPEN, assigned)
  *  - In Progress → started / being worked on (IN_PROGRESS, REOPENED)
@@ -19,6 +20,7 @@ import type { Status } from "@/lib/db/schema";
  * `matchesTicketTab`, which sees the assignee.
  */
 export const TICKET_TABS = [
+  { key: "all", label: "All" },
   { key: "open", label: "Open" },
   { key: "claimed", label: "Claimed" },
   { key: "in_progress", label: "In Progress" },
@@ -45,6 +47,8 @@ export function matchesTicketTab(
   row: { status: Status; assignedToId: string | null }
 ): boolean {
   switch (tab) {
+    case "all":
+      return true;
     case "open":
       return row.status === "OPEN" && !row.assignedToId;
     case "claimed":

@@ -9,7 +9,7 @@ import { MyWorkView } from "@/components/tickets/my-work-view";
 
 export const metadata: Metadata = { title: "My Tickets" };
 
-const TAB_KEYS = ["open", "claimed", "in_progress", "resolved", "closed"] as const;
+const TAB_KEYS = ["all", "open", "claimed", "in_progress", "resolved", "closed"] as const;
 
 export default async function MyTicketsPage({
   searchParams,

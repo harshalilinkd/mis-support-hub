@@ -1292,6 +1292,7 @@ export async function countTicketsByTab(
   // group-by-status — count each tab's bucket explicitly.
   const [row] = await db
     .select({
+      all: sql<number>`count(*)`.mapWith(Number),
       open: sql<number>`count(*) filter (where ${tickets.status} = 'OPEN' and ${tickets.assignedTo} is null)`.mapWith(
         Number
       ),
@@ -1312,6 +1313,7 @@ export async function countTicketsByTab(
     .where(conds.length ? and(...conds) : undefined);
 
   const result: Record<TicketTabKey, number> = {
+    all: row?.all ?? 0,
     open: row?.open ?? 0,
     claimed: row?.claimed ?? 0,
     in_progress: row?.in_progress ?? 0,
