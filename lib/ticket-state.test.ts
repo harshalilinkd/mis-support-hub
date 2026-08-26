@@ -563,3 +563,27 @@ test("a malformed or impossible start date is refused, never coerced", () => {
     );
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * The claim date reuses startDateFor (§5.3) — it is the earliest bound of the
+ * lifecycle, so claim ≤ start ≤ completion can never invert on the same day.
+ * ------------------------------------------------------------------ */
+
+test("claim ≤ start ≤ completion holds when all three are the same past day", () => {
+  const claimed = startDateFor("2026-08-15", NOW);
+  const started = startDateFor("2026-08-15", NOW);
+  const done = completionDateFor("2026-08-15", NOW);
+  assert.equal(claimed.ok && started.ok && done.ok, true);
+  if (claimed.ok && started.ok && done.ok) {
+    assert.equal(claimed.at.getTime() <= started.at.getTime(), true);
+    assert.equal(started.at.getTime() < done.at.getTime(), true);
+  }
+});
+
+test("a claim dated to a past day is flagged for the audit row; today is not", () => {
+  // `dated` only exists on the ok branch, so narrow before reading it.
+  const past = startDateFor("2026-08-10", NOW);
+  const today = startDateFor("2026-08-17", NOW);
+  assert.equal(past.ok && past.dated, true);
+  assert.equal(today.ok && today.dated, false);
+});

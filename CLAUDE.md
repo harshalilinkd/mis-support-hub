@@ -70,13 +70,13 @@ Enums:
 - `department`: LINKD | LD_SILK_MILLS | VHAGAR | LD_COTTON_MILLS
 - `status`: OPEN | IN_PROGRESS | RESOLVED | CLOSED | REOPENED
 - `priority`: LOW | MEDIUM | HIGH | URGENT
-- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM) | **COMPLETION_DATED** (§5.2 — an issue resolved / a build marked complete, dated to a day other than today; from_value = when it was recorded, to_value = the date recorded) | **START_DATED** (§5.3 — work started, dated to a day other than today; same from/to shape)
+- `ticket_activity.type` (stored as TEXT, TS-constrained — new kinds need no migration): CREATED | STATUS_CHANGED | ASSIGNED | CLAIMED | UNCLAIMED | STARTED | PRIORITY_CHANGED | COMMENTED | REOPENED | EDITED | MOVED (§12.9) | **AUTO_CLOSED** (§5, actor = SYSTEM) | **COMPLETION_DATED** (§5.2 — an issue resolved / a build marked complete, dated to a day other than today; from_value = when it was recorded, to_value = the date recorded) | **START_DATED** / **CLAIM_DATED** (§5.3 — work started / a ticket claimed, dated to a day other than today; same from/to shape, both modules)
 - `notifications.type` (TEXT): NEW_TICKET | TICKET_RESOLVED | TICKET_ASSIGNED | TICKET_CLAIMED | TICKET_REOPENED | TICKET_CLOSED | TICKET_UPDATED | NEW_COMMENT | …REQUEST_* (§12.6) | ACCESS_REQUESTED (→ admins) | ACCESS_APPROVED (→ the new user) | **TICKET_AUTO_CLOSED** (§5 → the reporter)
 - `access_request_status`: PENDING | APPROVED | REJECTED (§7)
 
 Tables:
 - `users`: id (uuid), name, email (unique), email_verified, image, **password_hash (nullable — bcrypt; null = Google-only)**, role (default USER), **department (nullable)**, is_active (bool, default true), created_at. Auth.js adapter also owns `accounts`, `sessions`, `verification_tokens`.
-- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **auto_closed_at (timestamp, nullable — set when the SYSTEM auto-closes it (§5); marks the close as reopenable, vs a permanent manual confirm)**, **started_at (timestamp, nullable — the DAY work actually began, §5.3; set by startTask from a picked date, cleared by a release)**, **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
+- `tickets`: id (uuid), number (text, unique, e.g. "MIS-001" — zero-padded to 3 digits via `lpad(nextval('ticket_seq'), 3, '0')`, never a row count), title, description, department (enum), sheet_link (nullable), status (enum, default OPEN), **priority (enum, NULLABLE — a raised ticket has NO priority; MIS sets it on claim; null renders "Unset")**, created_by (fk users.id), assigned_to (fk, nullable), resolved_at (nullable), resolved_by (fk, nullable), **auto_closed_at (timestamp, nullable — set when the SYSTEM auto-closes it (§5); marks the close as reopenable, vs a permanent manual confirm)**, **claimed_at / started_at (timestamps, nullable — the DAYS the ticket was claimed and work began, §5.3; picked by MIS, cleared by a release)**, **deadline (timestamp, nullable — estimated resolution date set on claim)**, **deleted_at / deleted_by (nullable — soft delete / recycle bin)**, created_at, updated_at (`$onUpdate`). Indexes on status, assigned_to, created_by.
 - `ticket_comments`: id, ticket_id (fk, cascade), author_id (fk), body, created_at. Index on ticket_id.
 - `ticket_attachments`: id, ticket_id (fk, cascade), comment_id (fk, nullable), url (Vercel Blob), filename, content_type, size_bytes, uploaded_by (fk), created_at.
 - `ticket_activity`: id, ticket_id (fk, cascade), actor_id (fk), type (see enum above), from_value (nullable), to_value (nullable), created_at. **Audit trail — write a row on EVERY mutation.** Index on ticket_id.
@@ -212,38 +212,58 @@ silently skipped by the others. Both `resolvedOn` and `completedOn` stay **OPTIO
 schemas and stamp `now()` when absent, so any caller that legitimately has no date — the
 auto-close cron included — is unaffected.
 
-### 5.3 Start date — "Start task" records the DAY work actually began
-`StartTaskDialog` asks for **two** dates: the **start date** (`tickets.started_at`) and the
-expected completion date (`tickets.deadline`). The start date defaults to today and, like
-§5.2's completion date, accepts **ANY date, past or future** — MIS often begins a task and
-only records it a day or two later, and the ticket should say when the work really started.
-`startDateFor(dayKey, now)` in `lib/ticket-state.ts` (pure, unit-tested, shared by the action
-and the dialog) refuses only a string that isn't a calendar day. The input carries no
-`min`/`max`.
+### 5.3 MIS picks the lifecycle dates — claim, start, completion (BOTH modules)
+Every step where MIS records that something happened asks **which day it happened**, in
+both pipelines, because the work and the recording of it routinely fall on different days.
+The dates are the record; the button-press time is not.
 
-**It takes the FIRST instant of the IST day, not the last** — the opposite end from
-`completionDateFor` (§5.2), and deliberately so. A start and a finish are the two bounds of
-one interval: earliest-for-start + latest-for-finish keeps a same-day start→resolve
-**positive** instead of collapsing to zero, and can never go negative. Today still collapses
-to `now()` in both, because when the answer is "today" the honest value is the real timestamp.
-`istDayStart` mirrors `istDayEnd`, round-trip guard included.
+| Step | ISSUE | REQUEST | Stored in | Dialog |
+|---|---|---|---|---|
+| Claim | `claimTicket({claimedOn})` | `claimRequest({claimedOn})` | `tickets.claimed_at` / `request_details.claimed_at` | ClaimDialog / RequestBuildPanel |
+| Start | `startTask({startedOn})` | `startWork({startedOn})` | `tickets.started_at` / `request_details.started_at` | StartTaskDialog / StartWorkDialog |
+| Finish | `updateStatus(id,"RESOLVED",resolvedOn)` | `markComplete({completedOn})` | `tickets.resolved_at` / `request_details.completed_at` | ResolveDialog / CompleteDialog |
 
-**Where it shows:** the ticket detail header (a "Started" field beside Created), and the
-timeline's STARTED line — "Mahesh started work on 24 Aug 2026 · due by 28 Aug 2026". A start
-dated to a day other than today ALSO writes a `START_DATED` activity row (§12.5), exactly as
-§5.2 does for completions: `from_value` = when it was recorded, `to_value` = the date chosen.
+Every one of them **defaults to today** and accepts **ANY date, past or future** — the §5.2
+decision, applied to the whole lifecycle. The pickers carry no `min`/`max`, and the server
+refuses only a string that isn't a calendar day.
 
-**Set, and cleared, in the right places.** The combined **claim & start** shortcut (board
-drag / status dropdown on an unassigned ticket) has no date input — a drag can't supply one —
-so it stamps `now()`. **Release clears `started_at`** along with the assignee, priority and
-deadline: a release undoes the start, and leaving the old date behind would date a later
-re-start to the abandoned attempt. `startedOn` stays OPTIONAL in `startTaskSchema` (absent ⇒
-now), so no other caller is affected.
+**Two shared predicates, both unit-tested** (`lib/ticket-state.ts`), used by every action AND
+every dialog so the UI can never offer a date the server rejects:
+- `startDateFor(day, now)` — claims and starts. Takes the **FIRST** instant of the IST day.
+- `completionDateFor(day, now)` — resolutions and completions. Takes the **LAST** instant.
 
-> The timeline reads `started_at` from the ticket row, not from the STARTED event, so a
-> ticket that was started → released → re-started shows the CURRENT start date on the older
-> STARTED line too. The `START_DATED` rows keep the exact per-event trail. Accepted:
-> per-event storage would mean encoding two dates in one activity row.
+**Why opposite ends of the day.** Claim → start → finish are bounds of one interval, so the
+earliest moment for the openers and the latest for the closer keeps `claim ≤ start < finish`
+true even when all three land on the same day. Same-end-for-all would collapse a same-day
+lifecycle to zero, or invert it. Today always collapses to `now()` in both — when the answer
+is "today" the honest value is the real timestamp, not a rounded-off midnight.
+
+**Where the dates show:** the ISSUE detail header (Claimed / Started beside Created), the
+request build panel ("Claimed 24 Aug · Started 25 Aug"), and both timelines, which read the
+dates off the ticket row and word each line with them — "claimed the ticket on 24 Aug 2026",
+"started work on 25 Aug 2026 · due by 28 Aug 2026".
+
+**A date moved off today is audited (§12.5)** with a row in the SAME batch —
+`CLAIM_DATED` / `START_DATED` / `COMPLETION_DATED`, `from_value` = when it was recorded,
+`to_value` = the date chosen. One type per step serves both modules (each timeline words it
+in its own vocabulary). Picking today writes nothing: there is nothing to audit.
+
+**Set and cleared in the right places.** A claim date is stamped only on the FIRST self-claim
+(`writeAssigned`), so re-claiming your own ticket to re-prioritise never moves the day you
+took it on. The combined **claim & start** shortcut collects both dates; a **board drag** has
+no dialog, so it stamps `now()`. **Release clears `claimed_at` and `started_at`** (both
+modules) along with the assignee, priority and deadline — a release undoes the claim, and a
+stale date would attach a later re-claim to the abandoned attempt. **Bulk claim takes ONE
+date for the whole batch** — it is one act of taking a pile of tickets on, on one day.
+
+Every `*On` field stays **OPTIONAL** in its schema and stamps `now()` when absent, so callers
+with no date (board drag, auto-close cron) are unaffected.
+
+> **Consequence, stated plainly:** `completed_at − claimed_at` (Team performance, §10) and
+> `resolved_at − created_at` are now computed from dates MIS chooses by hand. That is the
+> point — they were previously computed from when someone got round to clicking — but it does
+> mean a careless pick moves a team's numbers, and nothing bounds it. The audit rows are the
+> check on that.
 
 ## 6. Roles & permissions
 | Action | USER | MIS_STAFF | MIS_ADMIN |
@@ -496,7 +516,8 @@ Numbers are never computed from a row count.
   md_decision (enum, default PENDING), **md_decision_recorded_by**
   (fk users.id, nullable — the MIS_ADMIN who ticked on the MD's behalf; defaults to the
   acting admin), md_decided_at (nullable), md_remark (text, nullable — **OPTIONAL even
-  on reject**), claimed_by (fk users.id, nullable), claimed_at (nullable), **deadline
+  on reject**), claimed_by (fk users.id, nullable), claimed_at (nullable), **started_at (nullable —
+  the day the BUILD began, §5.3; the request twin of tickets.started_at)**, **deadline
   (date, nullable)**, revision_round (int default 0), completed_at (nullable),
   accepted_at (nullable). **There is NO `md_decided_by` column** — the recorder IS the
   accountability record. **There is also NO `urgency` / `target_date`**: a request
