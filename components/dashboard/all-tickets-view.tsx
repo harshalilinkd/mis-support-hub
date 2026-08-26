@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Hand, Play } from "lucide-react";
+import { CheckCircle2, Hand, Play } from "lucide-react";
 
 import type { AssignableUser, TicketListRow } from "@/lib/db/queries";
 import type { SessionUser } from "@/lib/session";
@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TabScroller } from "@/components/shell/tab-scroller";
 import { BulkClaimDialog } from "@/components/tickets/bulk-claim-dialog";
+import { BulkResolveDialog } from "@/components/tickets/bulk-resolve-dialog";
 import { BulkStartDialog } from "@/components/tickets/bulk-start-dialog";
 import { Button } from "@/components/ui/button";
 import { TableToolbar } from "./table-toolbar";
@@ -43,6 +44,7 @@ export function AllTicketsView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
 
   const counts = useMemo(() => {
     const c = {} as Record<TicketTabKey, number>;
@@ -68,9 +70,9 @@ export function AllTicketsView({
     for (const t of filtered) {
       const done = t.status === "RESOLVED" || t.status === "CLOSED";
       const mine = t.assignedToId === currentUser.id;
-      const working =
-        mine && (t.status === "IN_PROGRESS" || t.status === "REOPENED");
-      if (!done && !working && (!t.assignedToId || mine)) ids.add(t.id);
+      // Mine-and-in-progress used to be excluded (nothing to claim there). It is now
+      // selectable because bulk RESOLVE acts on exactly those rows.
+      if (!done && (!t.assignedToId || mine)) ids.add(t.id);
     }
     return ids;
   }, [filtered, currentUser.id]);
@@ -92,6 +94,23 @@ export function AllTicketsView({
   // Rows the selection can START: MY claim, not yet started (§5/§6 — startTask is
   // assignee-locked). Bulk start acts on exactly these, so the button never sends the
   // server something it must refuse.
+  // Rows the selection can RESOLVE: my claim, not yet resolved, and only for an admin
+  // (§6 — canResolveIssue is admin + assignee). Mirrors the server exactly, so the
+  // button never offers what the action must refuse.
+  const resolvableSelected = useMemo(
+    () =>
+      currentUser.role === "MIS_ADMIN"
+        ? selectedTickets.filter(
+            (t) =>
+              t.assignedToId === currentUser.id &&
+              (t.status === "OPEN" ||
+                t.status === "IN_PROGRESS" ||
+                t.status === "REOPENED")
+          )
+        : [],
+    [selectedTickets, currentUser.id, currentUser.role]
+  );
+
   const startableSelected = useMemo(
     () =>
       selectedTickets.filter(
@@ -187,6 +206,16 @@ export function AllTicketsView({
           {/* Start is offered only for the tickets in the selection that are MINE and
               unstarted — the count says so, rather than the button silently doing less
               than it says. Hidden when none qualify. */}
+          {resolvableSelected.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setResolveOpen(true)}
+            >
+              <CheckCircle2 className="size-4" /> Resolve selected (
+              {resolvableSelected.length})
+            </Button>
+          ) : null}
           {startableSelected.length > 0 ? (
             <Button
               size="sm"
@@ -214,6 +243,16 @@ export function AllTicketsView({
         selectableIds={selectableIds}
         onToggleSelect={toggleSelect}
         onToggleSelectAll={toggleSelectAll}
+      />
+
+      <BulkResolveDialog
+        tickets={resolvableSelected}
+        open={resolveOpen}
+        onOpenChange={setResolveOpen}
+        onDone={() => {
+          setResolveOpen(false);
+          setSelectedIds(new Set());
+        }}
       />
 
       <BulkStartDialog

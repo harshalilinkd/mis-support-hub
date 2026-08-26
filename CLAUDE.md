@@ -286,6 +286,15 @@ caught up on, where each ticket was genuinely taken on a different day, and one 
 field made the later pick silently overwrite the earlier one. A date the user actively
 clears blocks the submit and jumps the wizard to that ticket rather than defaulting it.
 
+**Bulk resolve (`bulkResolveTickets`)** completes the set. Same wizard shape, keyed off
+the START date instead of the claim date: per ticket it asks **"was it completed on the
+day work started?"** — *Same day* fills `resolved_at` from THAT ticket's `started_at`,
+*Different day* opens a free field, and a ticket resolved straight from Open (never
+started) says so and asks outright. `resolveOne` is extracted from `updateStatus` and
+shared, so the single "Mark resolved" and the bulk one apply the same §5/§6 guards —
+including `canResolveIssue`, which makes bulk resolve **admin-only in effect**: both
+lists offer the button only to an MIS_ADMIN, and only for their own unresolved claims.
+
 **Bulk start (`bulkStartTasks`) lives on BOTH issue lists** — All Issues and, more
 usefully, **Assigned to Me** (whose Claimed tab IS your unstarted queue, so that is where
 the multi-select belongs; All Issues mixes in other people's claims, which are not

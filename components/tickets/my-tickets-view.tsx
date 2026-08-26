@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, MessageSquare, Play, Search, X } from "lucide-react";
+import { CheckCircle2, Inbox, MessageSquare, Play, Search, X } from "lucide-react";
 
 import { AbsoluteTime } from "@/components/absolute-time";
 import { EmptyState } from "@/components/shell/empty-state";
@@ -35,6 +35,7 @@ import { PriorityControl, StatusControl } from "@/components/dashboard/inline-co
 import { PriorityChip, StatusChip, statusColor } from "./chips";
 import type { TicketCardData } from "./ticket-card";
 import { TicketLinkFiles } from "./ticket-link-files";
+import { BulkResolveDialog } from "./bulk-resolve-dialog";
 import { BulkStartDialog } from "./bulk-start-dialog";
 import { TicketSheet } from "./ticket-sheet";
 
@@ -68,6 +69,7 @@ export function MyTicketsView({
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [startOpen, setStartOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
 
   const showAssignee = variant === "raised";
   // MIS staff working their own queue get inline status/priority controls (same
@@ -142,19 +144,50 @@ export function MyTicketsView({
     );
   }, [filtered, canControl]);
 
+  // Rows this queue can bulk-RESOLVE: admin only (§6 — canResolveIssue is admin +
+  // assignee, and on this view every row is already the viewer's own claim).
+  const resolvableIds = useMemo(() => {
+    if (!canControl || currentUser.role !== "MIS_ADMIN") return new Set<string>();
+    return new Set(
+      filtered
+        .filter(
+          (t) =>
+            t.status === "OPEN" ||
+            t.status === "IN_PROGRESS" ||
+            t.status === "REOPENED"
+        )
+        .map((t) => t.id)
+    );
+  }, [filtered, canControl, currentUser.role]);
+
+  // A checkbox appears if EITHER bulk action can act on the row; each action then
+  // takes its own subset, so a button never promises more than it does.
+  const selectableIds = useMemo(
+    () => new Set([...startableIds, ...resolvableIds]),
+    [startableIds, resolvableIds]
+  );
+
   const selectedTickets = useMemo(
     () => filtered.filter((t) => selectedIds.has(t.id)),
     [filtered, selectedIds]
+  );
+  const startableSelected = useMemo(
+    () => selectedTickets.filter((t) => startableIds.has(t.id)),
+    [selectedTickets, startableIds]
+  );
+  const resolvableSelected = useMemo(
+    () => selectedTickets.filter((t) => resolvableIds.has(t.id)),
+    [selectedTickets, resolvableIds]
   );
 
   // Drop any id that stops being startable when a tab/facet/refresh changes the rows,
   // so the "N selected" count can never lie or dead-end (same rule as All Issues).
   useEffect(() => {
     setSelectedIds((prev) => {
-      const next = new Set([...prev].filter((id) => startableIds.has(id)));
+      const next = new Set([...prev].filter((id) => selectableIds.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [startableIds]);
+  }, [selectableIds]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -167,9 +200,9 @@ export function MyTicketsView({
 
   function toggleSelectAll() {
     const allSelected =
-      startableIds.size > 0 &&
-      [...startableIds].every((id) => selectedIds.has(id));
-    setSelectedIds(allSelected ? new Set() : new Set(startableIds));
+      selectableIds.size > 0 &&
+      [...selectableIds].every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
   }
 
   const open = (number: string) => setSelected(number);
@@ -276,9 +309,22 @@ export function MyTicketsView({
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-primary/30 bg-accent-soft px-3 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
-          <Button size="sm" onClick={() => setStartOpen(true)}>
-            <Play className="size-4" /> Start selected
-          </Button>
+          {startableSelected.length > 0 ? (
+            <Button size="sm" onClick={() => setStartOpen(true)}>
+              <Play className="size-4" /> Start selected (
+              {startableSelected.length})
+            </Button>
+          ) : null}
+          {resolvableSelected.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setResolveOpen(true)}
+            >
+              <CheckCircle2 className="size-4" /> Resolve selected (
+              {resolvableSelected.length})
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"
@@ -404,11 +450,11 @@ export function MyTicketsView({
                     <TableHead className="w-9 pl-4">
                       <Checkbox
                         checked={
-                          startableIds.size > 0 &&
-                          [...startableIds].every((id) => selectedIds.has(id))
+                          selectableIds.size > 0 &&
+                          [...selectableIds].every((id) => selectedIds.has(id))
                         }
                         onCheckedChange={toggleSelectAll}
-                        disabled={startableIds.size === 0}
+                        disabled={selectableIds.size === 0}
                         aria-label="Select all startable tickets"
                       />
                     </TableHead>
@@ -440,7 +486,7 @@ export function MyTicketsView({
                         // The row opens the ticket; the checkbox must not.
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {startableIds.has(t.id) ? (
+                        {selectableIds.has(t.id) ? (
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
@@ -530,8 +576,18 @@ export function MyTicketsView({
         </>
       )}
 
+      <BulkResolveDialog
+        tickets={resolvableSelected}
+        open={resolveOpen}
+        onOpenChange={setResolveOpen}
+        onDone={() => {
+          setResolveOpen(false);
+          setSelectedIds(new Set());
+        }}
+      />
+
       <BulkStartDialog
-        tickets={selectedTickets}
+        tickets={startableSelected}
         open={startOpen}
         onOpenChange={setStartOpen}
         onDone={() => {

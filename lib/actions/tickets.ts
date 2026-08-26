@@ -6,7 +6,7 @@ import type { ZodError } from "zod";
 import { STAFF_ROLES } from "@/lib/authz";
 import * as q from "@/lib/db/queries";
 import type { TicketDetail } from "@/lib/db/queries";
-import type { Priority, Status } from "@/lib/db/schema";
+import type { Priority, Status, TicketType } from "@/lib/db/schema";
 import {
   sendClaimNotification,
   sendClosureNotification,
@@ -29,6 +29,7 @@ import {
 import {
   bulkClaimSchema,
   bulkDeleteSchema,
+  bulkResolveSchema,
   bulkStartSchema,
   claimTicketSchema,
   createTicketSchema,
@@ -134,6 +135,149 @@ export async function createTicket(
 }
 
 /**
+ * Core resolve logic, shared by updateStatus and bulkResolveTickets. The caller has
+ * already loaded the ticket and applied the checks common to EVERY status change (type,
+ * ownership lock); everything specific to resolving lives here, so the single and bulk
+ * paths cannot grow separate copies of it (same split as claimOne / startOne).
+ *
+ * Does NOT notify or revalidate — the caller does that, once, for a batch.
+ */
+async function resolveOne(
+  user: SessionUser,
+  ticket: {
+    id: string;
+    number: string;
+    type: TicketType;
+    status: Status;
+    assignedTo: string | null;
+  },
+  resolvedOn?: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (ticket.status === "RESOLVED") {
+    return { ok: false, error: `${ticket.number} is already resolved.` };
+  }
+  if (!canTransition(ticket.status, "RESOLVED")) {
+    return {
+      ok: false,
+      error: `Can't resolve ${ticket.number} from ${ticket.status}.`,
+    };
+  }
+  if (!ticket.assignedTo) {
+    return {
+      ok: false,
+      error: `Claim ${ticket.number} before marking it resolved.`,
+    };
+  }
+  // ADMIN-ONLY, and only your own claimed ticket (§6).
+  if (!canResolveIssue(user.role, ticket.assignedTo === user.id)) {
+    return {
+      ok: false,
+      error:
+        ticket.assignedTo === user.id
+          ? `Only an MIS admin can mark ${ticket.number} resolved.`
+          : `${ticket.number} is claimed by someone else — only they can resolve it.`,
+    };
+  }
+
+  // Stamps resolved_at — the DAY the work finished, which may be any date (§5.2).
+  // Absent means now.
+  const now = new Date();
+  let at = now;
+  let datedFrom: Date | undefined;
+  if (resolvedOn) {
+    const picked = completionDateFor(resolvedOn, now);
+    if (!picked.ok) return { ok: false, error: picked.error };
+    at = picked.at;
+    // Only a date moved off today is audited — picking today is just "resolved now".
+    if (picked.dated) datedFrom = now;
+  }
+
+  await q.setTicketStatus({
+    ticketId: ticket.id,
+    actorId: user.id,
+    type: ticket.type,
+    from: ticket.status,
+    to: "RESOLVED",
+    resolvedAt: at,
+    resolvedBy: user.id,
+    datedFrom,
+  });
+  return { ok: true };
+}
+
+/**
+ * Resolve several of MY claimed tickets at once (§5.2) — the third bulk action beside
+ * claim and start, with the same contract: each ticket carries its OWN resolution date,
+ * one failure never aborts the rest, and the caller is told exactly what did not land.
+ *
+ * Admin-only in effect, because resolveOne applies canResolveIssue per ticket.
+ */
+export async function bulkResolveTickets(input: {
+  items: { ticketId: string; resolvedOn?: string }[];
+}): Promise<
+  ActionResult<{
+    resolved: number;
+    failed: { ticketId: string; error: string }[];
+  }>
+> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (!STAFF_ROLES.includes(user.role)) {
+    return fail("Only MIS staff can change a ticket's status.");
+  }
+
+  const parsed = bulkResolveSchema.safeParse(input);
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const resolved: { id: string; number: string }[] = [];
+  const failed: { ticketId: string; error: string }[] = [];
+  for (const item of parsed.data.items) {
+    // Best-effort per ticket: neon-http has no cross-statement transaction (§2), so
+    // partial success is the only honest contract — report it rather than pretend.
+    try {
+      const ticket = await q.getTicketById(item.ticketId);
+      if (!ticket) {
+        failed.push({ ticketId: item.ticketId, error: "Ticket not found." });
+        continue;
+      }
+      // §12: a REQUEST never flows through the ISSUE actions.
+      if (ticket.type !== "ISSUE") {
+        failed.push({
+          ticketId: item.ticketId,
+          error: `${ticket.number} is a system request — use the request actions.`,
+        });
+        continue;
+      }
+      // The ownership lock that updateStatus applies to every status change (§6).
+      if (ticket.assignedTo && ticket.assignedTo !== user.id) {
+        failed.push({
+          ticketId: item.ticketId,
+          error: `${ticket.number} is claimed by someone else — only they can update it.`,
+        });
+        continue;
+      }
+      const res = await resolveOne(user, ticket, item.resolvedOn);
+      if (res.ok) resolved.push({ id: ticket.id, number: ticket.number });
+      else failed.push({ ticketId: item.ticketId, error: res.error });
+    } catch (e) {
+      console.error("[bulkResolveTickets] failed to resolve", item.ticketId, e);
+      failed.push({
+        ticketId: item.ticketId,
+        error: "Something went wrong resolving this ticket.",
+      });
+    }
+  }
+
+  // Each reporter is asked to verify their fix (§8) — best-effort, one per ticket.
+  for (const t of resolved) {
+    await sendResolutionNotification(t.id);
+  }
+
+  if (resolved.length > 0) revalidateTicketRoutes();
+  return ok({ resolved: resolved.length, failed });
+}
+
+/**
  * Change status — MIS only, enforcing the §5 state machine.
  *
  * `resolvedOn` (RESOLVED only) is the IST calendar day the work actually finished, for
@@ -182,38 +326,19 @@ export async function updateStatus(
   if (!canTransition(from, to)) {
     return fail(`Can't change status from ${from} to ${to}.`);
   }
-  if (to === "RESOLVED" && !ticket.assignedTo) {
-    return fail("Assign the ticket before marking it resolved.");
-  }
-  // Resolving is ADMIN-ONLY, and only on your own claimed ticket (§6). The ownership
-  // lock above already refused someone else's ticket, so this adds the role half.
-  if (
-    to === "RESOLVED" &&
-    !canResolveIssue(user.role, ticket.assignedTo === user.id)
-  ) {
-    return fail(`Only an MIS admin can mark ${ticket.number} resolved.`);
-  }
   // A resolution date is meaningless on any other transition — refuse rather than
   // silently drop it, so a caller that passes one wrongly hears about it.
   if (parsed.data.resolvedOn && to !== "RESOLVED") {
     return fail("A resolution date only applies when marking a ticket resolved.");
   }
-
-  // Resolving stamps resolved_at — the DAY the work finished, which may be any date
-  // (§5.2). Absent ⇒ now.
-  const now = new Date();
-  let resolution: { resolvedAt: Date; resolvedBy: string } | undefined;
-  let datedFrom: Date | undefined;
+  // Resolving has its own guards (admin + assignee) and its own date — ONE helper,
+  // shared with bulkResolveTickets, so the single and bulk paths cannot drift.
   if (to === "RESOLVED") {
-    let at = now;
-    if (parsed.data.resolvedOn) {
-      const picked = completionDateFor(parsed.data.resolvedOn, now);
-      if (!picked.ok) return fail(picked.error);
-      at = picked.at;
-      // Only a date moved off today is audited — picking today is just "resolved now".
-      if (picked.dated) datedFrom = now;
-    }
-    resolution = { resolvedAt: at, resolvedBy: user.id };
+    const res = await resolveOne(user, ticket, parsed.data.resolvedOn);
+    if (!res.ok) return fail(res.error);
+    await sendResolutionNotification(ticket.id);
+    revalidateTicketRoutes(ticket.number);
+    return ok(undefined);
   }
 
   await q.setTicketStatus({
@@ -222,12 +347,11 @@ export async function updateStatus(
     type: ticket.type,
     from,
     to,
-    ...(resolution ?? {}),
-    datedFrom,
   });
 
-  // Notify the reporter when resolved/closed (§8; best-effort, never throws).
-  if (to === "RESOLVED" || to === "CLOSED") {
+  // RESOLVED returned above, so the only notifying transition left here is the
+  // reporter's confirmation → CLOSED (§8; best-effort, never throws).
+  if (to === "CLOSED") {
     await sendResolutionNotification(ticket.id);
   }
 

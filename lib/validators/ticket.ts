@@ -164,6 +164,24 @@ export const startTaskSchema = z.object({
 });
 export type StartTaskInput = z.infer<typeof startTaskSchema>;
 
+/** Resolve several of my claimed tickets in one go — each carries its OWN resolution
+ *  date (§5.2). Admin-only in effect: the action applies canResolveIssue per ticket. */
+export const bulkResolveSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        ticketId: z.string().uuid(),
+        resolvedOn: z
+          .string()
+          .trim()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid resolution date")
+          .optional(),
+      })
+    )
+    .min(1, "Select at least one ticket"),
+});
+export type BulkResolveInput = z.infer<typeof bulkResolveSchema>;
+
 /** Start several claimed tickets in one go — each carries its OWN start date and
  *  deadline (§5.3). No batch-wide date: a backlog being started is precisely where
  *  the days differ per ticket. */

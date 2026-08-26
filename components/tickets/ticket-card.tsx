@@ -18,6 +18,8 @@ export type TicketCardData = {
   createdAt: string | Date;
   /** The day MIS took it on (§5.3) — powers "same day as claimed" in bulk start. */
   claimedAt?: string | Date | null;
+  /** The day work began (§5.3) — powers "same day as started" in bulk resolve. */
+  startedAt?: string | Date | null;
   /** Present on the assigned queue; the wizard shows it before setting a deadline. */
   description?: string | null;
   createdByImage?: string | null;
