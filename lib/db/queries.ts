@@ -1050,10 +1050,6 @@ export async function getDeletedTicketDetail(ticketId: string) {
       createdByEmail: creatorUser.email,
       assignedToName: assigneeUser.name,
       deletedByName: deleterUser.name,
-      commentCount:
-        sql<number>`(select count(*) from ${ticketComments} where ${ticketComments.ticketId} = ${tickets.id})`.mapWith(
-          Number
-        ),
     })
     .from(tickets)
     .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
@@ -1064,17 +1060,48 @@ export async function getDeletedTicketDetail(ticketId: string) {
 
   if (!ticket) return null;
 
-  const attachments = await db
-    .select({
-      id: ticketAttachments.id,
-      url: ticketAttachments.url,
-      filename: ticketAttachments.filename,
-      contentType: ticketAttachments.contentType,
-      sizeBytes: ticketAttachments.sizeBytes,
-    })
-    .from(ticketAttachments)
-    .where(eq(ticketAttachments.ticketId, ticket.id))
-    .orderBy(asc(ticketAttachments.createdAt));
+  // Same shapes the LIVE detail selects, so the preview can reuse the existing
+  // timelines instead of growing a second renderer for the same rows.
+  const [attachments, comments, activity] = await Promise.all([
+    db
+      .select({
+        id: ticketAttachments.id,
+        url: ticketAttachments.url,
+        filename: ticketAttachments.filename,
+        contentType: ticketAttachments.contentType,
+        sizeBytes: ticketAttachments.sizeBytes,
+      })
+      .from(ticketAttachments)
+      .where(eq(ticketAttachments.ticketId, ticket.id))
+      .orderBy(asc(ticketAttachments.createdAt)),
+    db
+      .select({
+        id: ticketComments.id,
+        body: ticketComments.body,
+        createdAt: ticketComments.createdAt,
+        authorId: ticketComments.authorId,
+        authorName: authorUser.name,
+        authorImage: authorUser.image,
+      })
+      .from(ticketComments)
+      .leftJoin(authorUser, eq(ticketComments.authorId, authorUser.id))
+      .where(eq(ticketComments.ticketId, ticket.id))
+      .orderBy(asc(ticketComments.createdAt)),
+    db
+      .select({
+        id: ticketActivity.id,
+        type: ticketActivity.type,
+        fromValue: ticketActivity.fromValue,
+        toValue: ticketActivity.toValue,
+        createdAt: ticketActivity.createdAt,
+        actorId: ticketActivity.actorId,
+        actorName: actorUser.name,
+      })
+      .from(ticketActivity)
+      .leftJoin(actorUser, eq(ticketActivity.actorId, actorUser.id))
+      .where(eq(ticketActivity.ticketId, ticket.id))
+      .orderBy(asc(ticketActivity.createdAt)),
+  ]);
 
   // A REQUEST's brief lives in its own table; an ISSUE has none.
   const [brief] =
@@ -1092,7 +1119,7 @@ export async function getDeletedTicketDetail(ticketId: string) {
           .limit(1)
       : [];
 
-  return { ...ticket, attachments, brief: brief ?? null };
+  return { ...ticket, attachments, comments, activity, brief: brief ?? null };
 }
 export type DeletedTicketDetail = NonNullable<
   Awaited<ReturnType<typeof getDeletedTicketDetail>>

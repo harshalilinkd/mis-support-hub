@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 
 import { loadDeletedTicketDetail } from "@/lib/actions/tickets";
 import type { DeletedTicketDetail } from "@/lib/db/queries";
-import { formatDueDate, isUrl } from "@/lib/format";
+import { formatDueDate, isUrl, toIso } from "@/lib/format";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AbsoluteTime } from "@/components/absolute-time";
 import {
@@ -16,7 +16,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ActivityTimeline } from "@/components/tickets/activity-timeline";
 import { AttachmentGrid } from "@/components/tickets/attachment-grid";
+import { RequestTimeline } from "@/components/tickets/request-timeline";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 
 /**
@@ -234,13 +236,27 @@ export function DeletedTicketDialog({
               </Block>
             ) : null}
 
-            {detail.commentCount > 0 ? (
-              <p className="text-xs text-text-muted">
-                {detail.commentCount} comment
-                {detail.commentCount === 1 ? "" : "s"} on this ticket — restore it to
-                read the conversation.
-              </p>
-            ) : null}
+            {/* The full trail, rendered by the SAME timeline the live detail uses —
+                each module words its own events (§12.5), and a preview that showed a
+                count instead of the history was the thing you could not act on. */}
+            <Block title={detail.type === "REQUEST" ? "History" : "Activity"}>
+              {detail.type === "REQUEST" ? (
+                <RequestTimeline
+                  activity={detail.activity}
+                  comments={detail.comments}
+                  claimedAt={detail.claimedAt ? toIso(detail.claimedAt) : null}
+                  startedAt={detail.startedAt ? toIso(detail.startedAt) : null}
+                />
+              ) : (
+                <ActivityTimeline
+                  activity={detail.activity}
+                  comments={detail.comments}
+                  claimedAt={detail.claimedAt ? toIso(detail.claimedAt) : null}
+                  startedAt={detail.startedAt ? toIso(detail.startedAt) : null}
+                  resolvedAt={detail.resolvedAt ? toIso(detail.resolvedAt) : null}
+                />
+              )}
+            </Block>
           </div>
         ) : null}
       </DialogContent>
