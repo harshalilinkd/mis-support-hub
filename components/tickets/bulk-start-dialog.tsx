@@ -118,11 +118,10 @@ export function BulkStartDialog({
   };
   // The claim day of the ticket on screen — the "same as claimed" answer.
   const claimDay = ticket?.claimedAt ? istDayKey(ticket.claimedAt) : null;
-  // Every ticket needs BOTH dates. A start date can only be missing if the user
-  // cleared it; a deadline has no default at all, so this is the real gate.
-  const incomplete = tickets.filter(
-    (t) => !values[t.id]?.startedOn || !values[t.id]?.deadline
-  );
+  // Only the START date is required — the completion date is optional (§5), so a
+  // ticket without one is ready to go. This now only fires for a start date the user
+  // actively cleared.
+  const incomplete = tickets.filter((t) => !values[t.id]?.startedOn);
   // How many tickets still have NO completion date — the count the shortcut offers to
   // fill, and what the footer reports.
   const emptyDeadlines = tickets.filter((t) => !values[t.id]?.deadline).length;
@@ -152,11 +151,7 @@ export function BulkStartDialog({
     if (incomplete.length > 0) {
       const first = incomplete[0];
       setIndex(tickets.findIndex((t) => t.id === first.id));
-      toast.error(
-        values[first.id]?.deadline
-          ? `Pick a start date for ${first.number}.`
-          : `Set an expected completion date for ${first.number}.`
-      );
+      toast.error(`Pick a start date for ${first.number}.`);
       return;
     }
     const items = tickets.map((t) => ({
@@ -207,8 +202,8 @@ export function BulkStartDialog({
             Start {total} ticket{total === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Say when work began on each and when you expect to finish, then start
-            them all. Each moves to In Progress and its reporter is told.
+            Say when work began on each, then start them all. A completion date is
+            optional. Each moves to In Progress and its reporter is told.
           </DialogDescription>
         </DialogHeader>
 
@@ -401,7 +396,8 @@ export function BulkStartDialog({
                       htmlFor="bulk-start-deadline"
                       className="mb-1 block text-sm font-medium"
                     >
-                      Expected completion
+                      Expected completion{" "}
+                      <span className="font-normal text-text-muted">· optional</span>
                     </label>
                     <Input
                       id="bulk-start-deadline"
@@ -411,7 +407,8 @@ export function BulkStartDialog({
                       disabled={pending}
                     />
                     <p className="mt-1 text-xs text-text-muted">
-                      Required — the reporter is told this date.
+                      Leave blank if you can&apos;t commit yet — the reporter is told
+                      the date only when there is one.
                     </p>
                     {/* Twelve tickets means twelve completion dates, which is what
                         made "Start all" unreachable. This fills the ones still EMPTY
@@ -455,8 +452,8 @@ export function BulkStartDialog({
               <div className="ml-auto flex items-center gap-3">
                 <span className="hidden text-xs text-text-muted sm:inline">
                   {emptyDeadlines > 0
-                    ? `${emptyDeadlines} still need a completion date`
-                    : "Ready — dates set per ticket"}
+                    ? `${emptyDeadlines} without a completion date`
+                    : "Dates set per ticket"}
                 </span>
                 <Button type="button" onClick={submit} disabled={pending}>
                   <Play className="size-4" />

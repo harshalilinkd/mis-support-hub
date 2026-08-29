@@ -659,12 +659,13 @@ export async function claimTicketRow(args: {
   // Only stamp the claim date on the FIRST self-claim — re-claiming your own ticket
   // (to re-prioritise) must not move the date you took it on.
   if (args.writeAssigned) set.claimedAt = claimedAt;
-  // The deadline belongs to Start — only stamp it when we also start work here.
+  // The deadline belongs to Start — and is optional there (§5), so starting here no
+  // longer hinges on having one.
   const startedAt = args.startedAt ?? new Date();
-  if (args.startWork && args.deadline) {
+  if (args.startWork) {
     set.status = "IN_PROGRESS";
-    set.deadline = args.deadline;
     set.startedAt = startedAt;
+    if (args.deadline) set.deadline = args.deadline;
   }
 
   const events = [];
@@ -694,16 +695,16 @@ export async function claimTicketRow(args: {
       })
     );
   }
-  if (args.startWork && args.deadline) {
+  if (args.startWork) {
     // The combined shortcut also starts work: one STARTED row carries the OPEN→
-    // IN_PROGRESS transition (in fromValue) and the deadline (in toValue).
+    // IN_PROGRESS transition (in fromValue) and the deadline, when there is one.
     events.push(
       db.insert(ticketActivity).values({
         ticketId: args.ticketId,
         actorId: args.actorId,
         type: "STARTED",
         fromValue: args.fromStatus,
-        toValue: args.deadline.toISOString(),
+        toValue: args.deadline ? args.deadline.toISOString() : null,
       })
     );
   }
@@ -748,7 +749,8 @@ export async function startTaskRow(args: {
   ticketId: string;
   actorId: string;
   fromStatus: Status;
-  deadline: Date;
+  /** Optional (§5): work can start before a finish date is known. */
+  deadline: Date | null;
   /** The day work actually began (§5.3). Defaults to now when omitted. */
   startedAt?: Date;
   /** Set when startedAt is a day other than today — see setTicketStatus.datedFrom. */
@@ -758,14 +760,21 @@ export async function startTaskRow(args: {
   await db.batch([
     db
       .update(tickets)
-      .set({ status: "IN_PROGRESS", deadline: args.deadline, startedAt })
+      // Only stamp a deadline when there IS one — never overwrite an existing date
+      // with null just because this start didn't name one.
+      .set({
+        status: "IN_PROGRESS",
+        startedAt,
+        ...(args.deadline ? { deadline: args.deadline } : {}),
+      })
       .where(eq(tickets.id, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
       actorId: args.actorId,
       type: "STARTED",
       fromValue: args.fromStatus,
-      toValue: args.deadline.toISOString(),
+      // toValue carries the deadline when one was set; null reads as "started" alone.
+      toValue: args.deadline ? args.deadline.toISOString() : null,
     }),
     // Same audit shape as COMPLETION_DATED (§5.2): the start was moved off the day it
     // was recorded, so the trail says who chose it and when. The STARTED row can't show

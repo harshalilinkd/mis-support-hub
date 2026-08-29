@@ -389,8 +389,10 @@ async function claimOne(
   deadline?: string,
   /** The IST day the claim actually happened (§5.3). Absent ⇒ now. */
   claimedOn?: string,
-  /** The IST day work began — only meaningful with `deadline`. Absent ⇒ now. */
-  startedOn?: string
+  /** The IST day work began — only meaningful when also starting. Absent ⇒ now. */
+  startedOn?: string,
+  /** Combined "claim & start": start work in this same call (§5). */
+  start?: boolean
 ): Promise<
   | { ok: true; ticketId: string; ticketNumber: string; started: boolean }
   | { ok: false; error: string }
@@ -429,9 +431,12 @@ async function claimOne(
   const writeAssigned = ticket.assignedTo !== user.id;
   const fromAssigneeName: string | null = null;
 
-  // Only the combined "claim & start" shortcut carries a deadline → also start.
+  // The combined "claim & start" shortcut says so explicitly. It used to be inferred
+  // from carrying a deadline, which broke as soon as a start could legitimately have
+  // none; `deadline` is kept as a fallback for any older caller.
   const startWork =
-    !!deadline && (ticket.status === "OPEN" || ticket.status === "REOPENED");
+    (start || !!deadline) &&
+    (ticket.status === "OPEN" || ticket.status === "REOPENED");
   // The claim and (when starting in the same step) the start can each be dated to any
   // day (§5.3) — both default to now when the caller has no date to offer.
   const now = new Date();
@@ -483,6 +488,8 @@ export async function claimTicket(input: {
   deadline?: string;
   claimedOn?: string;
   startedOn?: string;
+  /** Combined "claim & start" — set explicitly, not inferred from a deadline (§5). */
+  start?: boolean;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user) return fail("You must be signed in.");
@@ -499,7 +506,8 @@ export async function claimTicket(input: {
     parsed.data.priority,
     parsed.data.deadline,
     parsed.data.claimedOn,
-    parsed.data.startedOn
+    parsed.data.startedOn,
+    parsed.data.start
   );
   if (!res.ok) return fail(res.error);
 
@@ -524,7 +532,7 @@ export async function claimTicket(input: {
  */
 async function startOne(
   user: SessionUser,
-  input: { ticketId: string; deadline: string; startedOn?: string }
+  input: { ticketId: string; deadline?: string; startedOn?: string }
 ): Promise<
   | { ok: true; ticketId: string; ticketNumber: string }
   | { ok: false; error: string }
@@ -570,7 +578,7 @@ async function startOne(
     ticketId: ticket.id,
     actorId: user.id,
     fromStatus: ticket.status,
-    deadline: new Date(input.deadline),
+    deadline: input.deadline ? new Date(input.deadline) : null,
     startedAt,
     datedFrom,
   });
@@ -580,7 +588,7 @@ async function startOne(
 
 export async function startTask(input: {
   ticketId: string;
-  deadline: string;
+  deadline?: string;
   startedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
@@ -615,7 +623,7 @@ export async function startTask(input: {
  * here too, not silently skipped, so the summary can name what didn't go through.
  */
 export async function bulkStartTasks(input: {
-  items: { ticketId: string; deadline: string; startedOn?: string }[];
+  items: { ticketId: string; deadline?: string; startedOn?: string }[];
 }): Promise<
   ActionResult<{
     started: number;

@@ -118,15 +118,18 @@ export const claimTicketSchema = z.object({
   // On claim, MIS sets only the priority — the ticket stays OPEN and is assigned
   // to them; the deadline is set later, when they Start the task (§5).
   priority: z.enum(PRIORITIES),
-  // Optional: a plain claim omits it (ticket stays OPEN). When present, it's the
-  // combined "claim & start" shortcut (board drag / status dropdown), which also
-  // starts work → IN_PROGRESS. A "YYYY-MM-DD" string from a date input.
+  // The delivery date, optional everywhere (§5) — a claim never has one, and a start
+  // no longer requires one.
   deadline: z
     .string()
     .trim()
-    .min(1, "Pick a valid date")
-    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date")
-    .optional(),
+    .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), "Pick a valid date")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  // The combined "claim & start" shortcut (board drag / status dropdown) sets this
+  // EXPLICITLY. It used to be inferred from the presence of a deadline, which stopped
+  // working the moment a start could legitimately have none.
+  start: z.boolean().optional(),
   // The IST calendar DAY the ticket was actually claimed (§5.3). Omitted ⇒ claimed
   // now (bulk claim, board drag). Any day, past or future.
   claimedOn: z
@@ -144,14 +147,20 @@ export const claimTicketSchema = z.object({
 });
 export type ClaimTicketInput = z.infer<typeof claimTicketSchema>;
 
-/** Start work on a claimed ticket — set the expected completion date (§5). */
+/** Start work on a claimed ticket (§5). */
 export const startTaskSchema = z.object({
   ticketId: z.string().uuid(),
+  // OPTIONAL by product decision: MIS often begins work before they can honestly
+  // commit to a finish date, and being unable to start without one pushed people to
+  // invent a date — which is worse than having none, because the reporter is told it.
+  // Absent ⇒ the ticket starts with no deadline and the reporter's notice simply says
+  // work has started; a date can be set later. An empty string means "not set".
   deadline: z
     .string()
     .trim()
-    .min(1, "Pick an expected completion date")
-    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+    .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), "Pick a valid date")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   // The IST calendar DAY work actually began (§5.3) — MIS often starts a task and only
   // records it later. Omitted ⇒ started now. Any day is allowed, past or future; the
   // shared startDateFor (lib/ticket-state.ts) turns it into the stored instant and

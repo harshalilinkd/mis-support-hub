@@ -72,10 +72,6 @@ export function StartTaskDialog({
       toast.error("Pick the date work started.");
       return;
     }
-    if (!deadline) {
-      toast.error("Pick an expected completion date.");
-      return;
-    }
     startTransition(async () => {
       const res = await startTask({ ticketId, deadline, startedOn });
       if (!res.ok) {
@@ -102,8 +98,9 @@ export function StartTaskDialog({
         <DialogHeader>
           <DialogTitle>Start task</DialogTitle>
           <DialogDescription>
-            Record when work started and when you expect to finish. The ticket moves
-            to In Progress and the reporter is notified that work has started.
+            Record when work started. A completion date is optional — add one if you
+            can commit to it, and the reporter is told. The ticket moves to In Progress
+            either way.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,7 +132,8 @@ export function StartTaskDialog({
               htmlFor="start-deadline"
               className="mb-1 block text-sm font-medium"
             >
-              Expected completion date
+              Expected completion date{" "}
+              <span className="font-normal text-text-muted">· optional</span>
             </label>
             <Input
               id="start-deadline"
@@ -156,7 +154,7 @@ export function StartTaskDialog({
           <Button
             type="button"
             onClick={submit}
-            disabled={pending || !deadline || !startedOn}
+            disabled={pending || !startedOn}
           >
             {pending ? "Starting…" : "Start task"}
           </Button>

@@ -97,10 +97,6 @@ export function ClaimDialog({
       toast.error("Pick the date this was claimed.");
       return;
     }
-    if (withStart && !deadline) {
-      toast.error("Pick an expected completion date.");
-      return;
-    }
     if (withStart && !startedOn) {
       toast.error("Pick the date work started.");
       return;
@@ -110,7 +106,9 @@ export function ClaimDialog({
         ticketId,
         priority,
         claimedOn,
-        ...(withStart ? { deadline, startedOn } : {}),
+        // `start` is explicit — the deadline is optional now, so its presence can no
+        // longer signal "also start this" (§5).
+        ...(withStart ? { start: true, deadline, startedOn } : {}),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -213,7 +211,8 @@ export function ClaimDialog({
                   htmlFor="claim-deadline"
                   className="mb-1 block text-sm font-medium"
                 >
-                  Expected completion date
+                  Expected completion date{" "}
+                  <span className="font-normal text-text-muted">· optional</span>
                 </label>
                 <Input
                   id="claim-deadline"
@@ -237,7 +236,7 @@ export function ClaimDialog({
             type="button"
             onClick={submit}
             disabled={
-              pending || !claimedOn || (withStart && (!deadline || !startedOn))
+              pending || !claimedOn || (withStart && !startedOn)
             }
           >
             {pending ? "Claiming…" : withStart ? "Claim & start" : "Claim"}

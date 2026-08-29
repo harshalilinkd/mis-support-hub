@@ -54,9 +54,28 @@ test("bulk start: the wizard's payload parses", () => {
   assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
 });
 
-test("bulk start: a missing deadline is refused (the wizard gates on it first)", () => {
+test("bulk start: an EMPTY deadline is accepted and normalised away (§5)", () => {
+  // The completion date is optional — MIS often starts work before they can honestly
+  // commit to a finish date. An empty picker must reach the action as "no deadline",
+  // not as "" (which would hit new Date("") → Invalid Date on the way to the column).
   const parsed = bulkStartSchema.safeParse({
     items: [{ ticketId: ID, deadline: "", startedOn: "2026-08-13" }],
+  });
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+  assert.equal(parsed.data?.items[0].deadline, undefined);
+});
+
+test("bulk start: an omitted deadline is accepted too", () => {
+  const parsed = bulkStartSchema.safeParse({
+    items: [{ ticketId: ID, startedOn: "2026-08-13" }],
+  });
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+});
+
+test("bulk start: a GARBAGE deadline is still refused", () => {
+  // Optional must not mean "anything goes" — the reporter is told this date.
+  const parsed = bulkStartSchema.safeParse({
+    items: [{ ticketId: ID, deadline: "next tuesday", startedOn: "2026-08-13" }],
   });
   assert.equal(parsed.success, false);
 });
@@ -99,6 +118,10 @@ test("every bulk schema accepts an item with NO date (server stamps now)", () =>
   assert.equal(
     bulkStartSchema.safeParse({ items: [{ ticketId: ID, deadline: "2026-08-27" }] })
       .success,
+    true
+  );
+  assert.equal(
+    bulkStartSchema.safeParse({ items: [{ ticketId: ID }] }).success,
     true
   );
   assert.equal(
