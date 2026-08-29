@@ -11,6 +11,7 @@ import {
   PRIORITIES,
 } from "@/lib/validators/ticket";
 import { Button } from "@/components/ui/button";
+import { FilterBar } from "./filter-bar";
 import {
   Select,
   SelectContent,
@@ -89,10 +90,12 @@ export function TableToolbar({
     [dept, priority, assignee, reporter].some((v) => v !== ALL) ||
     !!searchParams.get("q");
 
-  // Two facets per row on a phone, not three: at 375px a third column truncates the
-  // value mid-word, which is the one thing a facet must not hide.
   return (
-    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+    <FilterBar
+      activeCount={
+        [dept, priority, assignee, reporter].filter((v) => v !== ALL).length
+      }
+    >
       <Facet
         label="Department"
         value={dept}
@@ -133,7 +136,7 @@ export function TableToolbar({
         <Button
           variant="ghost"
           size="sm"
-          className="col-span-3 justify-self-start sm:col-auto"
+          className="col-span-2 justify-self-start sm:col-auto"
           onClick={() => {
             // Clear the facets AND the search, but keep the active status tab.
             const params = new URLSearchParams(searchParams.toString());
@@ -154,6 +157,6 @@ export function TableToolbar({
           Clear
         </Button>
       ) : null}
-    </div>
+    </FilterBar>
   );
 }

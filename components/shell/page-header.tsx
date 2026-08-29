@@ -31,8 +31,11 @@ export function PageHeader({
           <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
             {title}
           </h1>
+          {/* Explanatory copy is desktop context: on a phone it cost two lines at
+              the top of EVERY screen, pushing the actual list below the fold. The
+              title and the controls already say where you are. */}
           {description ? (
-            <p className="text-sm text-foreground">{description}</p>
+            <p className="hidden text-sm text-foreground sm:block">{description}</p>
           ) : null}
         </div>
         {children ? (

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FacetSelect, FACET_ALL } from "@/components/dashboard/facet-select";
+import { FilterBar } from "@/components/dashboard/filter-bar";
 import type { SessionUser } from "@/lib/session";
 import {
   TICKET_TABS,
@@ -251,10 +252,13 @@ export function MyTicketsView({
               );
             })}
           </TabScroller>
-          {/* Two per row on a phone, not three: at 375px a third column truncates the
-              value mid-word ("Requester: …"), which is the one thing a facet must not
-              hide. They still sit inline from sm up. */}
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <FilterBar
+            activeCount={
+              [dept, priority, showReporterFacet ? reporter : FACET_ALL].filter(
+                (v) => v !== FACET_ALL
+              ).length
+            }
+          >
             <FacetSelect
               label="Dept"
               value={dept}
@@ -282,14 +286,14 @@ export function MyTicketsView({
               <Button
                 variant="ghost"
                 size="sm"
-                className="col-span-3 justify-self-start sm:col-auto"
+                className="col-span-2 justify-self-start sm:col-auto"
                 onClick={clearFacets}
               >
                 <X className="size-4" />
                 Clear
               </Button>
             ) : null}
-          </div>
+          </FilterBar>
         </div>
         <div className="relative lg:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
