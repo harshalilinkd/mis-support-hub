@@ -911,6 +911,35 @@ export async function deleteTicketById(id: string) {
   await db.delete(tickets).where(eq(tickets.id, id));
 }
 
+/**
+ * Permanently delete SEVERAL tickets in one statement — comments, attachments,
+ * activity and notifications cascade, as with the single purge.
+ *
+ * `isNotNull(deletedAt)` is not a nicety: it is what makes this safe to call with a
+ * list of ids from the client. A live ticket can never be destroyed here even if its
+ * id is passed, so the worst a stale or forged id can do is delete nothing. Returns
+ * the ids actually removed, so the caller can report a partial result honestly.
+ */
+export async function purgeTicketsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .delete(tickets)
+    .where(and(inArray(tickets.id, ids), isNotNull(tickets.deletedAt)))
+    .returning({ id: tickets.id, number: tickets.number });
+}
+
+/**
+ * Empty the recycle bin — every soft-deleted ticket, in one statement. Same guard:
+ * scoped to `deleted_at IS NOT NULL`, so it can only ever destroy what is already in
+ * the bin. Returns what it removed so the caller can say how many.
+ */
+export async function purgeAllDeletedTickets() {
+  return db
+    .delete(tickets)
+    .where(isNotNull(tickets.deletedAt))
+    .returning({ id: tickets.id, number: tickets.number });
+}
+
 /** Soft-delete → move a ticket to the recycle bin (hidden everywhere but the bin). */
 export async function softDeleteTicketById(id: string, deletedBy: string) {
   await db

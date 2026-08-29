@@ -359,7 +359,7 @@ with no date (board drag, auto-close cron) are unaffected.
 | Comment on a ticket they can see | ✓ | ✓ | ✓ |
 | Reopen own ticket / confirm resolved | ✓ | ✓ | ✓ |
 | Soft-delete a ticket | ✗ | ✓ | ✓ |
-| Recycle bin: restore / permanently delete | ✗ | ✗ | ✓ |
+| Recycle bin: restore / permanently delete (single, bulk, or empty the bin) | ✗ | ✗ | ✓ |
 | Manage users / change roles / bulk-add users | ✗ | ✗ | ✓ |
 | **Set (reset) another user's password — never READ it (§7)** | ✗ | ✗ | ✓ |
 | Approve / reject Google access requests (§7) | ✗ | ✗ | ✓ |
@@ -505,6 +505,13 @@ best-effort — a failed send never rolls back or throws to the caller):
 - Use `revalidatePath`/`revalidateTag` after mutations. Optimistic UI only on the Kanban drop.
 - Ticket numbers come from the `ticket_seq` sequence — never computed from a row count.
 - **Soft delete**: `deleted_at IS NULL` must be filtered from EVERY active ticket read (lists, detail, counts, analytics). Deleted tickets live only in the recycle bin.
+  - **Purging is scoped in SQL, not in the caller.** `purgeTicketsByIds` and
+    `purgeAllDeletedTickets` both carry `deleted_at IS NOT NULL` in their WHERE clause,
+    so a live ticket can never be destroyed even if its id is passed — the worst a stale
+    or forged id can do is delete nothing. That is what makes it safe for the bin to send
+    a list of ids from the client. Both are MIS_ADMIN-only, and "Empty recycle bin" is
+    additionally gated behind a typed DELETE confirmation in the UI, because it reaches
+    rows that are not on screen.
   - The ONE deliberate exception is `getDeletedTicketDetail` (MIS_ADMIN, via
     `loadDeletedTicketDetail`), which powers the bin's read-only preview: a row there
     opens the record — body or request brief, dates, attachments, comment count — so an

@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { permanentlyDeleteTicket, restoreTicket } from "@/lib/actions/tickets";
+import {
+  bulkPermanentlyDeleteTickets,
+  emptyRecycleBin,
+  permanentlyDeleteTicket,
+  restoreTicket,
+} from "@/lib/actions/tickets";
 import type { Department, Priority, Status } from "@/lib/db/schema";
 import { DeletedTicketDialog } from "./deleted-ticket-dialog";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
@@ -13,6 +18,8 @@ import { AbsoluteTime } from "@/components/absolute-time";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogClose,
@@ -50,6 +57,28 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
   // The row/card opens a read-only preview — an admin should see WHAT they are about
   // to restore or purge, which the bin could not show at all before.
   const [preview, setPreview] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Two destructive confirmations, kept apart on purpose: one for the selection, one
+  // for the whole bin. The second is the more dangerous act and gets a typed gate.
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [emptyPhrase, setEmptyPhrase] = useState("");
+
+  const allSelected =
+    tickets.length > 0 && tickets.every((t) => selectedIds.has(t.id));
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(tickets.map((t) => t.id)));
+  }
 
   function run(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -77,8 +106,49 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
     );
   }
 
+  const selectedCount = selectedIds.size;
+
   return (
     <>
+      {/* Bin-level actions. "Empty" sits apart from the selection bar because it is a
+          different act: not "these ones" but "everything, including rows not on
+          screen". */}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        {selectedCount > 0 ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-input)] border border-destructive/30 bg-destructive/5 px-3 py-2">
+            <span className="text-sm font-medium">{selectedCount} selected</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={pending}
+              onClick={() => setConfirmBulk(true)}
+            >
+              <Trash2 className="size-4" /> Delete permanently
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        ) : null}
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto text-destructive hover:text-destructive"
+          disabled={pending}
+          onClick={() => {
+            setEmptyPhrase("");
+            setConfirmEmpty(true);
+          }}
+        >
+          <Trash2 className="size-4" /> Empty recycle bin ({tickets.length})
+        </Button>
+      </div>
+
       {/* Phone: one card per deleted ticket. Restore and Delete-for-good are the point
           of this screen, so they must be reachable without scrolling a table sideways —
           in a scroller they sit in the last column, furthest from the ticket they act on. */}
@@ -88,6 +158,14 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
             key={t.id}
             className="rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-elevation)]"
           >
+            <div className="mb-2 flex items-center gap-2">
+              <Checkbox
+                checked={selectedIds.has(t.id)}
+                onCheckedChange={() => toggleSelect(t.id)}
+                aria-label={`Select ${t.number}`}
+              />
+              <span className="text-xs text-text-muted">Select</span>
+            </div>
             <div
               role="button"
               tabIndex={0}
@@ -157,7 +235,14 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
         <Table>
           <TableHeader className="[&_th]:h-11 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground">
             <TableRow>
-              <TableHead className="pl-4">Number</TableHead>
+              <TableHead className="w-9 pl-4">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all deleted tickets"
+                />
+              </TableHead>
+              <TableHead>Number</TableHead>
               <TableHead>Title</TableHead>
               <TableHead>Dept</TableHead>
               <TableHead>Status</TableHead>
@@ -171,6 +256,7 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
             {tickets.map((t) => (
               <TableRow
                 key={t.id}
+                data-state={selectedIds.has(t.id) ? "selected" : undefined}
                 onClick={() => setPreview(t.id)}
                 tabIndex={0}
                 onKeyDown={(e) => {
@@ -184,7 +270,17 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
                 }}
                 className="cursor-pointer transition-colors hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>td]:py-2.5 [&>td]:align-top"
               >
-                <TableCell className="whitespace-nowrap pl-4 font-mono text-xs text-foreground">
+                <TableCell
+                  className="w-9 pl-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={selectedIds.has(t.id)}
+                    onCheckedChange={() => toggleSelect(t.id)}
+                    aria-label={`Select ${t.number}`}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-xs text-foreground">
                   {t.number}
                 </TableCell>
                 <TableCell>
@@ -247,6 +343,105 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Selection purge — names the count, and says what goes with each ticket. */}
+      <Dialog open={confirmBulk} onOpenChange={(o) => !o && setConfirmBulk(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Delete {selectedCount} ticket{selectedCount === 1 ? "" : "s"}{" "}
+              permanently?
+            </DialogTitle>
+            <DialogDescription>
+              This can&apos;t be undone. Each ticket and all its comments,
+              attachments, and history will be removed for good.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={pending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={pending}
+              onClick={() =>
+                run(async () => {
+                  const res = await bulkPermanentlyDeleteTickets({
+                    ticketIds: [...selectedIds],
+                  });
+                  if (res.ok) {
+                    setConfirmBulk(false);
+                    setSelectedIds(new Set());
+                  }
+                  return res;
+                }, `${selectedCount} ticket${selectedCount === 1 ? "" : "s"} deleted for good`)
+              }
+            >
+              {pending ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Emptying the bin is the most destructive action in the app, and it reaches
+          rows that are not on screen — so it asks for the word to be typed rather than
+          relying on a single click landing on the right button. */}
+      <Dialog open={confirmEmpty} onOpenChange={(o) => !o && setConfirmEmpty(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Empty the recycle bin?</DialogTitle>
+            <DialogDescription>
+              All {tickets.length} deleted ticket
+              {tickets.length === 1 ? "" : "s"} — issues and system requests — will be
+              removed for good, along with their comments, attachments, and history.
+              This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <label
+              htmlFor="empty-confirm"
+              className="mb-1 block text-sm font-medium"
+            >
+              Type <span className="font-mono font-semibold">DELETE</span> to confirm
+            </label>
+            <Input
+              id="empty-confirm"
+              value={emptyPhrase}
+              onChange={(e) => setEmptyPhrase(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              disabled={pending}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={pending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={pending || emptyPhrase.trim().toUpperCase() !== "DELETE"}
+              onClick={() =>
+                run(async () => {
+                  const res = await emptyRecycleBin();
+                  if (res.ok) {
+                    setConfirmEmpty(false);
+                    setSelectedIds(new Set());
+                  }
+                  return res;
+                }, "Recycle bin emptied")
+              }
+            >
+              {pending ? "Emptying…" : "Empty recycle bin"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DeletedTicketDialog
         ticketId={preview}

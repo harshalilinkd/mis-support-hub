@@ -1117,6 +1117,62 @@ export async function permanentlyDeleteTicket(
 }
 
 /**
+ * Permanently delete SEVERAL tickets from the recycle bin — MIS_ADMIN only, and
+ * irreversible. Unlike the bulk claim/start/resolve actions this is ONE statement
+ * rather than a best-effort loop: there are no per-ticket rules to apply (no
+ * ownership, no state machine — the ticket is already in the bin), so a single
+ * scoped DELETE is both simpler and atomic. The query's own
+ * `deleted_at IS NOT NULL` guard means a live ticket cannot be destroyed even if
+ * its id is sent.
+ *
+ * Returns how many were removed, which can be fewer than requested if another admin
+ * emptied the bin first — reported, not silently ignored.
+ */
+export async function bulkPermanentlyDeleteTickets(input: {
+  ticketIds: string[];
+}): Promise<ActionResult<{ deleted: number; requested: number }>> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (user.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can manage the recycle bin.");
+  }
+
+  const parsed = bulkDeleteSchema.safeParse({ ticketIds: input.ticketIds });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  const removed = await q.purgeTicketsByIds(parsed.data.ticketIds);
+  if (removed.length > 0) {
+    revalidateTicketRoutes();
+    revalidateRecycleBin();
+  }
+  return ok({ deleted: removed.length, requested: parsed.data.ticketIds.length });
+}
+
+/**
+ * Empty the recycle bin entirely — MIS_ADMIN only, irreversible, and the single most
+ * destructive action in the app: every soft-deleted ticket and all of its comments,
+ * attachments, activity and notifications, gone. The UI gates it behind a typed
+ * confirmation for that reason; this action is the enforcement of WHO may do it, and
+ * the query is the enforcement of WHAT it can reach (deleted rows only).
+ */
+export async function emptyRecycleBin(): Promise<
+  ActionResult<{ deleted: number }>
+> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (user.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can manage the recycle bin.");
+  }
+
+  const removed = await q.purgeAllDeletedTickets();
+  if (removed.length > 0) {
+    revalidateTicketRoutes();
+    revalidateRecycleBin();
+  }
+  return ok({ deleted: removed.length });
+}
+
+/**
  * Read the full ticket detail for the current viewer (§6 visibility enforced by
  * getTicketByNumber). Used to hydrate the detail Sheet on demand from lists.
  */
