@@ -986,6 +986,89 @@ export type DeletedTicketRow = Awaited<
   ReturnType<typeof listDeletedTickets>
 >[number];
 
+/**
+ * The full record of a DELETED ticket, for the recycle bin's read-only preview.
+ *
+ * The one read that deliberately does NOT filter `deleted_at IS NULL` (§9). That rule
+ * exists so a deleted ticket never appears in an ACTIVE surface — lists, counts,
+ * analytics — and the recycle bin is the one place deleted tickets are meant to live,
+ * so an admin can see what they are about to restore or purge for good. It is also
+ * type-agnostic: the bin holds issues AND requests, and the caller gates on MIS_ADMIN.
+ *
+ * Returns the body, the attachments and the request brief when there is one — enough to
+ * decide, without reusing the live detail components (whose action bars must never
+ * operate on a deleted row).
+ */
+export async function getDeletedTicketDetail(ticketId: string) {
+  const [ticket] = await db
+    .select({
+      id: tickets.id,
+      number: tickets.number,
+      type: tickets.type,
+      title: tickets.title,
+      description: tickets.description,
+      department: tickets.department,
+      status: tickets.status,
+      priority: tickets.priority,
+      sheetLink: tickets.sheetLink,
+      createdAt: tickets.createdAt,
+      deadline: tickets.deadline,
+      claimedAt: tickets.claimedAt,
+      startedAt: tickets.startedAt,
+      resolvedAt: tickets.resolvedAt,
+      deletedAt: tickets.deletedAt,
+      createdByName: creatorUser.name,
+      createdByEmail: creatorUser.email,
+      assignedToName: assigneeUser.name,
+      deletedByName: deleterUser.name,
+      commentCount:
+        sql<number>`(select count(*) from ${ticketComments} where ${ticketComments.ticketId} = ${tickets.id})`.mapWith(
+          Number
+        ),
+    })
+    .from(tickets)
+    .leftJoin(creatorUser, eq(tickets.createdBy, creatorUser.id))
+    .leftJoin(assigneeUser, eq(tickets.assignedTo, assigneeUser.id))
+    .leftJoin(deleterUser, eq(tickets.deletedBy, deleterUser.id))
+    .where(and(eq(tickets.id, ticketId), isNotNull(tickets.deletedAt)))
+    .limit(1);
+
+  if (!ticket) return null;
+
+  const attachments = await db
+    .select({
+      id: ticketAttachments.id,
+      url: ticketAttachments.url,
+      filename: ticketAttachments.filename,
+      contentType: ticketAttachments.contentType,
+      sizeBytes: ticketAttachments.sizeBytes,
+    })
+    .from(ticketAttachments)
+    .where(eq(ticketAttachments.ticketId, ticket.id))
+    .orderBy(asc(ticketAttachments.createdAt));
+
+  // A REQUEST's brief lives in its own table; an ISSUE has none.
+  const [brief] =
+    ticket.type === "REQUEST"
+      ? await db
+          .select({
+            systemName: requestDetails.systemName,
+            problemStatement: requestDetails.problemStatement,
+            currentProcess: requestDetails.currentProcess,
+            expectedBenefit: requestDetails.expectedBenefit,
+            requestedBy: requestDetails.requestedBy,
+          })
+          .from(requestDetails)
+          .where(eq(requestDetails.ticketId, ticket.id))
+          .limit(1)
+      : [];
+
+  return { ...ticket, attachments, brief: brief ?? null };
+}
+export type DeletedTicketDetail = NonNullable<
+  Awaited<ReturnType<typeof getDeletedTicketDetail>>
+>;
+
 export async function logActivity(args: {
   ticketId: string;
   actorId: string;

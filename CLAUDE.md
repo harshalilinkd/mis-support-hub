@@ -505,6 +505,13 @@ best-effort — a failed send never rolls back or throws to the caller):
 - Use `revalidatePath`/`revalidateTag` after mutations. Optimistic UI only on the Kanban drop.
 - Ticket numbers come from the `ticket_seq` sequence — never computed from a row count.
 - **Soft delete**: `deleted_at IS NULL` must be filtered from EVERY active ticket read (lists, detail, counts, analytics). Deleted tickets live only in the recycle bin.
+  - The ONE deliberate exception is `getDeletedTicketDetail` (MIS_ADMIN, via
+    `loadDeletedTicketDetail`), which powers the bin's read-only preview: a row there
+    opens the record — body or request brief, dates, attachments, comment count — so an
+    admin can see WHAT they are restoring or purging. It is type-agnostic (the bin holds
+    both modules) and requires `deleted_at IS NOT NULL`, so it can never serve a live
+    ticket. It deliberately does NOT reuse `TicketDetail`/`RequestDetail`, whose action
+    bars must never operate on a deleted row.
 - **Dates**: stored UTC. Tables/lists render **absolute time in a fixed timezone (IST)** via the deterministic `AbsoluteTime` component (no locale drift → no hydration mismatch); deadlines render as a plain IST date. Relative time ("2h ago") is used only for at-a-glance card metadata, never as a table's source of truth.
 - **Best-effort side effects**: notifications and bulk operations never let one failure abort the rest or roll back the DB; log and continue.
 - Env vars: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `ADMIN_EMAILS`, `BLOB_READ_WRITE_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`, `CRON_SECRET` (guards the §5 auto-close cron; unset ⇒ the endpoint refuses and nothing auto-closes).

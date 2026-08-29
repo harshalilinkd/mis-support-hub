@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { permanentlyDeleteTicket, restoreTicket } from "@/lib/actions/tickets";
 import type { Department, Priority, Status } from "@/lib/db/schema";
+import { DeletedTicketDialog } from "./deleted-ticket-dialog";
 import { DEPARTMENT_LABELS } from "@/lib/validators/ticket";
 import { AbsoluteTime } from "@/components/absolute-time";
 import { PriorityChip, StatusChip } from "@/components/tickets/chips";
@@ -46,6 +47,9 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [confirm, setConfirm] = useState<Row | null>(null);
+  // The row/card opens a read-only preview — an admin should see WHAT they are about
+  // to restore or purge, which the bin could not show at all before.
+  const [preview, setPreview] = useState<string | null>(null);
 
   function run(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -84,6 +88,20 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
             key={t.id}
             className="rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-elevation)]"
           >
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setPreview(t.id)}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setPreview(t.id);
+                }
+              }}
+              aria-label={`Open ${t.number}`}
+              className="cursor-pointer rounded-[6px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
             <div className="flex items-center gap-2">
               <span className="shrink-0 font-mono text-xs font-semibold">
                 {t.number}
@@ -109,6 +127,7 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
                 className="font-mono tabular-nums"
               />
               {t.deletedByName ? ` by ${t.deletedByName}` : null}
+            </div>
             </div>
             <div className="mt-3 flex gap-2">
               <Button
@@ -150,7 +169,21 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
           </TableHeader>
           <TableBody>
             {tickets.map((t) => (
-              <TableRow key={t.id} className="[&>td]:py-2.5 [&>td]:align-top">
+              <TableRow
+                key={t.id}
+                onClick={() => setPreview(t.id)}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  // Only when the row itself has focus — not a bubbled keystroke
+                  // from the Restore / Delete buttons inside it.
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPreview(t.id);
+                  }
+                }}
+                className="cursor-pointer transition-colors hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>td]:py-2.5 [&>td]:align-top"
+              >
                 <TableCell className="whitespace-nowrap pl-4 font-mono text-xs text-foreground">
                   {t.number}
                 </TableCell>
@@ -183,7 +216,10 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
                     </div>
                   ) : null}
                 </TableCell>
-                <TableCell className="pr-4 text-right">
+                <TableCell
+                  className="pr-4 text-right"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <div className="inline-flex gap-1.5">
                     <Button
                       size="sm"
@@ -211,6 +247,11 @@ export function RecycleBinView({ tickets }: { tickets: Row[] }) {
           </TableBody>
         </Table>
       </div>
+
+      <DeletedTicketDialog
+        ticketId={preview}
+        onOpenChange={(o) => !o && setPreview(null)}
+      />
 
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent className="max-w-md">

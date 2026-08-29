@@ -116,6 +116,24 @@ export async function moveTicketType(
   return ok(result);
 }
 
+/**
+ * Read a DELETED ticket for the recycle bin's preview — MIS_ADMIN only, matching who
+ * may reach the bin at all (§6). Everyone else gets "not found", which is also what
+ * the ordinary detail read returns for a deleted ticket, so nothing new is leaked.
+ */
+export async function loadDeletedTicketDetail(
+  ticketId: string
+): Promise<ActionResult<q.DeletedTicketDetail>> {
+  const user = await getCurrentUser();
+  if (!user) return fail("You must be signed in.");
+  if (user.role !== "MIS_ADMIN") {
+    return fail("Only MIS admins can open the recycle bin.");
+  }
+  const ticket = await q.getDeletedTicketDetail(ticketId);
+  if (!ticket) return fail("Ticket not found.");
+  return ok(ticket);
+}
+
 /** Raise a ticket — any authenticated user (§6). */
 export async function createTicket(
   input: unknown
