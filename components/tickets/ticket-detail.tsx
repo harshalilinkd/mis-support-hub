@@ -73,18 +73,24 @@ export function TicketDetail({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 duration-200 animate-in fade-in slide-in-from-bottom-2">
-      {/* Header */}
-      <div className="space-y-4 border-b border-border pb-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm text-text-muted">
-              {ticket.number}
-            </span>
-            <StatusChip status={ticket.status} />
-            <PriorityChip priority={ticket.priority} />
+    <div className="mx-auto max-w-3xl space-y-6 duration-200 animate-in fade-in slide-in-from-bottom-2">
+      {/* Header — a structured hero card: identity + title on top, the metadata in a
+          tinted footer strip beneath a hairline. */}
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-elevation)]">
+        <div className="flex flex-wrap items-start justify-between gap-3 p-5 sm:p-6">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm text-text-muted">
+                {ticket.number}
+              </span>
+              <StatusChip status={ticket.status} />
+              <PriorityChip priority={ticket.priority} />
+            </div>
+            <h1 className="font-display text-2xl font-semibold leading-tight tracking-tight">
+              {ticket.title}
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {/* Misfiled? MIS can move it to System Requests (§12). */}
             {isStaff ? (
               <MoveTicketButton
@@ -111,10 +117,7 @@ export function TicketDetail({
             ) : null}
           </div>
         </div>
-        <h1 className="font-display text-2xl font-semibold leading-tight tracking-tight">
-          {ticket.title}
-        </h1>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 pt-1 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border bg-surface-muted/40 px-5 py-4 sm:grid-cols-4 sm:px-6">
           <Meta label="Department" value={DEPARTMENT_LABELS[ticket.department]} />
           <Meta
             label="Reporter"
