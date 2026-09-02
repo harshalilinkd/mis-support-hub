@@ -78,6 +78,10 @@ export function DeletedTicketDialog({
     };
   }, [ticketId]);
 
+  const ticketAttachments = (detail?.attachments ?? []).filter(
+    (a) => !a.commentId
+  );
+
   return (
     <Dialog open={!!ticketId} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -114,6 +118,7 @@ export function DeletedTicketDialog({
 
         {detail ? (
           <div className="space-y-5">
+            {/* Files posted with a comment render inside that comment, below. */}
             <h2 className="font-display text-lg font-semibold leading-tight">
               {detail.title}
             </h2>
@@ -230,9 +235,9 @@ export function DeletedTicketDialog({
               </Block>
             ) : null}
 
-            {detail.attachments.length > 0 ? (
+            {ticketAttachments.length > 0 ? (
               <Block title="Attachments">
-                <AttachmentGrid attachments={detail.attachments} />
+                <AttachmentGrid attachments={ticketAttachments} />
               </Block>
             ) : null}
 
@@ -244,6 +249,7 @@ export function DeletedTicketDialog({
                 <RequestTimeline
                   activity={detail.activity}
                   comments={detail.comments}
+                  attachments={detail.attachments}
                   claimedAt={detail.claimedAt ? toIso(detail.claimedAt) : null}
                   startedAt={detail.startedAt ? toIso(detail.startedAt) : null}
                 />
@@ -251,6 +257,7 @@ export function DeletedTicketDialog({
                 <ActivityTimeline
                   activity={detail.activity}
                   comments={detail.comments}
+                  attachments={detail.attachments}
                   claimedAt={detail.claimedAt ? toIso(detail.claimedAt) : null}
                   startedAt={detail.startedAt ? toIso(detail.startedAt) : null}
                   resolvedAt={detail.resolvedAt ? toIso(detail.resolvedAt) : null}

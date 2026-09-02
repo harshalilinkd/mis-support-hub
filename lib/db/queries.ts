@@ -1070,6 +1070,9 @@ export async function getDeletedTicketDetail(ticketId: string) {
         filename: ticketAttachments.filename,
         contentType: ticketAttachments.contentType,
         sizeBytes: ticketAttachments.sizeBytes,
+        // Which comment it was posted with, if any — the preview renders those
+        // inside their comment rather than in the ticket-level grid.
+        commentId: ticketAttachments.commentId,
       })
       .from(ticketAttachments)
       .where(eq(ticketAttachments.ticketId, ticket.id))

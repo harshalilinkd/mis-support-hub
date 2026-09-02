@@ -70,7 +70,12 @@ export function TicketDetail({
     filename: a.filename,
     contentType: a.contentType,
     sizeBytes: a.sizeBytes,
+    commentId: a.commentId,
   }));
+  // The ticket's OWN files — what the reporter attached when raising it. Anything
+  // posted with a comment belongs to that comment and is rendered there instead, so
+  // the two are never mixed in one anonymous grid.
+  const ticketAttachments = attachments.filter((a) => !a.commentId);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 duration-200 animate-in fade-in slide-in-from-bottom-2">
@@ -226,9 +231,9 @@ export function TicketDetail({
       </Section>
 
       {/* Attachments */}
-      {attachments.length > 0 ? (
+      {ticketAttachments.length > 0 ? (
         <Section title="Attachments">
-          <AttachmentGrid attachments={attachments} />
+          <AttachmentGrid attachments={ticketAttachments} />
         </Section>
       ) : null}
 
@@ -240,6 +245,7 @@ export function TicketDetail({
           startedAt={ticket.startedAt ? toIso(ticket.startedAt) : null}
           claimedAt={ticket.claimedAt ? toIso(ticket.claimedAt) : null}
           resolvedAt={ticket.resolvedAt ? toIso(ticket.resolvedAt) : null}
+          attachments={attachments}
         />
         <div className="pt-2">
           <CommentComposer ticketId={ticket.id} onDone={onMutate} />

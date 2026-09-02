@@ -68,6 +68,9 @@ export function RequestDetail({
   const canBuild =
     currentUser.role === "MIS_ADMIN" ||
     (isStaff(currentUser.role) && request.assignedToId === currentUser.id);
+  // The request's OWN files — anything posted with a comment belongs to that
+  // comment and renders there instead, so the two are never mixed (§4).
+  const ticketAttachments = request.attachments.filter((a) => !a.commentId);
   // Key the banner off the CURRENT status, never off mdDecision: a revive leaves
   // md_decision = REJECTED behind, so keying on the decision would keep showing a
   // red "dropped" banner on a request that is back under review (§12.3/§12.7).
@@ -262,9 +265,9 @@ export function RequestDetail({
       </div>
 
       {/* Attachments */}
-      {request.attachments.length > 0 ? (
+      {ticketAttachments.length > 0 ? (
         <Section title="Attachments">
-          <AttachmentGrid attachments={request.attachments} />
+          <AttachmentGrid attachments={ticketAttachments} />
         </Section>
       ) : null}
 
@@ -278,6 +281,7 @@ export function RequestDetail({
         <RequestTimeline
           activity={request.activity}
           comments={request.comments}
+          attachments={request.attachments}
           claimedAt={request.claimedAt ? toIso(request.claimedAt) : null}
           startedAt={request.startedAt ? toIso(request.startedAt) : null}
           completedAt={request.completedAt ? toIso(request.completedAt) : null}

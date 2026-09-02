@@ -1,9 +1,25 @@
 import { AbsoluteTime } from "@/components/absolute-time";
+import { AttachmentGrid } from "./attachment-grid";
 import type { TicketDetail } from "@/lib/db/queries";
 import { istDayKey, toIso } from "@/lib/format";
 
 type ActivityRow = TicketDetail["activity"][number];
 type CommentRow = TicketDetail["comments"][number];
+
+/**
+ * An attachment, plus the comment it was posted with. `commentId` is the whole point:
+ * ticket_attachments has carried it since the schema was written (§4), but nothing
+ * rendered it, so a file posted with a reply landed in the ticket-level Attachments
+ * grid — indistinguishable from what the reporter attached when raising the ticket.
+ */
+type AttachmentRow = {
+  id: string;
+  url: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  commentId: string | null;
+};
 
 function humanize(value: string | null): string {
   if (!value) return "";
@@ -159,6 +175,7 @@ export function ActivityTimeline({
   startedAt,
   claimedAt,
   resolvedAt,
+  attachments,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
@@ -173,7 +190,20 @@ export function ActivityTimeline({
   claimedAt?: string | null;
   /** The recorded resolution date (§5.2), shown on the → Resolved status line. */
   resolvedAt?: string | null;
+  /**
+   * Every attachment on the ticket. Those with a `commentId` render INSIDE that
+   * comment; the caller keeps the rest for its own Attachments section.
+   */
+  attachments?: AttachmentRow[];
 }) {
+  // One pass, so a thread with many comments doesn't re-scan the list per bubble.
+  const filesByComment = new Map<string, AttachmentRow[]>();
+  for (const a of attachments ?? []) {
+    if (!a.commentId) continue;
+    const list = filesByComment.get(a.commentId);
+    if (list) list.push(a);
+    else filesByComment.set(a.commentId, [a]);
+  }
   const dates: TicketDates = { claimedAt, startedAt, resolvedAt };
   const items = [
     ...activity
@@ -209,6 +239,15 @@ export function ActivityTimeline({
               <p className="mt-1 whitespace-pre-wrap break-words text-sm">
                 {item.row.body}
               </p>
+              {/* Files posted WITH this comment, shown with it — the same grid and
+                  lightbox as the ticket's own attachments. */}
+              {(filesByComment.get(item.row.id)?.length ?? 0) > 0 ? (
+                <div className="mt-3">
+                  <AttachmentGrid
+                    attachments={filesByComment.get(item.row.id) ?? []}
+                  />
+                </div>
+              ) : null}
             </div>
           </li>
         ) : (

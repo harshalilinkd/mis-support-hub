@@ -1,9 +1,20 @@
 import { AbsoluteTime } from "@/components/absolute-time";
+import { AttachmentGrid } from "./attachment-grid";
 import type { RequestDetail } from "@/lib/db/queries";
 import { istDayKey, toIso } from "@/lib/format";
 
 type ActivityRow = RequestDetail["activity"][number];
 type CommentRow = RequestDetail["comments"][number];
+
+/** An attachment plus the comment it was posted with — see the issue timeline. */
+type AttachmentRow = {
+  id: string;
+  url: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  commentId: string | null;
+};
 
 const DUE_FMT = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Kolkata",
@@ -136,6 +147,7 @@ export function RequestTimeline({
   claimedAt,
   startedAt,
   completedAt,
+  attachments,
 }: {
   activity: ActivityRow[];
   comments: CommentRow[];
@@ -149,7 +161,16 @@ export function RequestTimeline({
   startedAt?: string | null;
   /** The recorded completion date (§5.2), shown on the MARKED_COMPLETE line. */
   completedAt?: string | null;
+  /** Files posted with a comment render inside that comment. */
+  attachments?: AttachmentRow[];
 }) {
+  const filesByComment = new Map<string, AttachmentRow[]>();
+  for (const a of attachments ?? []) {
+    if (!a.commentId) continue;
+    const list = filesByComment.get(a.commentId);
+    if (list) list.push(a);
+    else filesByComment.set(a.commentId, [a]);
+  }
   const dates: RequestDates = { claimedAt, startedAt, completedAt };
   const items = [
     // PROGRESS_LOGGED + COMMENTED are shown as their own richer items below.
@@ -183,6 +204,13 @@ export function RequestTimeline({
                   <AbsoluteTime date={item.at} className="text-text-muted" />
                 </div>
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.row.body}</p>
+                {(filesByComment.get(item.row.id)?.length ?? 0) > 0 ? (
+                  <div className="mt-3">
+                    <AttachmentGrid
+                      attachments={filesByComment.get(item.row.id) ?? []}
+                    />
+                  </div>
+                ) : null}
               </div>
             </li>
           );
