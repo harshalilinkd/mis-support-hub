@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, FileText, Loader2, UploadCloud, X } from "lucide-react";
 
 import {
-  ACCEPT_ATTR,
   formatBytes,
   isImageType,
   MAX_ATTACHMENT_BYTES,
@@ -174,13 +173,12 @@ export function FileDropzone({
           <span className="text-text-muted"> or drag and drop</span>
         </div>
         <p className="text-xs text-text-muted">
-          Images or PDF · up to {formatBytes(MAX_ATTACHMENT_BYTES)}
+          Any file type · up to {formatBytes(MAX_ATTACHMENT_BYTES)}
         </p>
         <input
           ref={inputRef}
           type="file"
           multiple
-          accept={ACCEPT_ATTR}
           className="hidden"
           disabled={disabled}
           onChange={(e) => {

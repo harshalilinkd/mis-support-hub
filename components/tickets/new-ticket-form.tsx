@@ -141,15 +141,15 @@ export function NewTicketForm({
       });
     }
     if (missingFile) {
-      setFileError("Attach at least one screenshot or PDF.");
+      setFileError("Attach at least one file.");
     }
     if (missingDescription || missingFile) {
       toast.error(
         missingDescription && missingFile
-          ? "Describe the problem (type it or record it) and attach a screenshot or PDF."
+          ? "Describe the problem (type it or record it) and attach a file."
           : missingDescription
             ? "Describe the problem — type it in, or record a voice note."
-            : "Attach at least one screenshot or PDF."
+            : "Attach at least one file."
       );
       return;
     }
@@ -311,7 +311,8 @@ export function NewTicketForm({
         />
         {attachments.length === 0 ? (
           <p className="text-xs text-text-muted">
-            Required — attach at least one screenshot or PDF of the problem.
+            Required — attach at least one file showing the problem (screenshot,
+            PDF, sheet, anything).
           </p>
         ) : null}
         <FieldError message={fileError ?? undefined} />

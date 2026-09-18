@@ -20,7 +20,14 @@ Sheet/AppSheet/Apps Script artifact, so "Sheet Link" is a first-class field.
   - `neon-http` has **no interactive transactions** — batch related writes with `db.batch([...])`; never assume a multi-statement transaction spanning awaits.
 - Auth.js v5 (`next-auth@beta`) + `@auth/drizzle-adapter`. **Google SSO first**, plus an **email + password** door (`bcryptjs` hash in `users.password_hash`).
 - Tailwind CSS v4 (CSS-first `@theme`) + shadcn/ui (radix-ui primitives) + lucide-react icons. Dark mode via `next-themes` (`.dark` class).
-- File storage: Vercel Blob (`@vercel/blob`) — client-upload token flow. **Voice notes**
+- File storage: Vercel Blob (`@vercel/blob`) — client-upload token flow. **Any file type,
+  up to `MAX_ATTACHMENT_BYTES` = 50MB.** The images+PDF allowlist was removed by product
+  decision: it refused the files people actually send MIS (an .xlsx export, a .csv, a
+  .docx spec, a .zip of logs), and a reporter who cannot attach the file describes it in
+  prose instead. The guards that remain are an authenticated session to mint a token, the
+  size cap (enforced on the token AND in `attachToSchema`), and the stored-URL check that
+  only accepts a Blob (or, in dev, a local `/uploads`) URL. Files are served from Blob's
+  own domain, so a stored file never executes as same-origin script. **Voice notes**
   use no extra service: the browser's own `MediaRecorder` (webm/opus, mp4 on Safari,
   5-min cap) uploads through the same flow and is stored as an ordinary
   `ticket_attachments` row (§5.1). Unsupported/insecure-origin browsers hide the
@@ -152,8 +159,9 @@ one count**:
    type; it is **never required, and never required *alongside* text**. A voice-only
    ticket is stored with the placeholder body "🎤 Voice note attached — please listen
    to the recording below." so MIS knows to play the audio.
-4. **At least one file attachment (screenshot/PDF) — mandatory.** A **voice note does
-   NOT satisfy this**; only a real file does.
+4. **At least one file attachment — mandatory.** A **voice note does NOT satisfy this**;
+   only a real file does. **Any file type is accepted, up to 50MB** — there is no
+   content-type allowlist anywhere in the upload flow (§2).
 
 `description` is therefore `z.string().trim().max(5000)` with **no `min`** in both
 `createTicketSchema` and `editTicketSchema` — a voice-only ticket has no typed body and

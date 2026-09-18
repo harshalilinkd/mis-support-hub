@@ -1,13 +1,14 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 
-import { ACCEPTED_CONTENT_TYPES, MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
+import { MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
 import { auth } from "@/lib/auth";
 
 /**
  * Vercel Blob client-upload token endpoint (CLAUDE.md §2). Server Action bodies
  * are capped ~4.5MB, so the browser uploads directly to Blob using a short-lived
- * token minted here (handleUpload), which lets larger images through (max 10MB).
+ * token minted here (handleUpload), which carries the size cap (MAX_ATTACHMENT_BYTES)
+ * and no type restriction.
  * The corresponding ticket_attachments row is written by the `attachTo` action.
  */
 export async function POST(request: Request): Promise<NextResponse> {
@@ -24,7 +25,8 @@ export async function POST(request: Request): Promise<NextResponse> {
           throw new Error("Unauthorized");
         }
         return {
-          allowedContentTypes: [...ACCEPTED_CONTENT_TYPES],
+          // No allowedContentTypes: any file type is accepted (see lib/attachments).
+          // The size cap and the authenticated-session check above are the guards.
           maximumSizeInBytes: MAX_ATTACHMENT_BYTES,
           // Give every upload a unique filename so two files with the same name
           // (e.g. "Screenshot ….png") don't collide with a "blob already exists".

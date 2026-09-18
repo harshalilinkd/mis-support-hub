@@ -18,19 +18,16 @@ export const attachToSchema = z.object({
   commentId: z.string().uuid().nullish(),
   url: z.string().url().refine(isAllowedUploadUrl, "Not a valid upload URL"),
   filename: z.string().trim().min(1).max(255),
-  contentType: z
-    .string()
-    .refine(
-      (c) =>
-        c.startsWith("image/") ||
-        c === "application/pdf" ||
-        c.startsWith("audio/"),
-      "Unsupported file type"
-    ),
+  // Any type is allowed (see lib/attachments) — this only keeps the column sane.
+  contentType: z.string().trim().min(1).max(255),
   sizeBytes: z
     .number()
     .int()
     .positive()
-    .max(MAX_ATTACHMENT_BYTES, "File exceeds the 10MB limit"),
+    // Derived from the constant so the message can never drift from the limit.
+    .max(
+      MAX_ATTACHMENT_BYTES,
+      `File exceeds the ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB limit`
+    ),
 });
 export type AttachToInput = z.infer<typeof attachToSchema>;

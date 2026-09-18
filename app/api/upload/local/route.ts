@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 
-import { isAcceptedType, MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
+import { MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
 import { getCurrentUser } from "@/lib/session";
 
 /**
@@ -30,12 +30,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file provided." }, { status: 400 });
   }
-  if (!isAcceptedType(file.type)) {
-    return NextResponse.json(
-      { error: "This file type isn't supported." },
-      { status: 400 }
-    );
-  }
+  // No type check: any file type is accepted (see lib/attachments).
   if (file.size > MAX_ATTACHMENT_BYTES) {
     return NextResponse.json({ error: "File is too large." }, { status: 400 });
   }

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AudioPlayer } from "./audio-player";
 
-// 5-minute cap keeps files well under the 10MB attachment limit and avoids runaway
+// 5-minute cap keeps files well under the attachment size limit and avoids runaway
 // recordings; the timer auto-stops at the cap.
 const MAX_SECONDS = 300;
 
