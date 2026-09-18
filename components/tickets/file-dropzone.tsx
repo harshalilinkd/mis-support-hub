@@ -82,15 +82,8 @@ export function FileDropzone({
     for (const file of files.slice(0, room)) {
       const id = crypto.randomUUID();
 
-      // This dropzone is only for screenshots/PDFs — voice notes have their own
-      // recorder — so reject anything else (drag-drop bypasses the accept attr).
-      if (!isImageType(file.type) && file.type !== "application/pdf") {
-        setItems((prev) => [
-          ...prev,
-          { id, file, status: "error", progress: 0, error: "Only images and PDFs are allowed." },
-        ]);
-        continue;
-      }
+      // No type check — any file is accepted (see lib/attachments). Size is the only
+      // gate here, and it mirrors what the upload token and the validator enforce.
       if (file.size > MAX_ATTACHMENT_BYTES) {
         setItems((prev) => [
           ...prev,
