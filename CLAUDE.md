@@ -645,13 +645,31 @@ SUBMITTED → UNDER_REVIEW (MIS_STAFF/ADMIN; internal discussion happens as comm
 The APPROVED/DROPPED verdict is RECORDED BY AN MIS_ADMIN on the MD's behalf (writes
 md_decision, md_decision_recorded_by, md_decided_at, optional md_remark).
 APPROVED → CLAIMED (an MIS member self-claims: sets assigned_to + **priority**; no
-date yet) → IN_PROGRESS (`startWork` — the assignee **commits to the delivery
-`deadline` here**, and the requester is told) → IN_TESTING (MIS marks complete, **dating
-`completed_at` to the day the build was actually finished — §5.2**) →
+date yet) → IN_PROGRESS (`startWork` — the assignee records the start and MAY commit to a
+delivery `deadline`; **the date is OPTIONAL**, see below) → IN_TESTING (MIS marks
+complete, **dating `completed_at` to the day the build was actually finished — §5.2**) →
 CLOSED (requester accepts) OR
 CHANGES_REQUESTED (requester unsatisfied; revision_round += 1) → IN_PROGRESS (loops,
 uncapped). DROPPED → UNDER_REVIEW (MIS_ADMIN revive only). Any other transition is
 illegal and rejected server-side.
+
+> **The delivery date is OPTIONAL at start-work**, mirroring the ISSUE start (§5) and for
+> the same reason: a build often begins before anyone can honestly commit to a hand-over
+> date, and a required field does not produce commitment — it produces invented dates,
+> which are worse than none because §12.6 EMAILS them to the requester. Optional in
+> `startWorkSchema` (empty string normalises to undefined, garbage still refused), in
+> `startWorkRow` (`deadline: Date | null`, and a start never clears an existing date), and
+> in `StartWorkDialog`. It is added later from the build panel's **"Change date"**, which
+> is where a real commitment belongs and which already audits + notifies.
+>
+> **Starting without a date sends NO notification, deliberately.** REQUEST_DEADLINE_CHANGED
+> is a notice *about the date*; with no date there is nothing to announce, and announcing a
+> commitment nobody made is precisely what §12.6's reversal rule exists to prevent. The
+> requester already heard REQUEST_CLAIMED ("{member} has picked up {number}"), so they know
+> who owns it. `sendRequestDeadlineChangedNotification` returns early without a deadline
+> anyway, so the action's guard is belt-and-braces, not a second rule. No **DEADLINE_SET**
+> activity row is written either — the audit trail records dates that were set, and "set
+> delivery for ∅" is not an event.
 
 **Release / undo a claim** (`releaseRequest`, → APPROVED): the mis-claim AND mis-start
 escape hatch, mirroring the ISSUE release (§5). The assignee sends a build **back to the
@@ -692,7 +710,7 @@ start-work — and the notice says so explicitly.
 | Move to review / send for approval | no | yes | yes |
 | Record approval/rejection (on MD's behalf) | no | no | yes |
 | Revive a DROPPED request | no | no | yes |
-| Claim + set priority + deadline | no | yes | yes |
+| Claim + set priority (deadline optional, at start-work) | no | yes | yes |
 | Release own claim (Claimed-only; back to the approved pool) | no | yes (assignee) | yes (own claim only) |
 | Change an in-flight deadline | no | yes (assignee) | yes |
 | Add progress log | no | yes (assignee only) | yes (assignee only — no override) |

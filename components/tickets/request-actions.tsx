@@ -252,9 +252,9 @@ function StartWorkDialog({
           <DialogTitle>Start building</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-text-muted">
-          Record when the build began and the date you expect to hand it back for
-          testing. The requester is told the delivery date, and any later change is
-          recorded — a delivery date is never silent.
+          Record when the build began. A delivery date is optional — add one when you
+          can commit to it (here or later via "Change date"), and the requester is told.
+          Any later change is recorded; a delivery date is never silent.
         </p>
         <div className="space-y-3">
           <div>
@@ -276,7 +276,8 @@ function StartWorkDialog({
           </div>
           <div>
             <label htmlFor="start-deadline" className="mb-1 block text-sm font-medium">
-              Delivery date
+              Delivery date{" "}
+              <span className="font-normal text-text-muted">· optional</span>
             </label>
             <Input
               id="start-deadline"
@@ -293,7 +294,7 @@ function StartWorkDialog({
           </Button>
           <Button
             onClick={() => onSubmit(deadline, startedOn)}
-            disabled={pending || !deadline || !startedOn}
+            disabled={pending || !startedOn}
           >
             {pending ? "Starting…" : "Start building"}
           </Button>

@@ -351,11 +351,17 @@ export type ClaimRequestInput = z.infer<typeof claimRequestSchema>;
 /** Start the build — the assignee commits to a delivery date (§12.3, mirrors §5). */
 export const startWorkSchema = z.object({
   ticketId: z.string().uuid(),
+  // OPTIONAL, mirroring the ISSUE start (§5): a build often begins before anyone can
+  // honestly commit to a hand-over date, and a required field produces invented dates
+  // rather than commitment — worse than none, because the requester is TOLD them
+  // (§12.6). It can be set later from the build panel's "Change date", which is where
+  // a real commitment belongs. An empty string means "not set".
   deadline: z
     .string()
     .trim()
-    .min(1, "Pick a delivery date")
-    .refine((s) => !Number.isNaN(Date.parse(s)), "Pick a valid date"),
+    .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), "Pick a valid date")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   // The IST calendar DAY the build actually began (§5.3) — the request twin of
   // startTaskSchema.startedOn. Omitted ⇒ started now. Any day, past or future.
   startedOn: z

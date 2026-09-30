@@ -397,7 +397,7 @@ async function enterProgress(
  */
 export async function startWork(input: {
   ticketId: string;
-  deadline: string;
+  deadline?: string;
   startedOn?: string;
 }): Promise<ActionResult> {
   const user = await getCurrentUser();
@@ -438,14 +438,20 @@ export async function startWork(input: {
     ticketId: t.id,
     actorId: user.id,
     from: t.status,
-    deadline: new Date(parsed.data.deadline),
+    deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
     previousDeadline: previous,
     startedAt,
     datedFrom,
   });
-  // The requester always hears the date — a first set reads "targeted for X", a
-  // move reads "moved from X to Y". Never silent either way.
-  await sendRequestDeadlineChangedNotification(t.id, previous);
+  // The requester hears the date when there IS one — a first set reads "targeted for
+  // X", a move reads "moved from X to Y". Starting WITHOUT a date sends nothing, and
+  // deliberately so: the notice is about the date, and announcing a commitment that was
+  // not made is the thing §12.6 exists to prevent. (The claim already told them who
+  // picked it up.) The send is itself a no-op without a deadline, so this is belt and
+  // braces rather than a second rule.
+  if (parsed.data.deadline) {
+    await sendRequestDeadlineChangedNotification(t.id, previous);
+  }
   revalidateRequestRoutes(t.number);
   return ok(undefined);
 }

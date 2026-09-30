@@ -2303,7 +2303,8 @@ export async function startWorkRow(args: {
   ticketId: string;
   actorId: string;
   from: Status;
-  deadline: Date;
+  /** Optional (§12.3): a build can start before a delivery date is known. */
+  deadline: Date | null;
   previousDeadline: Date | null;
   /** The day the build actually began (§5.3). Defaults to now. */
   startedAt?: Date;
@@ -2316,7 +2317,9 @@ export async function startWorkRow(args: {
     db.update(tickets).set({ status: "IN_PROGRESS" }).where(eq(tickets.id, args.ticketId)),
     db
       .update(requestDetails)
-      .set({ deadline: args.deadline, startedAt })
+      // Only stamp a deadline when there IS one — never clear an existing date just
+      // because this start didn't name one.
+      .set({ startedAt, ...(args.deadline ? { deadline: args.deadline } : {}) })
       .where(eq(requestDetails.ticketId, args.ticketId)),
     db.insert(ticketActivity).values({
       ticketId: args.ticketId,
@@ -2325,13 +2328,21 @@ export async function startWorkRow(args: {
       fromValue: args.from,
       toValue: "IN_PROGRESS",
     }),
-    db.insert(ticketActivity).values({
-      ticketId: args.ticketId,
-      actorId: args.actorId,
-      type: "DEADLINE_SET",
-      fromValue: args.previousDeadline ? args.previousDeadline.toISOString() : null,
-      toValue: args.deadline.toISOString(),
-    }),
+    // No deadline ⇒ no DEADLINE_SET row: the audit trail records dates that were set,
+    // and "set delivery for ∅" is not an event.
+    ...(args.deadline
+      ? [
+          db.insert(ticketActivity).values({
+            ticketId: args.ticketId,
+            actorId: args.actorId,
+            type: "DEADLINE_SET",
+            fromValue: args.previousDeadline
+              ? args.previousDeadline.toISOString()
+              : null,
+            toValue: args.deadline.toISOString(),
+          }),
+        ]
+      : []),
     ...(args.datedFrom
       ? [
           db.insert(ticketActivity).values({
