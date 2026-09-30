@@ -253,7 +253,8 @@ function StartWorkDialog({
         </DialogHeader>
         <p className="text-xs text-text-muted">
           Record when the build began. A delivery date is optional — add one when you
-          can commit to it (here or later via "Change date"), and the requester is told.
+          can commit to it (here or later via &ldquo;Change date&rdquo;), and the
+          requester is told.
           Any later change is recorded; a delivery date is never silent.
         </p>
         <div className="space-y-3">
