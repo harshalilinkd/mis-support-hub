@@ -77,8 +77,8 @@ export default async function MyTicketsPage({
         title={isStaff ? "Assigned to Me" : "My Tickets"}
         description={
           isStaff
-            ? "Your work — issue tickets and the system requests you're building."
-            : "Everything you've raised — issues you reported and system requests you submitted."
+            ? "Your work — issue & modification tickets and the system requests you're building."
+            : "Everything you've raised — issues and modifications you reported, and system requests you submitted."
         }
       />
       {/* Both roles use the combined view (Issues | System Requests sub-tabs). The

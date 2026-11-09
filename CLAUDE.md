@@ -835,7 +835,7 @@ fill an inbox for no gain, and no earlier email is made false by it.
     "Board" made that impossible — the confusion this grouping removes). Issue-only
     entries say "issue" outright:
     - **Issues** — `/tickets` ("All Issues"), `/board` ("Issue Board"), `/new`
-      ("Report an issue").
+      ("Report an issue/Modifications").
     - **System Requests** — `/requests` ("All Requests"), `/requests/board`
       ("Request Board"), `/requests/new` ("New Request").
     - `/dashboard` ("Dashboard") sits above the split (reports on both pipelines via its
@@ -850,9 +850,16 @@ fill an inbox for no gain, and no earlier email is made false by it.
     1. **My Tickets** (`/my`) — ONE home showing BOTH their issues and their requests
        (see the `/my` note below). This is why employees have **no** "My Requests" or
        "Request Board" link: the first is redundant with the sub-tab, the second is noise.
-    2. The two RAISE actions, kept deliberately distinct so "broken system" can't blur
-       into "new system" — **"Report an issue"** (`/new`) vs **"Request a system"**
-       (`/requests/new`).
+    2. The two RAISE actions, kept deliberately distinct so "existing system" can't blur
+       into "new system" — **"Report an issue/Modifications"** (`/new`) vs **"Request a
+       new system"** (`/requests/new`).
+    - **The ISSUE module covers modifications too** (product decision): employees raise
+      tickets not only when something is broken but when an existing system needs a
+      change. So every user-facing line in the issue flow — the raise form, hints, empty
+      states, the "is it done?" prompt, and the resolved email — says "issue or
+      modification", never just "problem"/"broken". The pipeline's short NAME stays
+      "Issues" in compact controls (nav header, All Issues, Issue Board, sub-tabs, type
+      chips), where a longer label would overflow on a phone.
     - **Systems is NOT in the employee nav** (product decision): the directory link is
       surfaced only in the MIS staff/admin tail. This is a **nav-surface** choice, not a
       permission change — the `/systems` route itself stays USER-readable per §13.3, so

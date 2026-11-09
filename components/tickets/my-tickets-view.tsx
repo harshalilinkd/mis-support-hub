@@ -350,7 +350,7 @@ export function MyTicketsView({
             <EmptyState
               icon={<Inbox className="size-5" />}
               title="No tickets yet"
-              description="Raise a ticket for any system, sheet, or app issue and the MIS team will pick it up."
+              description="Raise a ticket for any issue or modification in a system, sheet, or app and the MIS team will pick it up."
               actionHref="/new"
               actionLabel="Raise a ticket"
             />

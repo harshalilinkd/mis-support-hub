@@ -44,7 +44,9 @@ export function ResolutionActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-border bg-accent-soft/40 p-3">
-      <span className="text-sm font-medium">Did this resolve your issue?</span>
+      <span className="text-sm font-medium">
+        Is your issue fixed or modification done as needed?
+      </span>
       <div className="ml-auto flex gap-2">
         {showConfirm ? (
           <Button

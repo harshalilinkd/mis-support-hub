@@ -44,11 +44,11 @@ export function renderTemplate(input: NotifyInput): {
   switch (input.template) {
     case "TICKET_RESOLVED":
       return {
-        subject: `Issue ${number} was resolved — please verify`,
+        subject: `${number} was resolved — please verify`,
         html: shell(
-          `Issue ${number} was resolved`,
-          `<p style="margin:0;line-height:1.6">Issue <strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was resolved by ${escapeHtml(input.data.resolvedBy ?? "the MIS team")}.</p>
-           <p style="margin:12px 0 0;line-height:1.6">Please verify the fix${link ? ` — ${escapeHtml(link)}` : ""}. If it isn't resolved, you can reopen it.</p>`,
+          `${number} was resolved`,
+          `<p style="margin:0;line-height:1.6"><strong>${escapeHtml(number)}</strong> — “${escapeHtml(title)}” — was resolved by ${escapeHtml(input.data.resolvedBy ?? "the MIS team")}.</p>
+           <p style="margin:12px 0 0;line-height:1.6">Please verify the issue is fixed or the modification is done as you needed${link ? ` — ${escapeHtml(link)}` : ""}. If it isn't, you can reopen it.</p>`,
           cta
         ),
       };

@@ -111,7 +111,7 @@ export function ResolveDialog({
           <DialogTitle>Mark resolved</DialogTitle>
           <DialogDescription>
             When was this actually resolved? Today is filled in — change it if the fix
-            was done earlier. The reporter is notified either way and can confirm or
+            or modification was done earlier. The reporter is notified either way and can confirm or
             reopen.
           </DialogDescription>
         </DialogHeader>

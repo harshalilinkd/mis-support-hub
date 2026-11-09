@@ -73,7 +73,8 @@ type NavSection = {
  *      Requests" and "Request Board" links are gone for employees: redundant with the
  *      sub-tab, and a kanban board of your own two requests is noise.)
  *   2. The two RAISE actions, kept deliberately distinct so the confusion can't recur —
- *      "Report an issue" (something's broken) vs "Request a system" (build a new one).
+ *      "Report an issue/Modifications" (something in an existing system is broken or
+ *      needs changing) vs "Request a new system" (build a new one).
  *
  * The Systems directory link is intentionally NOT in the employee nav — it's surfaced
  * only in the MIS staff/admin tail. (The /systems route stays readable per §13.3; this
@@ -99,9 +100,9 @@ function navSectionsFor(role: Role): NavSection[] {
         items: [
           {
             href: "/new",
-            label: "Report an issue/changes",
+            label: "Report an issue/Modifications",
             icon: PlusCircle,
-            hint: "Something in an existing system, sheet, or app is broken or wrong — get MIS to fix it.",
+            hint: "Something in an existing system, sheet, or app is broken, or needs a change — get MIS to fix or modify it.",
           },
           {
             href: "/requests/new",
@@ -128,9 +129,9 @@ function navSectionsFor(role: Role): NavSection[] {
         { href: "/board", label: "Issue Board", icon: KanbanSquare },
         {
           href: "/new",
-          label: "Report an issue/changes",
+          label: "Report an issue/Modifications",
           icon: PlusCircle,
-          hint: "Something in an existing system, sheet, or app is broken or wrong — get it fixed.",
+          hint: "Something in an existing system, sheet, or app is broken, or needs a change — get it fixed or modified.",
         },
       ],
     },

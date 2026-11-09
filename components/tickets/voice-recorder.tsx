@@ -292,7 +292,7 @@ export function VoiceRecorder({
             <Mic className="size-4" /> Record voice note
           </Button>
           <span className="text-xs text-text-muted">
-            Prefer speaking? Record your problem instead of typing.
+            Prefer speaking? Record your issue or modification instead of typing.
           </span>
         </div>
       ) : null}

@@ -175,8 +175,8 @@ export function BulkResolveDialog({
             Resolve {total} ticket{total === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Say when each fix actually landed, then resolve them all. Each reporter
-            is asked to confirm the fix.
+            Say when each one was actually done, then resolve them all. Each reporter
+            is asked to confirm it.
           </DialogDescription>
         </DialogHeader>
 
@@ -240,10 +240,10 @@ export function BulkResolveDialog({
                 </span>
               </div>
 
-              {/* Problem description */}
+              {/* Issue / modification description */}
               <div className="mt-4">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
-                  Problem
+                  Description
                 </h4>
                 {ticket.description ? (
                   <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
@@ -363,7 +363,7 @@ export function BulkResolveDialog({
                     readOnly={entry.sameAsStart && !!startDay}
                   />
                   <p className="mt-1 text-xs text-text-muted">
-                    The reporter is asked to confirm the fix.
+                    The reporter is asked to confirm it's done.
                   </p>
                 </div>
               </div>

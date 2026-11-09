@@ -130,7 +130,7 @@ export function EditTicketForm({
 
       <div>
         <label htmlFor="edit-desc" className="mb-1.5 block text-sm font-medium">
-          Describe the problem / Summary
+          Describe the issue or modification / Summary
         </label>
         <Textarea
           id="edit-desc"

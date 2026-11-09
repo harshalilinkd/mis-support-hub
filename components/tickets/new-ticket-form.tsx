@@ -127,8 +127,8 @@ export function NewTicketForm({
     //   · the voice note is OPTIONAL — an alternative to typing, nothing more.
     const allAttachments = voiceNote ? [...attachments, voiceNote] : attachments;
 
-    // Describe the problem: typed text OR a voice note — either alone is enough,
-    // and a voice note is never required on top of text.
+    // Describe the issue/modification: typed text OR a voice note — either alone is
+    // enough, and a voice note is never required on top of text.
     const hasText = values.description.trim().length > 0;
     const missingDescription = !hasText && !voiceNote;
     // Only real files count here — the voice note does NOT satisfy this.
@@ -137,7 +137,7 @@ export function NewTicketForm({
     if (missingDescription) {
       setError("description", {
         type: "manual",
-        message: "Describe the problem — type it here, or record a voice note.",
+        message: "Describe the issue or modification — type it here, or record a voice note.",
       });
     }
     if (missingFile) {
@@ -146,9 +146,9 @@ export function NewTicketForm({
     if (missingDescription || missingFile) {
       toast.error(
         missingDescription && missingFile
-          ? "Describe the problem (type it or record it) and attach a file."
+          ? "Describe the issue or modification (type it or record it) and attach a file."
           : missingDescription
-            ? "Describe the problem — type it in, or record a voice note."
+            ? "Describe the issue or modification — type it in, or record a voice note."
             : "Attach at least one file."
       );
       return;
@@ -211,7 +211,7 @@ export function NewTicketForm({
         </div>
       </div>
 
-      <Section step={1} title="The problem">
+      <Section step={1} title="Issue / modification">
         <div>
           <Label>Department</Label>
           <Controller
@@ -243,7 +243,7 @@ export function NewTicketForm({
           <Label htmlFor="title">Subject</Label>
           <Input
             id="title"
-            placeholder="A short one-line title for the issue"
+            placeholder="A short one-line title for the issue or modification"
             disabled={pending}
             {...register("title")}
           />
@@ -268,13 +268,13 @@ export function NewTicketForm({
 
         <div>
           <Label htmlFor="description">
-            Describe the problem / Summary{" "}
+            Describe the issue or modification / Summary{" "}
             <span className="text-destructive">*</span>
           </Label>
           <Textarea
             id="description"
             rows={3}
-            placeholder="What's happening, what you expected, and any steps to reproduce."
+            placeholder="What's going wrong and what you expected — or what you'd like changed, and why."
             disabled={pending}
             {...register("description", {
               onChange: () => clearErrors("description"),
@@ -311,8 +311,8 @@ export function NewTicketForm({
         />
         {attachments.length === 0 ? (
           <p className="text-xs text-text-muted">
-            Required — attach at least one file showing the problem (screenshot,
-            PDF, sheet, anything).
+            Required — attach at least one file showing the issue or the change
+            you need (screenshot, PDF, sheet, anything).
           </p>
         ) : null}
         <FieldError message={fileError ?? undefined} />

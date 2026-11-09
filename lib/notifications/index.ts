@@ -122,7 +122,7 @@ export async function sendResolutionNotification(ticketId: string): Promise<void
       type: "TICKET_RESOLVED",
       ticketId: ticket.id,
       ticketNumber: ticket.number,
-      title: `Issue ${ticket.number} was resolved`,
+      title: `${ticket.number} was resolved`,
       body: `${ticket.title}\nResolved by ${resolverName}. Please verify.`,
     });
 
@@ -316,7 +316,7 @@ export async function sendClosureNotification(
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       title: `${ticket.number} confirmed resolved & closed`,
-      body: `${ticket.title}\n${closedByName} confirmed the fix. The ticket is now closed.`,
+      body: `${ticket.title}\n${closedByName} confirmed it's resolved. The ticket is now closed.`,
     });
 
     if (worker.email) {
@@ -1049,7 +1049,7 @@ export async function sendAccessApprovedNotification(newUser: {
       userId: newUser.id,
       type: "ACCESS_APPROVED",
       title: "Welcome to MIS Support Hub",
-      body: "Your access was approved. Raise an issue or request a system whenever you need MIS.",
+      body: "Your access was approved. Report an issue or modification, or request a new system, whenever you need MIS.",
     }).catch((e) => console.error("[access-approved:in-app]", e));
 
     const to: NotifyRecipient = { email: newUser.email, name: newUser.name };

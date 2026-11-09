@@ -73,7 +73,7 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
     {
       label: "Needs your review",
       value: resolvedToConfirm,
-      hint: "resolved fixes to confirm",
+      hint: "resolved tickets to confirm",
       icon: Inbox,
       href: "/my?scope=issues&tab=resolved",
       highlight: true,
@@ -141,12 +141,12 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
-        description="Your issues and system requests at a glance."
+        description="Your issues, modifications and system requests at a glance."
       >
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Button asChild size="sm" variant="outline" className="shrink-0">
             <Link href="/new">
-              <PlusCircle className="size-4" /> Report an issue
+              <PlusCircle className="size-4" /> Report an issue/Modifications
             </Link>
           </Button>
           <Button asChild size="sm" className="shrink-0">
@@ -161,9 +161,9 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
         <EmptyState
           icon={<Inbox className="size-5" />}
           title="Nothing raised yet"
-          description="When you report an issue or request a system, you'll see its status and progress here."
+          description="When you report an issue or modification, or request a new system, you'll see its status and progress here."
           actionHref="/new"
-          actionLabel="Report an issue"
+          actionLabel="Report an issue/Modifications"
         />
       ) : (
         <>
@@ -206,14 +206,17 @@ export async function EmployeeDashboard({ userId }: { userId: string }) {
 
           {/* Four charts */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Panel title="My issues by status" subtitle={`${issues.length} total`}>
+            <Panel title="My issues & modifications by status" subtitle={`${issues.length} total`}>
               <ChartStatusDonut
                 data={issueStatusData}
-                centerLabel="issues"
-                emptyMessage="No issues yet."
+                centerLabel="tickets"
+                emptyMessage="No issues or modifications yet."
               />
             </Panel>
-            <Panel title="My issues over time" subtitle="Raised vs resolved · last 30 days">
+            <Panel
+              title="My issues & modifications over time"
+              subtitle="Raised vs resolved · last 30 days"
+            >
               <ChartCreatedResolved data={flow} />
             </Panel>
             <Panel title="My requests by stage" subtitle={`${requests.length} total`}>

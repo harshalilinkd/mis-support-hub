@@ -267,10 +267,10 @@ export function BulkStartDialog({
                 </span>
               </div>
 
-              {/* Problem description */}
+              {/* Issue / modification description */}
               <div className="mt-4">
                 <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
-                  Problem
+                  Description
                 </h4>
                 {ticket.description ? (
                   <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
