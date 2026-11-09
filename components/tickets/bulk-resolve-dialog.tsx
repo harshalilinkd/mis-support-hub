@@ -363,7 +363,7 @@ export function BulkResolveDialog({
                     readOnly={entry.sameAsStart && !!startDay}
                   />
                   <p className="mt-1 text-xs text-text-muted">
-                    The reporter is asked to confirm it's done.
+                    The reporter is asked to confirm it&apos;s done.
                   </p>
                 </div>
               </div>
